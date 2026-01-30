@@ -1,0 +1,79 @@
+# 依赖目录
+node_modules/
+web/node_modules/
+
+# 构建输出
+web/build/
+web/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+todoapp-server
+todoapp-server.exe
+
+# 测试和覆盖率
+*.test
+*.out
+coverage/
+coverage.txt
+*.cover
+
+# 开发文件
+.env
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# 文档
+README.md
+DEPLOYMENT.md
+REMEDIAL_REPORT.md
+SECURITY_REVIEW.md
+FIX_SUMMARY.md
+docs/
+*.md
+!README.md
+
+# Android
+android/
+*.apk
+*.aab
+
+# 备份文件
+*.backup
+*.bak
+*.old
+
+# 数据库
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+data/
+
+# Docker
+Dockerfile*
+.dockerignore
+docker-compose*.yml
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# 其他
+.editorconfig
+.eslintrc*
+.prettierrc*

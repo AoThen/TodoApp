@@ -1,0 +1,16 @@
+API Contract (High-Level)
+- /api/v1/auth/login
+  - Request: { email, password }
+  - Response: { access_token, expires_in, refresh_token (HttpOnly cookie set) }
+- /api/v1/auth/refresh
+  - Request: cookie-based refresh_token; and/or Authorization: Bearer <access_token> as fallback
+  - Response: { access_token, expires_in }
+- /api/v1/sync
+  - Request: { last_sync_at, changes: [ { local_id, op, payload, client_version } ] }
+  - Response: { server_changes, client_changes, last_sync_at, conflicts }
+- /api/v1/export
+  - Request: { type: 'tasks', format: 'json'|'csv' } with Authorization header
+  - Response: file content in requested format
+- /api/v1/import
+  - Request: data payload in JSON/CSV; requires same schema as export
+  - Response: success/failure with details

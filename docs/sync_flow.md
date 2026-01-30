@@ -1,0 +1,18 @@
+Delta Sync Flow (End-to-End MVP)
+- Client offline changes are packaged into delta entries with:
+  - local_id: string
+  - op: insert | update | delete
+  - payload: object with fields to apply
+  - client_version: int
+- Client submits POST /api/v1/sync with last_sync_at and changes
+- Server validates user identity via X-User-ID and/or JWT, applies changes to its true source of truth (server DB)
+- Server responds with:
+  - server_changes: list of changes applied on server (id, server_version, updated_at, is_deleted, etc.)
+  - client_changes: mapping of local_id -> server_id (and op) for local changes acknowledgement
+  - last_sync_at: timestamp
+  - conflicts: list of conflict records (if any), with reason and options for resolution
+- Conflicts are resolved by the client using the predefined strategy (default: latest write wins), or via user intervention.
+- Notes:
+  - Conflict detection uses server_version/last_modified on server records to determine if a change conflicts with a newer update.
+  - Delta queue on client side should be cleared after a successful sync; unacknowledged changes should be retried.
+  - For production, consider more robust conflict resolution UI and server-side conflict resolution strategies.
