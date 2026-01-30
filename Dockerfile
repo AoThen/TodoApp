@@ -16,10 +16,12 @@ COPY web/ ./
 RUN npm run build
 
 # 构建阶段 2: 后端 (Go)
-FROM golang:1.21-alpine AS backend-builder
+FROM golang:1.21-bookworm AS backend-builder
 
 # 安装必要的构建工具
-RUN apk add --no-cache gcc musl-dev sqlite-dev
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libc6-dev sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
