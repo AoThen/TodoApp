@@ -6,8 +6,8 @@ WORKDIR /app/web
 # 复制前端依赖文件
 COPY web/package*.json ./
 
-# 安装依赖
-RUN npm ci --only=production && npm cache clean --force
+# 安装依赖（使用 npm install，因为没有 package-lock.json）
+RUN npm install --omit=dev && npm cache clean --force
 
 # 复制前端源代码
 COPY web/ ./
