@@ -44,6 +44,19 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper/dists
+            android/.gradle
+          key: ${{ runner.os }}-gradle-${{ hashFiles('android/build.gradle.kts') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
 
 
       - name: Build Android Debug APK

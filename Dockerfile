@@ -1,7 +1,7 @@
 # 构建阶段 1: 前端 (React)
 FROM node:18-alpine AS frontend-builder
 
-WORKDIR /app/web
+WORKDIR /app
 
 # 复制前端依赖文件
 COPY web/package*.json ./
@@ -63,7 +63,7 @@ WORKDIR /app
 COPY --from=backend-builder --chown=appuser:appgroup /app/todoapp-server .
 
 # 从构建阶段复制前端静态文件
-COPY --from=frontend-builder --chown=appuser:appgroup /app/web/build ./web/build
+COPY --from=frontend-builder --chown=appuser:appgroup /app/build ./web/build
 
 # 复制环境变量模板
 COPY --chown=appuser:appgroup .env.example .env.example
