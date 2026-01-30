@@ -111,8 +111,8 @@ func main() {
 	// Health check endpoint (public)
 	router.HandleFunc("/api/v1/health", handleHealth).Methods("GET")
 
-	// Auth routes (public)
-	router.HandleFunc("/api/v1/auth/register", handleRegister).Methods("POST")
+	// Auth routes (public) - Registration disabled for admin-only user creation
+	// router.HandleFunc("/api/v1/auth/register", handleRegister).Methods("POST")
 	router.HandleFunc("/api/v1/auth/login", handleLogin).Methods("POST")
 	router.HandleFunc("/api/v1/auth/refresh", handleRefresh).Methods("POST")
 	router.HandleFunc("/api/v1/auth/logout", handleLogout).Methods("POST")
@@ -126,6 +126,25 @@ func main() {
 	protected.HandleFunc("/tasks/{id}", handleTaskByID).Methods("GET", "PATCH", "DELETE")
 	protected.HandleFunc("/sync", handleSync).Methods("POST")
 	protected.HandleFunc("/export", handleExport).Methods("GET")
+
+	// Admin routes (requires authentication and admin role)
+	admin := router.PathPrefix("/api/v1/admin").Subrouter()
+	admin.Use(authMiddleware)
+	admin.Use(adminMiddleware)
+
+	admin.HandleFunc("/users", handleAdminListUsers).Methods("GET")
+	admin.HandleFunc("/users", handleAdminCreateUser).Methods("POST")
+	admin.HandleFunc("/users/{id}", handleAdminUpdateUser).Methods("PATCH")
+	admin.HandleFunc("/users/{id}/password", handleAdminResetPassword).Methods("POST")
+	admin.HandleFunc("/users/{id}/lock", handleAdminLockUser).Methods("POST")
+	admin.HandleFunc("/users/{id}/unlock", handleAdminUnlockUser).Methods("POST")
+	admin.HandleFunc("/users/{id}", handleAdminDeleteUser).Methods("DELETE")
+
+	admin.HandleFunc("/logs/login", handleAdminGetLoginLogs).Methods("GET")
+	admin.HandleFunc("/logs/actions", handleAdminGetActionLogs).Methods("GET")
+
+	admin.HandleFunc("/config", handleAdminGetConfig).Methods("GET")
+	admin.HandleFunc("/config", handleAdminSetConfig).Methods("PUT")
 
 	// CORS handling for development
 	corsHandler := handlers.CORS(
@@ -212,16 +231,44 @@ func authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Store user ID in context for handlers to use
+		// Get user role from database
+		role, err := db.GetUserRole(claims.UserID)
+		if err != nil {
+			log.Printf("Failed to get user role: %v", err)
+			role = "user"
+		}
+
+		// Store user ID, email and role in context for handlers to use
 		ctx := context.WithValue(r.Context(), "userID", claims.UserID)
 		ctx = context.WithValue(ctx, "email", claims.Email)
+		ctx = context.WithValue(ctx, "role", role)
 		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// adminMiddleware checks if the user has admin role
+func adminMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		role, ok := r.Context().Value("role").(string)
+		if !ok || role != "admin" {
+			log.Printf("Unauthorized admin access attempt from user with role: %v", role)
+			response.ErrorResponse(w, "禁止访问：需要管理员权限", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 
 func getUserIDFromContext(ctx context.Context) string {
 	if id, ok := ctx.Value("userID").(string); ok {
 		return id
+	}
+	return ""
+}
+
+func getRoleFromContext(ctx context.Context) string {
+	if role, ok := ctx.Value("role").(string); ok {
+		return role
 	}
 	return ""
 }
@@ -661,4 +708,330 @@ func toString(v interface{}) string {
 	default:
 		return fmt.Sprintf("%v", t)
 	}
+}
+
+// ============ Admin Handlers ============
+
+type adminUserResponse struct {
+	ID                 int64  `json:"id"`
+	Email              string `json:"email"`
+	Role               string `json:"role"`
+	FailedAttempts     int    `json:"failed_attempts"`
+	LockedUntil        string `json:"locked_until,omitempty"`
+	MustChangePassword bool   `json:"must_change_password"`
+	CreatedAt          string `json:"created_at"`
+	IsLocked           bool   `json:"is_locked"`
+}
+
+type adminCreateUserRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	Role     string `json:"role"`
+}
+
+type adminUpdateUserRequest struct {
+	Email string `json:"email"`
+	Role  string `json:"role"`
+}
+
+type adminResetPasswordRequest struct {
+	NewPassword string `json:"new_password"`
+}
+
+type adminLockUserRequest struct {
+	DurationMinutes int `json:"duration_minutes"`
+}
+
+type adminConfigRequest struct {
+	Key         string `json:"key"`
+	Value       string `json:"value"`
+	Description string `json:"description"`
+}
+
+func handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
+	users, err := db.GetAllUsers()
+	if err != nil {
+		log.Printf("Failed to get users: %v", err)
+		response.ErrorResponse(w, "获取用户列表失败", http.StatusInternalServerError)
+		return
+	}
+	response.SuccessResponse(w, users, http.StatusOK)
+}
+
+func handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
+	var req adminCreateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.ErrorResponse(w, "无效的请求体", http.StatusBadRequest)
+		return
+	}
+
+	if req.Email == "" || req.Password == "" {
+		response.ErrorResponse(w, "邮箱和密码是必填项", http.StatusBadRequest)
+		return
+	}
+
+	if !validator.IsValidEmail(req.Email) {
+		response.ErrorResponse(w, "邮箱格式无效", http.StatusBadRequest)
+		return
+	}
+
+	if req.Role != "admin" && req.Role != "user" {
+		response.ErrorResponse(w, "无效的角色", http.StatusBadRequest)
+		return
+	}
+
+	userID, err := db.CreateUser(req.Email, req.Password, req.Role)
+	if err != nil {
+		response.ErrorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	adminID := getUserIDFromContext(r.Context())
+	adminEmail := getEmailFromContext(r.Context())
+	ip := getClientIP(r)
+	_ = db.LogAdminAction(toInt(adminID), adminEmail, "create_user", req.Email, userID, fmt.Sprintf("Created user with role: %s", req.Role), ip)
+
+	log.Printf("Admin %s created user %s (ID: %d)", adminEmail, req.Email, userID)
+	response.SuccessResponse(w, map[string]interface{}{"id": userID, "email": req.Email, "role": req.Role}, http.StatusCreated)
+}
+
+func handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	userIDStr := vars["id"]
+	userID, err := strconv.ParseInt(userIDStr, 10, 64)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	var req adminUpdateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.ErrorResponse(w, "无效的请求体", http.StatusBadRequest)
+		return
+	}
+
+	if req.Email != "" && !validator.IsValidEmail(req.Email) {
+		response.ErrorResponse(w, "邮箱格式无效", http.StatusBadRequest)
+		return
+	}
+
+	if req.Role != "" && req.Role != "admin" && req.Role != "user" {
+		response.ErrorResponse(w, "无效的角色", http.StatusBadRequest)
+		return
+	}
+
+	oldEmail, _ := db.GetUserEmail(userID)
+	if err := db.UpdateUser(userID, req.Email, req.Role); err != nil {
+		response.ErrorResponse(w, "更新用户失败", http.StatusInternalServerError)
+		return
+	}
+
+	adminID := getUserIDFromContext(r.Context())
+	adminEmail := getEmailFromContext(r.Context())
+	ip := getClientIP(r)
+	_ = db.LogAdminAction(toInt(adminID), adminEmail, "update_user", req.Email, userID,
+		fmt.Sprintf("Updated email: %s -> %s, role: %s", oldEmail, req.Email, req.Role), ip)
+
+	response.SuccessResponse(w, map[string]string{"status": "updated"}, http.StatusOK)
+}
+
+func handleAdminResetPassword(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	userIDStr := vars["id"]
+	userID, err := strconv.ParseInt(userIDStr, 10, 64)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	var req adminResetPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.ErrorResponse(w, "无效的请求体", http.StatusBadRequest)
+		return
+	}
+
+	if req.NewPassword == "" {
+		response.ErrorResponse(w, "新密码不能为空", http.StatusBadRequest)
+		return
+	}
+
+	if err := db.ResetUserPassword(userID, req.NewPassword); err != nil {
+		response.ErrorResponse(w, "重置密码失败", http.StatusInternalServerError)
+		return
+	}
+
+	targetEmail, _ := db.GetUserEmail(userID)
+	adminID := getUserIDFromContext(r.Context())
+	adminEmail := getEmailFromContext(r.Context())
+	ip := getClientIP(r)
+	_ = db.LogAdminAction(toInt(adminID), adminEmail, "reset_password", targetEmail, userID, "Password reset by admin", ip)
+
+	log.Printf("Admin %s reset password for user %s (ID: %d)", adminEmail, targetEmail, userID)
+	response.SuccessResponse(w, map[string]string{"status": "password reset"}, http.StatusOK)
+}
+
+func handleAdminLockUser(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	userIDStr := vars["id"]
+	userID, err := strconv.ParseInt(userIDStr, 10, 64)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	var req adminLockUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		req.DurationMinutes = 30
+	}
+
+	if req.DurationMinutes <= 0 {
+		req.DurationMinutes = 30
+	}
+
+	if err := db.LockUserAccount(userID, req.DurationMinutes); err != nil {
+		response.ErrorResponse(w, "锁定账户失败", http.StatusInternalServerError)
+		return
+	}
+
+	targetEmail, _ := db.GetUserEmail(userID)
+	adminID := getUserIDFromContext(r.Context())
+	adminEmail := getEmailFromContext(r.Context())
+	ip := getClientIP(r)
+	_ = db.LogAdminAction(toInt(adminID), adminEmail, "lock_user", targetEmail, userID,
+		fmt.Sprintf("Locked for %d minutes", req.DurationMinutes), ip)
+
+	response.SuccessResponse(w, map[string]string{"status": "user locked"}, http.StatusOK)
+}
+
+func handleAdminUnlockUser(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	userIDStr := vars["id"]
+	userID, err := strconv.ParseInt(userIDStr, 10, 64)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := db.UnlockUserAccount(userID); err != nil {
+		response.ErrorResponse(w, "解锁账户失败", http.StatusInternalServerError)
+		return
+	}
+
+	targetEmail, _ := db.GetUserEmail(userID)
+	adminID := getUserIDFromContext(r.Context())
+	adminEmail := getEmailFromContext(r.Context())
+	ip := getClientIP(r)
+	_ = db.LogAdminAction(toInt(adminID), adminEmail, "unlock_user", targetEmail, userID, "Account unlocked by admin", ip)
+
+	response.SuccessResponse(w, map[string]string{"status": "user unlocked"}, http.StatusOK)
+}
+
+func handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	userIDStr := vars["id"]
+	userID, err := strconv.ParseInt(userIDStr, 10, 64)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	targetEmail, _ := db.GetUserEmail(userID)
+	if err := db.DeleteUser(userID); err != nil {
+		response.ErrorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	adminID := getUserIDFromContext(r.Context())
+	adminEmail := getEmailFromContext(r.Context())
+	ip := getClientIP(r)
+	_ = db.LogAdminAction(toInt(adminID), adminEmail, "delete_user", targetEmail, userID, "User deleted by admin", ip)
+
+	log.Printf("Admin %s deleted user %s (ID: %d)", adminEmail, targetEmail, userID)
+	response.SuccessResponse(w, map[string]string{"status": "user deleted"}, http.StatusOK)
+}
+
+func handleAdminGetLoginLogs(w http.ResponseWriter, r *http.Request) {
+	filters := map[string]string{
+		"email":      r.URL.Query().Get("email"),
+		"success":    r.URL.Query().Get("success"),
+		"start_time": r.URL.Query().Get("start_time"),
+		"end_time":   r.URL.Query().Get("end_time"),
+		"page":       r.URL.Query().Get("page"),
+		"page_size":  r.URL.Query().Get("page_size"),
+	}
+
+	logs, err := db.GetLoginLogsWithFilters(filters)
+	if err != nil {
+		log.Printf("Failed to get login logs: %v", err)
+		response.ErrorResponse(w, "获取登录日志失败", http.StatusInternalServerError)
+		return
+	}
+	response.SuccessResponse(w, logs, http.StatusOK)
+}
+
+func handleAdminGetActionLogs(w http.ResponseWriter, r *http.Request) {
+	filters := map[string]string{
+		"email":        r.URL.Query().Get("email"),
+		"target_email": r.URL.Query().Get("target_email"),
+		"action":       r.URL.Query().Get("action"),
+		"start_time":   r.URL.Query().Get("start_time"),
+		"end_time":     r.URL.Query().Get("end_time"),
+		"page":         r.URL.Query().Get("page"),
+		"page_size":    r.URL.Query().Get("page_size"),
+	}
+
+	logs, err := db.GetAdminLogs(filters)
+	if err != nil {
+		log.Printf("Failed to get admin logs: %v", err)
+		response.ErrorResponse(w, "获取操作日志失败", http.StatusInternalServerError)
+		return
+	}
+	response.SuccessResponse(w, logs, http.StatusOK)
+}
+
+func handleAdminGetConfig(w http.ResponseWriter, r *http.Request) {
+	config, err := db.GetSystemConfig()
+	if err != nil {
+		response.ErrorResponse(w, "获取配置失败", http.StatusInternalServerError)
+		return
+	}
+	response.SuccessResponse(w, config, http.StatusOK)
+}
+
+func handleAdminSetConfig(w http.ResponseWriter, r *http.Request) {
+	var req adminConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.ErrorResponse(w, "无效的请求体", http.StatusBadRequest)
+		return
+	}
+
+	if req.Key == "" || req.Value == "" {
+		response.ErrorResponse(w, "配置键和值不能为空", http.StatusBadRequest)
+		return
+	}
+
+	adminID := getUserIDFromContext(r.Context())
+	if err := db.SetSystemConfig(req.Key, req.Value, req.Description, adminID); err != nil {
+		response.ErrorResponse(w, "设置配置失败", http.StatusInternalServerError)
+		return
+	}
+
+	adminEmail := getEmailFromContext(r.Context())
+	ip := getClientIP(r)
+	_ = db.LogAdminAction(toInt(adminID), adminEmail, "update_config", "", 0, fmt.Sprintf("Updated config: %s = %s", req.Key, req.Value), ip)
+
+	response.SuccessResponse(w, map[string]string{"status": "config updated"}, http.StatusOK)
+}
+
+// Helper functions
+func getEmailFromContext(ctx context.Context) string {
+	if email, ok := ctx.Value("email").(string); ok {
+		return email
+	}
+	return ""
+}
+
+func toInt(s string) int {
+	i, _ := strconv.Atoi(s)
+	return i
 }

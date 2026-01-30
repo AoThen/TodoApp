@@ -6,6 +6,8 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/crypto/bcrypt"
 	"log"
+	"os"
+	"strconv"
 	"time"
 )
 
@@ -45,10 +47,31 @@ func InitDB(dataSourceName string) error {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE,
             password_hash TEXT,
+            role TEXT DEFAULT 'user',
             failed_attempts INTEGER DEFAULT 0,
             locked_until DATETIME,
+            must_change_password BOOLEAN DEFAULT 0,
             created_at DATETIME,
             updated_at DATETIME
+        );`,
+		`CREATE TABLE IF NOT EXISTS admin_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_id INTEGER,
+            admin_email TEXT,
+            action TEXT,
+            target_user_id INTEGER,
+            target_email TEXT,
+            details TEXT,
+            ip_address TEXT,
+            timestamp DATETIME,
+            FOREIGN KEY(admin_id) REFERENCES users(id)
+        );`,
+		`CREATE TABLE IF NOT EXISTS system_config (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            description TEXT,
+            updated_at DATETIME,
+            updated_by INTEGER
         );`,
 		`CREATE TABLE IF NOT EXISTS login_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -128,7 +151,7 @@ func InitDB(dataSourceName string) error {
 	return nil
 }
 
-// seedIfEmpty creates a default user and a sample task if the tables are empty
+// seedIfEmpty creates a default admin user and a sample task if the tables are empty
 func seedIfEmpty() {
 	var count int
 	row := DB.QueryRow("SELECT COUNT(*) FROM users")
@@ -137,17 +160,54 @@ func seedIfEmpty() {
 		return
 	}
 	if count == 0 {
-		password := []byte("password")
+		// Get admin credentials from environment variables or use defaults
+		adminEmail := os.Getenv("INITIAL_ADMIN_EMAIL")
+		if adminEmail == "" {
+			adminEmail = "admin@example.com"
+		}
+		adminPassword := os.Getenv("INITIAL_ADMIN_PASSWORD")
+		if adminPassword == "" {
+			adminPassword = "Admin123!"
+		}
+
+		password := []byte(adminPassword)
 		hash, _ := bcrypt.GenerateFromPassword(password, 12)
 		now := time.Now().UTC()
-		res, err := DB.Exec("INSERT INTO users (email, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?)", "test@example.com", string(hash), now, now)
+		res, err := DB.Exec("INSERT INTO users (email, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+			adminEmail, string(hash), "admin", now, now)
 		if err != nil {
-			log.Println("seed: failed to insert user:", err)
+			log.Println("seed: failed to insert admin user:", err)
 			return
 		}
 		userID, _ := res.LastInsertId()
 		// sample task
 		DB.Exec("INSERT INTO tasks (user_id, local_id, server_version, title, status, created_at, updated_at, last_modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", userID, "sample-1", 0, "Sample Task", "todo", now, now, now)
+
+		// Initialize default system config
+		initSystemConfig(now)
+
+		log.Printf("seed: created admin user %s (password: %s)", adminEmail, adminPassword)
+	}
+}
+
+// initSystemConfig initializes default system configuration
+func initSystemConfig(now time.Time) {
+	configs := []struct {
+		key         string
+		value       string
+		description string
+	}{
+		{"max_login_attempts", "5", "Maximum failed login attempts before lockout"},
+		{"login_attempt_window_minutes", "15", "Time window in minutes for login attempt counting"},
+		{"lockout_duration_minutes", "30", "Account lockout duration in minutes"},
+		{"access_token_duration_minutes", "15", "Access token validity in minutes"},
+		{"refresh_token_duration_days", "7", "Refresh token validity in days"},
+		{"allow_public_registration", "false", "Allow public user registration"},
+	}
+
+	for _, cfg := range configs {
+		DB.Exec("INSERT OR IGNORE INTO system_config (key, value, description, updated_at) VALUES (?, ?, ?, ?)",
+			cfg.key, cfg.value, cfg.description, now)
 	}
 }
 
@@ -335,6 +395,19 @@ func GetUserByID(userID string) (map[string]interface{}, error) {
 	}, nil
 }
 
+// GetUserEmail 获取用户邮箱
+func GetUserEmail(userID int64) (string, error) {
+	var email string
+	err := DB.QueryRow("SELECT email FROM users WHERE id = ?", userID).Scan(&email)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("用户不存在")
+		}
+		return "", err
+	}
+	return email, nil
+}
+
 // GetTasksPaginated 分页获取任务
 func GetTasksPaginated(userID int, page, pageSize int) ([]map[string]interface{}, int, error) {
 	offset := (page - 1) * pageSize
@@ -449,5 +522,325 @@ func CleanupExpiredTokens() error {
 func CleanupOldLoginLogs() error {
 	thirtyDaysAgo := time.Now().UTC().AddDate(0, 0, -30)
 	_, err := DB.Exec("DELETE FROM login_logs WHERE timestamp < ?", thirtyDaysAgo)
+	return err
+}
+
+// ============ Admin Management Functions ============
+
+// GetUserRole 获取用户的角色
+func GetUserRole(userID string) (string, error) {
+	var role string
+	err := DB.QueryRow("SELECT role FROM users WHERE id = ?", userID).Scan(&role)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("用户不存在")
+		}
+		return "", err
+	}
+	return role, nil
+}
+
+// GetAllUsers 获取所有用户列表
+func GetAllUsers() ([]map[string]interface{}, error) {
+	rows, err := DB.Query(`
+		SELECT id, email, role, failed_attempts, locked_until, must_change_password, created_at, updated_at
+		FROM users ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []map[string]interface{}
+	for rows.Next() {
+		var id int64
+		var email, role string
+		var failedAttempts int
+		var lockedUntil sql.NullTime
+		var mustChangePassword bool
+		var createdAt, updatedAt string
+
+		if err := rows.Scan(&id, &email, &role, &failedAttempts, &lockedUntil, &mustChangePassword, &createdAt, &updatedAt); err != nil {
+			return nil, err
+		}
+
+		results = append(results, map[string]interface{}{
+			"id":              id,
+			"email":           email,
+			"role":            role,
+			"failed_attempts": failedAttempts,
+			"locked_until": func() interface{} {
+				if lockedUntil.Valid {
+					return lockedUntil.Time.Format(time.RFC3339)
+				}
+				return nil
+			}(),
+			"must_change_password": mustChangePassword,
+			"created_at":           createdAt,
+			"updated_at":           updatedAt,
+			"is_locked":            lockedUntil.Valid && lockedUntil.Time.After(time.Now()),
+		})
+	}
+	return results, nil
+}
+
+// CreateUser 创建新用户
+func CreateUser(email, password, role string) (int64, error) {
+	// 检查邮箱是否已存在
+	var count int
+	err := DB.QueryRow("SELECT COUNT(*) FROM users WHERE email = ?", email).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	if count > 0 {
+		return 0, fmt.Errorf("邮箱已被注册")
+	}
+
+	// 验证角色
+	if role != "admin" && role != "user" {
+		return 0, fmt.Errorf("无效的角色")
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
+	if err != nil {
+		return 0, err
+	}
+
+	now := time.Now().UTC()
+	result, err := DB.Exec(
+		"INSERT INTO users (email, password_hash, role, must_change_password, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+		email, string(hash), role, role == "admin", now, now,
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	return result.LastInsertId()
+}
+
+// UpdateUser 更新用户信息
+func UpdateUser(userID int64, email, role string) error {
+	now := time.Now().UTC()
+	_, err := DB.Exec("UPDATE users SET email = ?, role = ?, updated_at = ? WHERE id = ?", email, role, now, userID)
+	return err
+}
+
+// ResetUserPassword 重置用户密码
+func ResetUserPassword(userID int64, newPassword string) error {
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), 12)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now().UTC()
+	_, err = DB.Exec("UPDATE users SET password_hash = ?, must_change_password = ?, updated_at = ? WHERE id = ?",
+		string(hash), true, now, userID)
+	return err
+}
+
+// LockUserAccount 锁定用户账户
+func LockUserAccount(userID int64, durationMinutes int) error {
+	_, err := DB.Exec(
+		"UPDATE users SET locked_until = datetime('now', '+%d minutes'), updated_at = ? WHERE id = ?",
+		durationMinutes, time.Now().UTC(), userID,
+	)
+	return err
+}
+
+// UnlockUserAccount 解锁用户账户
+func UnlockUserAccount(userID int64) error {
+	_, err := DB.Exec("UPDATE users SET locked_until = NULL, failed_attempts = 0, updated_at = ? WHERE id = ?",
+		time.Now().UTC(), userID)
+	return err
+}
+
+// DeleteUser 删除用户（软删除）
+func DeleteUser(userID int64) error {
+	// 检查是否为最后一个管理员
+	var adminCount int
+	err := DB.QueryRow("SELECT COUNT(*) FROM users WHERE role = 'admin'").Scan(&adminCount)
+	if err != nil {
+		return err
+	}
+
+	var isAdmin string
+	err = DB.QueryRow("SELECT role FROM users WHERE id = ?", userID).Scan(&isAdmin)
+	if err != nil {
+		return err
+	}
+
+	if isAdmin == "admin" && adminCount <= 1 {
+		return fmt.Errorf("无法删除最后一个管理员")
+	}
+
+	_, err = DB.Exec("DELETE FROM users WHERE id = ?", userID)
+	return err
+}
+
+// LogAdminAction 记录管理员操作
+func LogAdminAction(adminID int, adminEmail, action, targetEmail string, targetUserID int64, details, ipAddress string) error {
+	_, err := DB.Exec(
+		"INSERT INTO admin_logs (admin_id, admin_email, action, target_user_id, target_email, details, ip_address, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		adminID, adminEmail, action, targetUserID, targetEmail, details, ipAddress, time.Now().UTC(),
+	)
+	return err
+}
+
+// GetAdminLogs 获取管理员操作日志
+func GetAdminLogs(filters map[string]string) ([]map[string]interface{}, error) {
+	query := "SELECT * FROM admin_logs WHERE 1=1"
+	args := []interface{}{}
+
+	if email, ok := filters["email"]; ok && email != "" {
+		query += " AND admin_email LIKE ?"
+		args = append(args, "%"+email+"%")
+	}
+
+	if targetEmail, ok := filters["target_email"]; ok && targetEmail != "" {
+		query += " AND target_email LIKE ?"
+		args = append(args, "%"+targetEmail+"%")
+	}
+
+	if action, ok := filters["action"]; ok && action != "" {
+		query += " AND action = ?"
+		args = append(args, action)
+	}
+
+	if startTime, ok := filters["start_time"]; ok && startTime != "" {
+		query += " AND timestamp >= ?"
+		args = append(args, startTime)
+	}
+
+	if endTime, ok := filters["end_time"]; ok && endTime != "" {
+		query += " AND timestamp <= ?"
+		args = append(args, endTime)
+	}
+
+	query += " ORDER BY timestamp DESC LIMIT ? OFFSET ?"
+	pageSize, _ := strconv.Atoi(filters["page_size"])
+	page, _ := strconv.Atoi(filters["page"])
+	if pageSize <= 0 {
+		pageSize = 50
+	}
+	if page <= 0 {
+		page = 1
+	}
+	args = append(args, pageSize, (page-1)*pageSize)
+
+	rows, err := DB.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []map[string]interface{}
+	for rows.Next() {
+		var id, adminID, targetUserID int
+		var adminEmail, action, targetEmail, details, ipAddress, timestamp string
+		if err := rows.Scan(&id, &adminID, &adminEmail, &action, &targetUserID, &targetEmail, &details, &ipAddress, &timestamp); err != nil {
+			return nil, err
+		}
+		results = append(results, map[string]interface{}{
+			"id":             id,
+			"admin_id":       adminID,
+			"admin_email":    adminEmail,
+			"action":         action,
+			"target_user_id": targetUserID,
+			"target_email":   targetEmail,
+			"details":        details,
+			"ip_address":     ipAddress,
+			"timestamp":      timestamp,
+		})
+	}
+	return results, nil
+}
+
+// GetLoginLogsWithFilters 获取登录日志（带过滤）
+func GetLoginLogsWithFilters(filters map[string]string) ([]map[string]interface{}, error) {
+	query := "SELECT * FROM login_logs WHERE 1=1"
+	args := []interface{}{}
+
+	if email, ok := filters["email"]; ok && email != "" {
+		query += " AND email LIKE ?"
+		args = append(args, "%"+email+"%")
+	}
+
+	if success, ok := filters["success"]; ok && success != "" {
+		query += " AND success = ?"
+		args = append(args, success == "true")
+	}
+
+	if startTime, ok := filters["start_time"]; ok && startTime != "" {
+		query += " AND timestamp >= ?"
+		args = append(args, startTime)
+	}
+
+	if endTime, ok := filters["end_time"]; ok && endTime != "" {
+		query += " AND timestamp <= ?"
+		args = append(args, endTime)
+	}
+
+	query += " ORDER BY timestamp DESC LIMIT ? OFFSET ?"
+	pageSize, _ := strconv.Atoi(filters["page_size"])
+	page, _ := strconv.Atoi(filters["page"])
+	if pageSize <= 0 {
+		pageSize = 50
+	}
+	if page <= 0 {
+		page = 1
+	}
+	args = append(args, pageSize, (page-1)*pageSize)
+
+	rows, err := DB.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []map[string]interface{}
+	for rows.Next() {
+		var id int
+		var email, ipAddress, timestamp string
+		var success bool
+		if err := rows.Scan(&id, &email, &ipAddress, &success, &timestamp); err != nil {
+			return nil, err
+		}
+		results = append(results, map[string]interface{}{
+			"id":         id,
+			"email":      email,
+			"ip_address": ipAddress,
+			"success":    success,
+			"timestamp":  timestamp,
+		})
+	}
+	return results, nil
+}
+
+// GetSystemConfig 获取系统配置
+func GetSystemConfig() (map[string]string, error) {
+	rows, err := DB.Query("SELECT key, value, description FROM system_config")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	config := make(map[string]string)
+	for rows.Next() {
+		var key, value, description string
+		if err := rows.Scan(&key, &value, &description); err != nil {
+			return nil, err
+		}
+		config[key] = value
+	}
+	return config, nil
+}
+
+// SetSystemConfig 设置系统配置
+func SetSystemConfig(key, value, description, updatedBy string) error {
+	now := time.Now().UTC()
+	_, err := DB.Exec(
+		"INSERT OR REPLACE INTO system_config (key, value, description, updated_at, updated_by) VALUES (?, ?, ?, ?, ?)",
+		key, value, description, now, updatedBy,
+	)
 	return err
 }

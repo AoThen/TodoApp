@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { indexedDBService, Task } from '../services/indexedDB';
 import { apiService } from '../services/api';
 import { syncManager } from '../services/syncManager';
+import AdminPanel from '../components/admin/AdminPanel';
 import './App.css';
 
 const App: React.FC = () => {
@@ -12,6 +13,8 @@ const App: React.FC = () => {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [authToken, setAuthToken] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
 
   // Initialize IndexedDB and load data
   useEffect(() => {
@@ -67,11 +70,23 @@ const App: React.FC = () => {
     try {
       const { access_token } = await apiService.login(email, password);
       setAuthToken(access_token);
+      localStorage.setItem('user_email', email);
+      await checkAdminStatus();
       await loadTasks();
       await syncManager.sync();
     } catch (error) {
       console.error('Login failed:', error);
       alert('Login failed. Please check your credentials.');
+    }
+  };
+
+  const checkAdminStatus = async () => {
+    try {
+      const usersResponse = await apiService.getCurrentUser();
+      localStorage.setItem('user_email', usersResponse.email);
+      setIsAdmin(usersResponse.email.includes('admin') || usersResponse.email === 'admin@example.com');
+    } catch (error) {
+      setIsAdmin(false);
     }
   };
 
@@ -184,10 +199,16 @@ const App: React.FC = () => {
     await apiService.logout();
     setAuthToken(null);
     setTasks([]);
+    setIsAdmin(false);
+    setShowAdminPanel(false);
   };
 
   if (isLoading) {
     return <div className="loading">Loading...</div>;
+  }
+
+  if (showAdminPanel) {
+    return <AdminPanel onBack={() => setShowAdminPanel(false)} />;
   }
 
   if (!authToken) {
@@ -217,6 +238,9 @@ const App: React.FC = () => {
           </button>
           <button onClick={() => handleExport('json')}>Export JSON</button>
           <button onClick={() => handleExport('csv')}>Export CSV</button>
+          {isAdmin && (
+            <button onClick={() => setShowAdminPanel(true)}>Admin Panel</button>
+          )}
           <button onClick={handleLogout}>Logout</button>
         </div>
       </header>

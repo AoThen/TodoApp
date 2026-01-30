@@ -14,6 +14,8 @@ services:
       - SERVER_PORT=${SERVER_PORT:-8080}
       - DATABASE_URL=/app/data/todoapp.db
       - TZ=${TZ:-Asia/Shanghai}
+      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-admin@example.com}
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-Admin123!}
     volumes:
       # 持久化数据库
       - todoapp-data:/app/data
