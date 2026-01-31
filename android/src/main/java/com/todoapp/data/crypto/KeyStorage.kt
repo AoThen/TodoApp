@@ -72,9 +72,6 @@ object KeyStorage {
         }
     }
 
-
-    }
-
     fun getKey(context: Context): String? {
         try {
             val prefs = context.getSharedPreferences(ENCRYPTION_PREFERENCE, Context.MODE_PRIVATE)
@@ -198,5 +195,4 @@ object KeyStorage {
 
     private fun isHttpUrl(s: String): Boolean {
         return s.startsWith("http://") || s.startsWith("https://")
-    }
-}
+   
