@@ -1,6 +1,7 @@
 package com.todoapp.data.remote
 
 import com.google.gson.annotations.SerializedName
+import okhttp.ResponseBody
 import retrofit2.Response
 import retrofit2.http.*
 

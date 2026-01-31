@@ -98,16 +98,14 @@ const App: React.FC = () => {
     const tempId = `local-${Date.now()}`;
     
     // Create local task
-    const localTask: Omit<Task, 'created_at' | 'updated_at'> = {
+    const localTask = {
       local_id: tempId,
       user_id: 'current-user',
       server_version: 0,
       title: newTaskTitle,
       description: '',
-      status: 'todo',
-      priority: 'medium',
-      created_at: now,
-      updated_at: now,
+      status: 'todo' as const,
+      priority: 'medium' as const,
       is_deleted: false,
       last_modified: now,
     };

@@ -1,5 +1,6 @@
 package com.todoapp.data.local
 
+import android.content.Context
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 
@@ -129,4 +130,19 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun deltaQueueDao(): DeltaQueueDao
     abstract fun syncMetaDao(): SyncMetaDao
     abstract fun conflictDao(): ConflictDao
+
+    companion object {
+        @Volatile
+        private var INSTANCE: AppDatabase? = null
+
+        fun getInstance(context: Context): AppDatabase {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "todoapp.db"
+                ).build().also { INSTANCE = it }
+            }
+        }
+    }
 }

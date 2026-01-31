@@ -5,8 +5,9 @@ import androidx.work.*
 import com.todoapp.data.local.AppDatabase
 import com.todoapp.data.local.DeltaChange
 import com.todoapp.data.local.SyncMeta
-import com.todoapp.data.remote.ApiService
+import com.todoapp.data.remote.DeltaChangeRequest
 import com.todoapp.data.remote.RetrofitClient
+import com.todoapp.data.remote.SyncRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
@@ -17,35 +18,37 @@ class DeltaSyncWorker(
 ) : CoroutineWorker(context, params) {
 
     private val database = AppDatabase.getInstance(context)
-    private val apiService = RetrofitClient.apiService
+    private val apiService = RetrofitClient.getApiService(context)
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
-            // Get pending deltas
             val pendingDeltas = database.deltaQueueDao().getAllDeltas()
             if (pendingDeltas.isEmpty()) {
                 return@withContext Result.success()
             }
 
-            // Get sync meta
             val syncMeta = database.syncMetaDao().getSyncMeta("current-user")
             val lastSyncAt = syncMeta?.lastSyncAt ?: ""
 
-            // Build sync request
-            val changes = pendingDeltas.map { delta ->
-                mapOf(
-                    "local_id" to delta.localId,
-                    "op" to delta.op,
-                    "payload" to delta.payload,
-                    "client_version" to delta.clientVersion
+            val changes: List<DeltaChangeRequest> = pendingDeltas.map { delta ->
+                DeltaChangeRequest(
+                    localId = delta.localId,
+                    op = delta.op,
+                    payload = mapOf("data" to delta.payload),
+                    clientVersion = delta.clientVersion
                 )
             }
 
-            // Perform sync
-            val response = apiService.sync(lastSyncAt, changes)
+            val request = SyncRequest(lastSyncAt, changes)
+            val response = apiService.sync(request)
 
-            // Apply server changes
-            for (serverChange in response.serverChanges) {
+            if (!response.isSuccessful || response.body() == null) {
+                return@withContext Result.retry()
+            }
+
+            val syncResponse = response.body()!!
+
+            for (serverChange in syncResponse.serverChanges) {
                 val task = database.taskDao().getTaskById(serverChange.id)
                 if (task != null) {
                     database.taskDao().updateTask(
@@ -60,16 +63,14 @@ class DeltaSyncWorker(
                 }
             }
 
-            // Clear acknowledged deltas
-            for (clientChange in response.clientChanges) {
+            for (clientChange in syncResponse.clientChanges) {
                 val delta = pendingDeltas.find { it.localId == clientChange.localId }
                 delta?.let {
                     database.deltaQueueDao().deleteDelta(it.id)
                 }
             }
 
-            // Handle conflicts
-            for (conflict in response.conflicts) {
+            for (conflict in syncResponse.conflicts) {
                 database.conflictDao().insertConflict(
                     com.todoapp.data.local.Conflict(
                         localId = conflict.localId,
@@ -81,11 +82,10 @@ class DeltaSyncWorker(
                 )
             }
 
-            // Update sync meta
             database.syncMetaDao().insertSyncMeta(
                 SyncMeta(
                     userId = "current-user",
-                    lastSyncAt = response.lastSyncAt
+                    lastSyncAt = syncResponse.lastSyncAt
                 )
             )
 
