@@ -24,6 +24,7 @@ import com.todoapp.data.crypto.AesGcmManager
 import com.todoapp.data.crypto.KeyStorage
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import android.view.SurfaceView
 
 class QRScannerActivity : AppCompatActivity() {
 
@@ -78,7 +79,7 @@ class QRScannerActivity : AppCompatActivity() {
             val preview = Preview.Builder()
                 .build()
                 .also {
-                    it.setSurfaceProvider(findViewById(android.R.id.content).rootView.findViewById<android.view.SurfaceView>(R.id.previewView)?.surfaceProvider)
+                    it.setSurfaceProvider((findViewById<SurfaceView>(R.id.previewView))?.surfaceProvider)
                 }
 
             val imageAnalyzer = ImageAnalysis.Builder()

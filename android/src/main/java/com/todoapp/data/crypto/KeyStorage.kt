@@ -31,7 +31,8 @@ object KeyStorage {
 
     fun hasKey(): Boolean {
         return try {
-            val encryptedKey = getEncryptedKey()
+            val prefs = context.getSharedPreferences(ENCRYPTION_PREFERENCE, Context.MODE_PRIVATE)
+            val encryptedKey = prefs.getString(KEY_KEY, null)
             encryptedKey != null
         } catch (e: Exception) {
             false

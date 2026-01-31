@@ -176,7 +176,13 @@ class IndexedDBService {
 
   async updateSyncMeta(userId: string, meta: Partial<SyncMeta>): Promise<void> {
     const existing = await this.getSyncMeta(userId);
-    await this.db!.put('sync_meta', { ...existing, user_id: userId, ...meta });
+    const mergedMeta: SyncMeta = {
+      user_id: userId,
+      last_server_version: 0,
+      ...existing,
+      ...meta,
+    };
+    await this.db!.put('sync_meta', mergedMeta);
   }
 
   // Conflict operations
