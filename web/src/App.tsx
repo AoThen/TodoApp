@@ -3,6 +3,7 @@ import { indexedDBService, Task } from './services/indexedDB';
 import { apiService } from './services/api';
 import { syncManager } from './services/syncManager';
 import AdminPanel from './components/admin/AdminPanel';
+import DevicePairing from './components/DevicePairing';
 import './App.css';
 
 const App: React.FC = () => {
@@ -15,6 +16,7 @@ const App: React.FC = () => {
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [showPairing, setShowPairing] = useState(false);
 
   // Initialize IndexedDB and load data
   useEffect(() => {
@@ -239,6 +241,7 @@ const App: React.FC = () => {
           {isAdmin && (
             <button onClick={() => setShowAdminPanel(true)}>Admin Panel</button>
           )}
+          <button onClick={() => setShowPairing(true)}>Device Pairing</button>
           <button onClick={handleLogout}>Logout</button>
         </div>
       </header>
@@ -281,6 +284,10 @@ const App: React.FC = () => {
           <p>Conflict resolution UI would go here</p>
           <button onClick={() => setShowConflicts(false)}>Close</button>
         </div>
+      )}
+
+      {showPairing && (
+        <DevicePairing onClose={() => setShowPairing(false)} />
       )}
     </div>
   );

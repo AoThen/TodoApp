@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"todoapp/internal/auth"
+	"todoapp/internal/crypto"
 	"todoapp/internal/db"
 	"todoapp/internal/response"
 	"todoapp/internal/validator"
@@ -49,6 +50,12 @@ func init() {
 	if len(secret) < 32 {
 		log.Fatal("错误: JWT_SECRET 至少需要 32 个字符")
 	}
+
+	// Initialize encryption module
+	if err := crypto.Init(); err != nil {
+		log.Fatalf("加密模块初始化失败: %v", err)
+	}
+	log.Println("加密模块已初始化")
 }
 
 // checkRateLimit 检查登录速率限制
@@ -120,6 +127,10 @@ func main() {
 	// Protected routes
 	protected := router.PathPrefix("/api/v1").Subrouter()
 	protected.Use(authMiddleware)
+
+	em := crypto.GetEncryptionMiddleware()
+	protected.Use(em.DecryptRequest)
+	protected.Use(em.EncryptResponse)
 
 	protected.HandleFunc("/users/me", handleMe).Methods("GET")
 	protected.HandleFunc("/tasks", handleTasks).Methods("GET", "POST")

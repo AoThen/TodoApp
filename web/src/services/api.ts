@@ -54,7 +54,7 @@ class ApiService {
             this.refreshPromise = null;
             
             // Retry the original request
-            return this.client(originalRequest);
+            return this.client(originalRequest as AxiosRequestConfig);
           } catch (refreshError) {
             this.refreshPromise = null;
             // Clear tokens and redirect to login
