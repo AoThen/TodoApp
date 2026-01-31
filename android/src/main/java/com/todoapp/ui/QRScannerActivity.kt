@@ -79,7 +79,8 @@ class QRScannerActivity : AppCompatActivity() {
             val preview = Preview.Builder()
                 .build()
                 .also {
-                    it.setSurfaceProvider((findViewById<SurfaceView>(R.id.previewView))?.surfaceProvider)
+                    val previewView = findViewById<android.view.SurfaceView>(R.id.previewView)
+                    it.setSurfaceProvider(previewView?.surfaceProvider)
                 }
 
             val imageAnalyzer = ImageAnalysis.Builder()

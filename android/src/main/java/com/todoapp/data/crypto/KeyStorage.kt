@@ -29,7 +29,7 @@ object KeyStorage {
         }
     }
 
-    fun hasKey(): Boolean {
+    fun hasKey(context: Context): Boolean {
         return try {
             val prefs = context.getSharedPreferences(ENCRYPTION_PREFERENCE, Context.MODE_PRIVATE)
             val encryptedKey = prefs.getString(KEY_KEY, null)

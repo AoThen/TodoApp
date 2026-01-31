@@ -78,6 +78,34 @@ class CryptoInterceptor private constructor(context: Context) : Interceptor {
         }
 
         val responseBody = response.body ?: return response
+        val responseBytes = bufferResponse(responseBody)
+
+        try {
+            val decrypted = AesGcmManager.decryptBytes(responseBytes, key)
+            val decryptedString = String(decrypted, Charsets.UTF_8)
+
+            return response.newBuilder()
+                .body(decryptedString.toResponseBody("application/json".toMediaType()))
+                .removeHeader("X-Encrypted")
+                .build()
+        } catch (e: Exception) {
+            return createErrorResponse(chain, "Decryption failed: ${e.message}")
+        }
+    }
+
+    private fun buffer(body: okhttp3.RequestBody): ByteArray {
+        val buffer = okio.Buffer()
+        body.writeTo(buffer)
+        return buffer.readByteArray()
+    }
+
+    private fun bufferResponse(body: okhttp3.ResponseBody): ByteArray {
+        val buffer = okio.Buffer()
+        body.writeTo(buffer)
+        return buffer.readByteArray()
+    }
+
+        val responseBody = response.body ?: return response
         val responseBytes = buffer(responseBody)
 
         try {

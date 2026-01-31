@@ -44,7 +44,7 @@ export async function encrypt(plaintext: string, keyHex?: string): Promise<strin
   combined.set(iv);
   combined.set(new Uint8Array(ciphertext), iv.length);
 
-  return btoa(String.fromCharCode(...combined));
+  return btoa(String.fromCharCode(...Array.from(combined)));
 }
 
 export async function decrypt(encryptedBase64: string, keyHex?: string): Promise<string> {
