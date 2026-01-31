@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { indexedDBService, Task } from './services/indexedDB';
 import { apiService } from './services/api';
 import { syncManager } from './services/syncManager';
-import AdminPanel from '../components/admin/AdminPanel';
+import AdminPanel from './components/admin/AdminPanel';
 import './App.css';
 
 const App: React.FC = () => {
