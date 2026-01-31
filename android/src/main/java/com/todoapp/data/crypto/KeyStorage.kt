@@ -195,4 +195,6 @@ object KeyStorage {
 
     private fun isHttpUrl(s: String): Boolean {
         return s.startsWith("http://") || s.startsWith("https://")
+    }
+}
    
