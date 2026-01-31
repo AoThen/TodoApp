@@ -38,7 +38,7 @@ class ApiService {
     this.client.interceptors.response.use(
       (response) => response,
       async (error: AxiosError) => {
-        const originalRequest = error.config as { _retry?: boolean } & Record<string, unknown>;
+        const originalRequest = error.config as unknown as { _retry?: boolean } & Record<string, unknown>;
         
         // Handle 401 Unauthorized
         if (error.response?.status === 401 && !originalRequest._retry) {
