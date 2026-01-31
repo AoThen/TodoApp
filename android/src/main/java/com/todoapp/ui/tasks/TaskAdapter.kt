@@ -3,11 +3,12 @@ package com.todoapp.ui.tasks
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.todoapp.R
-import com.todoapp.data.local.entities.Task
+import com.todoapp.data.local.Task
 import com.todoapp.databinding.ItemTaskBinding
 
 class TaskAdapter(
@@ -85,13 +86,13 @@ class TaskAdapter(
                     tvTaskDescription.alpha = 0.6f
                     tvTaskStatus.alpha = 0.6f
                     tvTaskPriority.alpha = 0.6f
-                    cardTask.strokeColor = root.context.getColor(R.color.task_status_completed)
+                    cardTask.strokeColor = ContextCompat.getColor(root.context, R.color.task_status_completed)
                 } else {
                     tvTaskTitle.alpha = 1.0f
                     tvTaskDescription.alpha = 1.0f
                     tvTaskStatus.alpha = 1.0f
                     tvTaskPriority.alpha = 1.0f
-                    cardTask.strokeColor = root.context.getColor(R.color.md_theme_light_outline)
+                    cardTask.strokeColor = ContextCompat.getColor(root.context, R.color.md_theme_light_outline)
                 }
                 
                 // Click listeners

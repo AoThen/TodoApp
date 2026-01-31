@@ -71,60 +71,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     private fun isValidPairingData(data: PairingData): Boolean {
         return data.type == "todoapp-pairing" &&
                data.v == 1 &&
-               data.key.matches(Regex("[0-9a-fA-F]{64}")) && // 32 bytes = 64 hex chars
-               data.server.isNotBlank() &&
-               data.expires > System.currentTimeMillis()
-    }
-}
-
-class PairingViewModel : ViewModel() {
-    
-    private val _pairingState = MutableStateFlow<PairingState>(PairingState.Idle)
-    val pairingState: StateFlow<PairingState> = _pairingState.asStateFlow()
-
-    fun pairDevice(qrData: String) {
-        viewModelScope.launch {
-            _pairingState.value = PairingState.Loading
-            
-            try {
-                // Parse QR data
-                val pairingData = parsePairingData(qrData)
-                
-                // Validate pairing data
-                if (!isValidPairingData(pairingData)) {
-                    _pairingState.value = PairingState.Error("无效的配对数据")
-                    return@launch
-                }
-                
-                // Store encryption key and server URL
-                KeyStorage.saveKey(
-                    viewModelScope.coroutineContext[androidx.compose.runtime.rememberCoroutineScope] as? Context 
-                        ?: throw IllegalStateException("Context not available"),
-                    pairingData.key,
-                    pairingData.server
-                )
-                
-                // Store server URL in RetrofitClient
-                RetrofitClient.setBaseUrl(pairingData.server)
-                
-                _pairingState.value = PairingState.Success("配对成功")
-                
-            } catch (e: JsonSyntaxException) {
-                _pairingState.value = PairingState.Error("二维码格式错误")
-            } catch (e: Exception) {
-                _pairingState.value = PairingState.Error("配对失败: ${e.message}")
-            }
-        }
-    }
-
-    private fun parsePairingData(qrData: String): PairingData {
-        return Gson().fromJson(qrData, PairingData::class.java)
-    }
-
-    private fun isValidPairingData(data: PairingData): Boolean {
-        return data.type == "todoapp-pairing" &&
-               data.v == 1 &&
-               data.key.matches(Regex("[0-9a-fA-F]{64}")) && // 32 bytes = 64 hex chars
+               data.key.matches(Regex("[0-9a-fA-F]{64}")) &&
                data.server.isNotBlank() &&
                data.expires > System.currentTimeMillis()
     }

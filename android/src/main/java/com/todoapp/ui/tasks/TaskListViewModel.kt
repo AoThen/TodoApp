@@ -3,15 +3,24 @@ package com.todoapp.ui.tasks
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.Constraints
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.todoapp.TodoApp
-import com.todoapp.data.local.entities.Task
-import com.todoapp.data.local.dao.TaskDao
+import com.todoapp.data.local.AppDatabase
+import com.todoapp.data.local.DeltaChange
+import com.todoapp.data.local.Task
 import com.todoapp.data.remote.RetrofitClient
+import com.todoapp.data.sync.DeltaSyncWorker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.util.*
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.UUID
 
 sealed class SyncState {
     object Idle : SyncState()
@@ -24,7 +33,8 @@ class TaskListViewModel(application: Application) : AndroidViewModel(application
     
     private val context = getApplication<TodoApp>().applicationContext
     private val database = (getApplication() as TodoApp).database
-    private val taskDao: TaskDao = database.taskDao()
+    private val taskDao = database.taskDao()
+    private val deltaQueueDao = database.deltaQueueDao()
     
     val tasks = taskDao.getAllTasks()
     
@@ -77,16 +87,15 @@ class TaskListViewModel(application: Application) : AndroidViewModel(application
             _syncState.value = SyncState.Syncing
             
             try {
-                // Use existing DeltaSyncWorker
-                val workRequest = androidx.work.OneTimeWorkRequestBuilder<com.todoapp.data.sync.DeltaSyncWorker>()
+                val workRequest = OneTimeWorkRequestBuilder<DeltaSyncWorker>()
                     .setConstraints(
-                        androidx.work.Constraints.Builder()
-                            .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                        Constraints.Builder()
+                            .setRequiredNetworkType(NetworkType.CONNECTED)
                             .build()
                     )
                     .build()
                 
-                androidx.work.WorkManager.getInstance(context).enqueue(workRequest)
+                WorkManager.getInstance(context).enqueue(workRequest)
                 
                 // Wait a moment and then check status (simplified)
                 kotlinx.coroutines.delay(2000)
@@ -102,7 +111,6 @@ class TaskListViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             while (true) {
                 try {
-                    // Simple connectivity check
                     val url = java.net.URL(RetrofitClient.getBaseUrl())
                     val connection = url.openConnection() as java.net.HttpURLConnection
                     connection.requestMethod = "HEAD"
@@ -122,7 +130,7 @@ class TaskListViewModel(application: Application) : AndroidViewModel(application
 
     private suspend fun addToDeltaQueue(operation: String, task: Task) {
         try {
-            val delta = com.todoapp.data.local.entities.DeltaChange(
+            val delta = DeltaChange(
                 localId = task.localId,
                 op = operation,
                 payload = com.google.gson.Gson().toJson(task),
@@ -130,14 +138,14 @@ class TaskListViewModel(application: Application) : AndroidViewModel(application
                 timestamp = getCurrentTimestamp()
             )
             
-            database.deltaQueueDao().insertDelta(delta)
+            deltaQueueDao.insertDelta(delta)
         } catch (e: Exception) {
             // Handle error
         }
     }
 
     private fun getCurrentTimestamp(): String {
-        return java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault())
+        return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault())
             .format(Date())
     }
 }

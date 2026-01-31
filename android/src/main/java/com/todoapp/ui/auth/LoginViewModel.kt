@@ -5,6 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.todoapp.TodoApp
 import com.todoapp.data.remote.ApiService
+import com.todoapp.data.remote.LoginRequest
+import com.todoapp.data.remote.LoginResponse
 import com.todoapp.data.remote.RetrofitClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,7 +43,7 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
             
             try {
                 val response = apiService.login(
-                    com.todoapp.data.remote.ApiModels.LoginRequest(
+                    LoginRequest(
                         email = email,
                         password = password
                     )
@@ -51,12 +53,9 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
                     val loginResponse = response.body()
                     if (loginResponse != null) {
                         // Store access token
-                        RetrofitClient.saveAccessToken(context, loginResponse.access_token)
+                        RetrofitClient.saveAccessToken(context, loginResponse.accessToken)
                         
-                        // Schedule periodic sync
-                        scheduleBackgroundSync()
-                        
-                        _loginState.value = LoginState.Success(loginResponse.access_token)
+                        _loginState.value = LoginState.Success(loginResponse.accessToken)
                     } else {
                         _loginState.value = LoginState.Error("登录响应为空")
                     }
@@ -134,7 +133,6 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
     private fun parseErrorMessage(errorBody: String?): String {
         return try {
             if (errorBody != null) {
-                // Try to parse JSON error message
                 val gson = com.google.gson.Gson()
                 val errorMap = gson.fromJson(errorBody, Map::class.java)
                 errorMap["message"] as? String ?: "登录失败"
@@ -143,22 +141,6 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
             }
         } catch (e: Exception) {
             "登录失败"
-        }
-    }
-
-    private fun scheduleBackgroundSync() {
-        try {
-            val workRequest = androidx.work.OneTimeWorkRequestBuilder<com.todoapp.data.sync.DeltaSyncWorker>()
-                .setConstraints(
-                    androidx.work.Constraints.Builder()
-                        .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
-                        .build()
-                )
-                .build()
-            
-            androidx.work.WorkManager.getInstance(context).enqueue(workRequest)
-        } catch (e: Exception) {
-            // Handle error
         }
     }
 }

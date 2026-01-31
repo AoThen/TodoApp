@@ -164,6 +164,10 @@ class QRScannerActivity : AppCompatActivity() {
             .setTitle("配对成功")
             .setMessage("设备已成功配对到: $serverUrl\n\n所有通信现在将使用 AES-256-GCM 加密。")
             .setPositiveButton("确定") { _, _ ->
+                val resultIntent = Intent().apply {
+                    putExtra(EXTRA_QR_RESULT, "success")
+                }
+                setResult(RESULT_SUCCESS, resultIntent)
                 finish()
             }
             .setCancelable(false)
@@ -263,5 +267,8 @@ class QRScannerActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "QRScannerActivity"
+        const val EXTRA_QR_RESULT = "qr_result"
+        const val RESULT_SUCCESS = 1001
+        const val RESULT_FAILED = 1002
     }
 }

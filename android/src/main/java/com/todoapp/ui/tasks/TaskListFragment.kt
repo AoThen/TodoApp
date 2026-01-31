@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
@@ -12,6 +13,7 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.todoapp.R
+import com.todoapp.data.local.Task
 import com.todoapp.databinding.FragmentTaskListBinding
 import kotlinx.coroutines.launch
 
@@ -42,13 +44,13 @@ class TaskListFragment : Fragment() {
 
     private fun setupRecyclerView() {
         taskAdapter = TaskAdapter(
-            onTaskClick = { task ->
+            onTaskClick = { task: Task ->
                 navigateToTaskDetail(task.localId)
             },
-            onTaskComplete = { task ->
+            onTaskComplete = { task: Task ->
                 viewModel.toggleTaskCompletion(task)
             },
-            onTaskDelete = { task ->
+            onTaskDelete = { task: Task ->
                 showDeleteTaskDialog(task)
             }
         )
@@ -71,7 +73,7 @@ class TaskListFragment : Fragment() {
 
     private fun setupObservers() {
         viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.tasks.collect { tasks ->
+            viewModel.tasks.collect { tasks: List<Task> ->
                 taskAdapter.submitList(tasks)
                 updateEmptyState(tasks.isEmpty())
             }
@@ -103,7 +105,7 @@ class TaskListFragment : Fragment() {
         }
         
         viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.connectionState.collect { isConnected ->
+            viewModel.connectionState.collect { isConnected: Boolean ->
                 updateSyncStatus(isConnected)
             }
         }
@@ -129,9 +131,9 @@ class TaskListFragment : Fragment() {
         binding.tvSyncStatus.text = statusText
         
         val statusColor = if (isConnected) {
-            getColor(com.google.android.material.R.attr.colorPrimary)
+            ContextCompat.getColor(requireContext(), R.color.md_theme_light_primary)
         } else {
-            getColor(com.google.android.material.R.attr.colorError)
+            ContextCompat.getColor(requireContext(), R.color.md_theme_light_error)
         }
         
         binding.tvSyncStatus.setTextColor(statusColor)
@@ -151,7 +153,7 @@ class TaskListFragment : Fragment() {
         findNavController().navigate(R.id.action_taskListFragment_to_addTaskFragment)
     }
 
-    private fun showDeleteTaskDialog(task: com.todoapp.data.local.entities.Task) {
+    private fun showDeleteTaskDialog(task: Task) {
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(getString(R.string.task_delete))
             .setMessage("确定要删除任务 \"${task.title}\" 吗？")

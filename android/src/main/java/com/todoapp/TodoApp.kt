@@ -6,13 +6,12 @@ import androidx.work.WorkManager
 import com.todoapp.data.crypto.KeyStorage
 import com.todoapp.data.local.AppDatabase
 import com.todoapp.data.remote.RetrofitClient
-import com.todoapp.data.sync.DeltaSyncWorker
 
 class TodoApp : Application(), Configuration.Provider {
 
     // Database instance
     val database: AppDatabase by lazy {
-        AppDatabase.getDatabase(this)
+        AppDatabase.getInstance(this)
     }
 
     // Repository instances
@@ -27,10 +26,11 @@ class TodoApp : Application(), Configuration.Provider {
         WorkManager.initialize(this, workManagerConfiguration)
     }
 
-    override val workManagerConfiguration: Configuration
-        get() = Configuration.Builder()
+    override fun getWorkManagerConfiguration(): Configuration {
+        return Configuration.Builder()
             .setMinimumLoggingLevel(if (BuildConfig.DEBUG) android.util.Log.DEBUG else android.util.Log.ERROR)
             .build()
+    }
 
     /**
      * Check if user is already paired (has encryption key)
