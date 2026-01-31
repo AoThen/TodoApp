@@ -213,7 +213,7 @@ const UserManagement: React.FC = () => {
                     type="password"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    required={showModal !== 'edit'}
+                    required={true}
                     minLength={8}
                   />
                 </div>
