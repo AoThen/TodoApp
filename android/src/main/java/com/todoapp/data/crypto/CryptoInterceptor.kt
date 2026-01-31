@@ -42,7 +42,7 @@ class CryptoInterceptor private constructor(context: Context) : Interceptor {
         if (shouldEncrypt && originalRequest.header("X-Encrypted") == null) {
             val originalBody = originalRequest.body ?: return chain.proceed(originalRequest)
 
-            val originalBodyBytes = buffer(originalBody)
+            val originalBodyBytes = bufferRequest(originalBody)
             val bodyString = originalBodyBytes.clone().toString(Charsets.UTF_8)
 
             if (bodyString.isNotEmpty()) {
@@ -93,7 +93,7 @@ class CryptoInterceptor private constructor(context: Context) : Interceptor {
         }
     }
 
-    private fun buffer(body: okhttp3.RequestBody): ByteArray {
+    private fun bufferRequest(body: okhttp3.RequestBody): ByteArray {
         val buffer = okio.Buffer()
         body.writeTo(buffer)
         return buffer.readByteArray()
@@ -103,22 +103,6 @@ class CryptoInterceptor private constructor(context: Context) : Interceptor {
         val buffer = okio.Buffer()
         body.writeTo(buffer)
         return buffer.readByteArray()
-    }
-
-        val responseBody = response.body ?: return response
-        val responseBytes = buffer(responseBody)
-
-        try {
-            val decrypted = AesGcmManager.decryptBytes(responseBytes, key)
-            val decryptedString = String(decrypted, Charsets.UTF_8)
-
-            return response.newBuilder()
-                .body(decryptedString.toResponseBody("application/json".toMediaType()))
-                .removeHeader("X-Encrypted")
-                .build()
-        } catch (e: Exception) {
-            return createErrorResponse(chain, "Decryption failed: ${e.message}")
-        }
     }
 
     private fun shouldEncryptPath(path: String, method: String): Boolean {
@@ -131,12 +115,6 @@ class CryptoInterceptor private constructor(context: Context) : Interceptor {
             path.contains("/admin/") -> false
             else -> true
         }
-    }
-
-    private fun buffer(body: okhttp3.RequestBody): ByteArray {
-        val buffer = okio.Buffer()
-        body.writeTo(buffer)
-        return buffer.readByteArray()
     }
 
     private fun createErrorResponse(chain: Interceptor.Chain, message: String): Response {

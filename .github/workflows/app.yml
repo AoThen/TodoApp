@@ -60,7 +60,7 @@ jobs:
 
 
       - name: Build Android Debug APK
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleDebug  --no-daemon
         working-directory: android
 
       # - name: Build Android Release APK
