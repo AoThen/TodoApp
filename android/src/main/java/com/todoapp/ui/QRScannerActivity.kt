@@ -22,9 +22,9 @@ import com.google.mlkit.vision.common.InputImage
 import com.todoapp.R
 import com.todoapp.data.crypto.AesGcmManager
 import com.todoapp.data.crypto.KeyStorage
+import androidx.camera.view.PreviewView
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import android.view.SurfaceView
 
 class QRScannerActivity : AppCompatActivity() {
 
@@ -79,8 +79,8 @@ class QRScannerActivity : AppCompatActivity() {
             val preview = Preview.Builder()
                 .build()
                 .also {
-                    val previewView = findViewById<android.view.SurfaceView>(R.id.previewView)
-                    it.setSurfaceProvider(previewView?.getSurfaceProvider())
+                    val previewView = findViewById<PreviewView>(R.id.previewView)
+                    it.setSurfaceProvider(previewView.getSurfaceProvider())
                 }
 
             val imageAnalyzer = ImageAnalysis.Builder()
