@@ -100,9 +100,7 @@ class CryptoInterceptor private constructor(context: Context) : Interceptor {
     }
 
     private fun bufferResponse(body: okhttp3.ResponseBody): ByteArray {
-        val buffer = okio.Buffer()
-        body.writeTo(buffer)
-        return buffer.readByteArray()
+        return body.byteStream().readBytes()
     }
 
     private fun shouldEncryptPath(path: String, method: String): Boolean {

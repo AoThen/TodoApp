@@ -80,7 +80,7 @@ class QRScannerActivity : AppCompatActivity() {
                 .build()
                 .also {
                     val previewView = findViewById<android.view.SurfaceView>(R.id.previewView)
-                    it.setSurfaceProvider(previewView?.surfaceProvider)
+                    it.setSurfaceProvider(previewView?.getSurfaceProvider())
                 }
 
             val imageAnalyzer = ImageAnalysis.Builder()
