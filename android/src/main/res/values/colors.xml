@@ -1,5 +1,77 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Light theme colors -->
+    <color name="md_theme_light_primary">#0061a4</color>
+    <color name="md_theme_light_onPrimary">#ffffff</color>
+    <color name="md_theme_light_primaryContainer">#d1e4ff</color>
+    <color name="md_theme_light_onPrimaryContainer">#001d36</color>
+    <color name="md_theme_light_secondary">#535f70</color>
+    <color name="md_theme_light_onSecondary">#ffffff</color>
+    <color name="md_theme_light_secondaryContainer">#d7e3f7</color>
+    <color name="md_theme_light_onSecondaryContainer">#101c2b</color>
+    <color name="md_theme_light_tertiary">#6b5778</color>
+    <color name="md_theme_light_onTertiary">#ffffff</color>
+    <color name="md_theme_light_tertiaryContainer">#f2daff</color>
+    <color name="md_theme_light_onTertiaryContainer">#251431</color>
+    <color name="md_theme_light_error">#ba1a1a</color>
+    <color name="md_theme_light_onError">#ffffff</color>
+    <color name="md_theme_light_errorContainer">#ffdad6</color>
+    <color name="md_theme_light_onErrorContainer">#410002</color>
+    <color name="md_theme_light_background">#fdfbff</color>
+    <color name="md_theme_light_onBackground">#1a1b1e</color>
+    <color name="md_theme_light_surface">#fdfbff</color>
+    <color name="md_theme_light_onSurface">#1a1b1e</color>
+    <color name="md_theme_light_surfaceVariant">#dfe2eb</color>
+    <color name="md_theme_light_onSurfaceVariant">#43474e</color>
+    <color name="md_theme_light_outline">#73777f</color>
+    <color name="md_theme_light_outlineVariant">#c3c7cf</color>
+    <color name="md_theme_light_scrim">#000000</color>
+    <color name="md_theme_light_inverseSurface">#2f3033</color>
+    <color name="md_theme_light_inverseOnSurface">#f0f0f3</color>
+    <color name="md_theme_light_inversePrimary">#a0cafd</color>
+    
+    <!-- Dark theme colors -->
+    <color name="md_theme_dark_primary">#a0cafd</color>
+    <color name="md_theme_dark_onPrimary">#003258</color>
+    <color name="md_theme_dark_primaryContainer">#00497d</color>
+    <color name="md_theme_dark_onPrimaryContainer">#d1e4ff</color>
+    <color name="md_theme_dark_secondary">#bbc7db</color>
+    <color name="md_theme_dark_onSecondary">#253140</color>
+    <color name="md_theme_dark_secondaryContainer">#3b4858</color>
+    <color name="md_theme_dark_onSecondaryContainer">#d7e3f7</color>
+    <color name="md_theme_dark_tertiary">#d6bee4</color>
+    <color name="md_theme_dark_onTertiary">#3a2947</color>
+    <color name="md_theme_dark_tertiaryContainer">#513f5e</color>
+    <color name="md_theme_dark_onTertiaryContainer">#f2daff</color>
+    <color name="md_theme_dark_error">#ffb4ab</color>
+    <color name="md_theme_dark_onError">#690005</color>
+    <color name="md_theme_dark_errorContainer">#93000a</color>
+    <color name="md_theme_dark_onErrorContainer">#ffdad6</color>
+    <color name="md_theme_dark_background">#1a1b1e</color>
+    <color name="md_theme_dark_onBackground">#e3e2e6</color>
+    <color name="md_theme_dark_surface">#1a1b1e</color>
+    <color name="md_theme_dark_onSurface">#e3e2e6</color>
+    <color name="md_theme_dark_surfaceVariant">#43474e</color>
+    <color name="md_theme_dark_onSurfaceVariant">#c3c7cf</color>
+    <color name="md_theme_dark_outline">#8d9199</color>
+    <color name="md_theme_dark_outlineVariant">#43474e</color>
+    <color name="md_theme_dark_scrim">#000000</color>
+    <color name="md_theme_dark_inverseSurface">#e3e2e6</color>
+    <color name="md_theme_dark_inverseOnSurface">#1a1b1e</color>
+    <color name="md_theme_dark_inversePrimary">#0061a4</color>
+    
+    <!-- Additional app colors -->
+    <color name="seed">#0061a4</color>
+    <color name="task_status_todo">#757575</color>
+    <color name="task_status_in_progress">#ff9800</color>
+    <color name="task_status_completed">#4caf50</color>
+    
+    <!-- Priority colors -->
+    <color name="priority_low">#4caf50</color>
+    <color name="priority_medium">#ff9800</color>
+    <color name="priority_high">#f44336</color>
+    
+    <!-- Legacy colors for compatibility -->
     <color name="purple_200">#FFBB86FC</color>
     <color name="purple_500">#FF6200EE</color>
     <color name="purple_700">#FF3700B3</color>

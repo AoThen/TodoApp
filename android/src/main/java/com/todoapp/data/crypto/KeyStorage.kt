@@ -72,6 +72,9 @@ object KeyStorage {
         }
     }
 
+
+    }
+
     fun getKey(context: Context): String? {
         try {
             val prefs = context.getSharedPreferences(ENCRYPTION_PREFERENCE, Context.MODE_PRIVATE)

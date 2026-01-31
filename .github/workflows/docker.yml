@@ -1,6 +1,10 @@
 name: "Publish Server Container Image"
 on:
   push:
+    paths:
+      - 'web/**'
+      - 'internal/**'
+      - '.github/workflows/docker.yml'
   workflow_dispatch: # 添加手动触发
 jobs:
   build-and-push:

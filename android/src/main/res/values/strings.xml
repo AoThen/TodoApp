@@ -1,4 +1,87 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- App name -->
     <string name="app_name">TodoApp</string>
+    
+    <!-- Navigation -->
+    <string name="nav_tasks">任务</string>
+    <string name="nav_calendar">日历</string>
+    <string name="nav_settings">设置</string>
+    
+    <!-- Pairing -->
+    <string name="pairing_title">设备配对</string>
+    <string name="pairing_scan_qr">扫描二维码</string>
+    <string name="pairing_manual_pair">手动配对</string>
+    <string name="pairing_instructions">将二维码放入框内进行扫描</string>
+    <string name="pairing_success">配对成功</string>
+    <string name="pairing_failed">配对失败</string>
+    <string name="pairing_invalid_qr">无效二维码</string>
+    <string name="pairing_camera_permission_required">需要相机权限</string>
+    
+    <!-- Authentication -->
+    <string name="login_title">登录</string>
+    <string name="login_email">邮箱</string>
+    <string name="login_password">密码</string>
+    <string name="login_button">登录</string>
+    <string name="login_success">登录成功</string>
+    <string name="login_failed">登录失败</string>
+    <string name="login_email_hint">请输入邮箱</string>
+    <string name="login_password_hint">请输入密码</string>
+    
+    <!-- Tasks -->
+    <string name="tasks_title">任务列表</string>
+    <string name="tasks_empty">暂无任务</string>
+    <string name="tasks_add">添加任务</string>
+    <string name="task_title_hint">任务标题</string>
+    <string name="task_description_hint">任务描述</string>
+    <string name="task_create">创建</string>
+    <string name="task_update">更新</string>
+    <string name="task_delete">删除</string>
+    <string name="task_complete">完成</string>
+    <string name="task_priority_low">低</string>
+    <string name="task_priority_medium">中</string>
+    <string name="task_priority_high">高</string>
+    <string name="task_status_todo">待办</string>
+    <string name="task_status_in_progress">进行中</string>
+    <string name="task_status_completed">已完成</string>
+    
+    <!-- Sync -->
+    <string name="sync_status_syncing">同步中...</string>
+    <string name="sync_status_online">在线</string>
+    <string name="sync_status_offline">离线</string>
+    <string name="sync_last_sync">最后同步: %s</string>
+    <string name="sync_sync_now">立即同步</string>
+    <string name="sync_success">同步成功</string>
+    <string name="sync_failed">同步失败</string>
+    <string name="sync_conflicts_found">发现冲突</string>
+    
+    <!-- Settings -->
+    <string name="settings_title">设置</string>
+    <string name="settings_account">账户</string>
+    <string name="settings_device_pairing">设备配对</string>
+    <string name="settings_clear_data">清除数据</string>
+    <string name="settings_sync_settings">同步设置</string>
+    <string name="settings_auto_sync">自动同步</string>
+    <string name="settings_sync_interval">同步间隔</string>
+    <string name="settings_logout">退出登录</string>
+    
+    <!-- Common -->
+    <string name="ok">确定</string>
+    <string name="cancel">取消</string>
+    <string name="save">保存</string>
+    <string name="delete">删除</string>
+    <string name="edit">编辑</string>
+    <string name="close">关闭</string>
+    <string name="loading">加载中...</string>
+    <string name="error_occurred">发生错误</string>
+    <string name="network_error">网络错误</string>
+    <string name="unknown_error">未知错误</string>
+    
+    <!-- Content descriptions for accessibility -->
+    <string name="cd_task_priority">任务优先级</string>
+    <string name="cd_task_status">任务状态</string>
+    <string name="cd_add_task">添加新任务</string>
+    <string name="cd_sync_status">同步状态</string>
+    <string name="cd_menu">菜单</string>
+    <string name="cd_back">返回</string>
 </resources>

@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/pairingFragment">
+
+    <!-- Pairing Fragment -->
+    <fragment
+        android:id="@+id/pairingFragment"
+        android:name="com.todoapp.ui.pairing.PairingFragment"
+        android:label="@string/pairing_title"
+        tools:layout="@layout/fragment_pairing">
+        
+        <action
+            android:id="@+id/action_pairingFragment_to_loginFragment"
+            app:destination="@id/loginFragment"
+            app:popUpTo="@id/pairingFragment"
+            app:popUpToInclusive="true" />
+    </fragment>
+
+    <!-- Login Fragment -->
+    <fragment
+        android:id="@+id/loginFragment"
+        android:name="com.todoapp.ui.auth.LoginFragment"
+        android:label="@string/login_title"
+        tools:layout="@layout/fragment_login">
+        
+        <action
+            android:id="@+id/action_loginFragment_to_taskListFragment"
+            app:destination="@id/taskListFragment"
+            app:popUpTo="@id/nav_graph"
+            app:popUpToInclusive="true" />
+    </fragment>
+
+    <!-- Task List Fragment -->
+    <fragment
+        android:id="@+id/taskListFragment"
+        android:name="com.todoapp.ui.tasks.TaskListFragment"
+        android:label="@string/tasks_title"
+        tools:layout="@layout/fragment_task_list">
+        
+        <action
+            android:id="@+id/action_taskListFragment_to_taskDetailFragment"
+            app:destination="@id/taskDetailFragment" />
+        
+        <action
+            android:id="@+id/action_taskListFragment_to_addTaskFragment"
+            app:destination="@id/addTaskFragment" />
+    </fragment>
+
+    <!-- Task Detail Fragment -->
+    <fragment
+        android:id="@+id/taskDetailFragment"
+        android:name="com.todoapp.ui.tasks.TaskDetailFragment"
+        android:label="任务详情"
+        tools:layout="@layout/fragment_task_detail">
+        
+        <argument
+            android:name="taskId"
+            app:argType="string" />
+    </fragment>
+
+    <!-- Add Task Fragment -->
+    <fragment
+        android:id="@+id/addTaskFragment"
+        android:name="com.todoapp.ui.tasks.AddTaskFragment"
+        android:label="添加任务"
+        tools:layout="@layout/fragment_add_task" />
+
+    <!-- Calendar Fragment -->
+    <fragment
+        android:id="@+id/calendarFragment"
+        android:name="com.todoapp.ui.calendar.CalendarFragment"
+        android:label="@string/nav_calendar"
+        tools:layout="@layout/fragment_calendar" />
+
+    <!-- Settings Fragment -->
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.todoapp.ui.settings.SettingsFragment"
+        android:label="@string/settings_title"
+        tools:layout="@layout/fragment_settings">
+        
+        <action
+            android:id="@+id/action_settingsFragment_to_pairingFragment"
+            app:destination="@id/pairingFragment" />
+    </fragment>
+
+</navigation>

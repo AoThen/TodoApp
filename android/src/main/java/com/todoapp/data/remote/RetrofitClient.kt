@@ -12,11 +12,12 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 
-object RetrofitClient {
-    // Base URL - should be configured via BuildConfig in production
-    private const val BASE_URL = "http://10.0.2.2:8080/api/v1/"
+ object RetrofitClient {
+    // Default Base URL - can be changed via setBaseUrl
+    private var BASE_URL = "http://10.0.2.2:8080/api/v1/"
     private const val PREFS_NAME = "todoapp_prefs"
     private const val ACCESS_TOKEN_KEY = "access_token"
+    private const val BASE_URL_KEY = "base_url"
 
     // Timeout configurations
     private const val CONNECT_TIMEOUT = 30L
@@ -146,5 +147,35 @@ object RetrofitClient {
         } catch (e: Exception) {
             false
         }
+    }
+
+    fun getAccessToken(context: Context): String {
+        return try {
+            val prefs = getEncryptedPrefs(context)
+            prefs.getString(ACCESS_TOKEN_KEY, "") ?: ""
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    fun setBaseUrl(baseUrl: String) {
+        // Ensure the base URL ends with /
+        BASE_URL = if (baseUrl.endsWith("/")) {
+            if (!baseUrl.endsWith("/api/v1/")) {
+                baseUrl + "api/v1/"
+            } else {
+                baseUrl
+            }
+        } else {
+            baseUrl + "/api/v1/"
+        }
+        
+        // Reset retrofit to use new base URL
+        retrofit = null
+        apiService = null
+    }
+
+    fun getBaseUrl(): String {
+        return BASE_URL
     }
 }
