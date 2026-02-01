@@ -25,9 +25,9 @@ class NotificationFragment : Fragment() {
     private val pageSize: Int = 20
     private var totalNotifications: Int = 0
 
-    private val companion = object {
-        const val TAG = "NotificationFragment"
-        const val ARG_USER_ID = "user_id"
+    private object Config {
+        val TAG = "NotificationFragment"
+        val ARG_USER_ID = "user_id"
     }
 
     override fun onCreateView(
@@ -41,7 +41,7 @@ class NotificationFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        userId = arguments?.getInt(ARG_USER_ID) ?: 0
+        userId = arguments?.getInt(Config.ARG_USER_ID) ?: 0
         notificationManager = NotificationManager(requireContext(), userId)
 
         setupRecyclerView(view)

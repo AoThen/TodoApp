@@ -18,10 +18,10 @@ class NotificationManager(
     private val notificationManager = NotificationManagerCompat.from(context)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    private val companion = object {
-        const val CHANNEL_ID = "todoapp_notifications"
-        const val CHANNEL_NAME = "TodoApp 通知"
-        const val CHANNEL_DESC = "TodoApp 系统通知"
+    private object Config {
+        val CHANNEL_ID = "todoapp_notifications"
+        val CHANNEL_NAME = "TodoApp 通知"
+        val CHANNEL_DESC = "TodoApp 系统通知"
     }
 
     init {
@@ -31,11 +31,11 @@ class NotificationManager(
     private fun createNotificationChannel() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             val channel = android.app.NotificationChannel(
-                companion.CHANNEL_ID,
-                companion.CHANNEL_NAME,
+                Config.CHANNEL_ID,
+                Config.CHANNEL_NAME,
                 android.app.NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = companion.CHANNEL_DESC
+                description = Config.CHANNEL_DESC
                 enableVibration(true)
                 enableLights(true)
             }
@@ -84,7 +84,7 @@ class NotificationManager(
             else -> NotificationCompat.PRIORITY_DEFAULT
         }
 
-        val notification = NotificationCompat.Builder(context, companion.CHANNEL_ID)
+        val notification = NotificationCompat.Builder(context, Config.CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(content)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
