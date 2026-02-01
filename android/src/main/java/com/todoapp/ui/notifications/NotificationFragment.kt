@@ -81,7 +81,7 @@ class NotificationFragment : Fragment() {
                 adapter.submitList(notifications)
                 updateUnreadCount()
             } catch (e: Exception) {
-                android.util.Log.e(companion.TAG, "Failed to load notifications", e)
+                android.util.Log.e(Config.TAG, "Failed to load notifications", e)
                 Toast.makeText(requireContext(), "加载失败", Toast.LENGTH_SHORT).show()
             }
         }
@@ -90,7 +90,7 @@ class NotificationFragment : Fragment() {
     private suspend fun updateUnreadCount() {
         val unreadCount = notificationManager.getUnreadCount()
         // 更新UI显示未读数量
-        android.util.Log.d(companion.TAG, "Unread count: $unreadCount")
+        android.util.Log.d(Config.TAG, "Unread count: $unreadCount")
     }
 
     private fun handleMarkAsRead(notificationId: Long) {
@@ -125,7 +125,7 @@ class NotificationFragment : Fragment() {
                 Toast.makeText(requireContext(), "没有未读通知", Toast.LENGTH_SHORT).show()
             }
         } catch (e: Exception) {
-            android.util.Log.e(companion.TAG, "Failed to mark all as read", e)
+            android.util.Log.e(Config.TAG, "Failed to mark all as read", e)
             Toast.makeText(requireContext(), "操作失败", Toast.LENGTH_SHORT).show()
         }
     }
@@ -153,7 +153,7 @@ class NotificationFragment : Fragment() {
                 Toast.makeText(requireContext(), "没有通知可清空", Toast.LENGTH_SHORT).show()
             }
         } catch (e: Exception) {
-            android.util.Log.e(companion.TAG, "Failed to clear notifications", e)
+            android.util.Log.e(Config.TAG, "Failed to clear notifications", e)
             Toast.makeText(requireContext(), "操作失败", Toast.LENGTH_SHORT).show()
         }
     }

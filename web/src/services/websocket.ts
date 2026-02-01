@@ -143,7 +143,7 @@ class WebSocketService {
       return new TextDecoder().decode(data);
     }
 
-    const encrypted = btoa(String.fromCharCode(...new Uint8Array(data)));
+    const encrypted = btoa(String.fromCharCode(...Array.from(new Uint8Array(data))));
     const decrypted = await cryptoDecrypt(encrypted);
     return decrypted;
   }
