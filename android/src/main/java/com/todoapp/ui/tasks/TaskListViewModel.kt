@@ -50,15 +50,13 @@ class TaskListViewModel(application: Application) : AndroidViewModel(application
 
     fun toggleTaskCompletion(task: Task) {
         viewModelScope.launch {
+            val isCompleting = task.status != "completed"
             val updatedTask = task.copy(
-                status = if (task.status == "completed") "todo" else "completed",
+                status = if (isCompleting) "completed" else "todo",
                 updatedAt = getCurrentTimestamp(),
-                lastModified = getCurrentTimestamp()
+                lastModified = getCurrentTimestamp(),
+                completedAt = if (isCompleting) getCurrentTimestamp() else null
             )
-            
-            if (task.status != "completed") {
-                updatedTask.completedAt = getCurrentTimestamp()
-            }
             
             taskDao.updateTask(updatedTask)
             
