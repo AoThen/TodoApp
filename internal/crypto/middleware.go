@@ -37,6 +37,7 @@ var noEncryptionPaths = map[string]bool{
 	"/api/v1/admin/config":       true,
 	"/api/v1/admin/users":        true,
 	"/api/v1/admin/users/create": true,
+	"/ws":                        true,
 }
 
 func (em *EncryptionMiddleware) ShouldEncrypt(path string, method string) bool {

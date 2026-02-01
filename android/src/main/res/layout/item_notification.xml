@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="8dp"
+    app:cardCornerRadius="8dp"
+    app:cardElevation="2dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp">
+
+        <!-- Priority Indicator -->
+        <View
+            android:id="@+id/priorityIndicator"
+            android:layout_width="4dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="12dp"
+            android:background="#FF3B30" />
+
+        <!-- Content -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <!-- Title and Time -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/notificationTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="通知标题"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="#333333"
+                    android:ellipsize="end"
+                    android:maxLines="1" />
+
+                <TextView
+                    android:id="@+id/notificationTime"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="10:30"
+                    android:textSize="12sp"
+                    android:textColor="#999999" />
+            </LinearLayout>
+
+            <!-- Content -->
+            <TextView
+                android:id="@+id/notificationContent"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="通知内容"
+                android:textSize="13sp"
+                android:textColor="#666666"
+                android:ellipsize="end"
+                android:maxLines="2" />
+
+            <!-- Actions -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal"
+                android:gravity="end">
+
+                <Button
+                    android:id="@+id/btnMarkRead"
+                    android:layout_width="wrap_content"
+                    android:layout_height="28dp"
+                    android:layout_marginEnd="8dp"
+                    android:text="标记已读"
+                    android:textSize="11sp"
+                    android:visibility="gone"
+                    android:backgroundTint="#007AFF" />
+
+                <Button
+                    android:id="@+id/btnDelete"
+                    android:layout_width="wrap_content"
+                    android:layout_height="28dp"
+                    android:text="删除"
+                    android:textSize="11sp"
+                    android:backgroundTint="#FF3B30" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Unread Badge -->
+        <View
+            android:id="@+id/unreadBadge"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/ic_launcher_foreground"
+            android:backgroundTint="#FF3B30"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+</androidx.cardview.widget.CardView>

@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -139,6 +140,42 @@ func InitDB(dataSourceName string) error {
 		`CREATE INDEX IF NOT EXISTS idx_tokens_expires_at ON tokens(expires_at);`,
 		`CREATE INDEX IF NOT EXISTS idx_login_logs_email ON login_logs(email);`,
 		`CREATE INDEX IF NOT EXISTS idx_login_logs_timestamp ON login_logs(timestamp);`,
+		`CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            priority TEXT DEFAULT 'normal',
+            is_read BOOLEAN DEFAULT 0,
+            read_at DATETIME,
+            expires_at DATETIME,
+            created_at DATETIME DEFAULT (datetime('now')),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );`,
+		`CREATE TABLE IF NOT EXISTS notification_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type TEXT UNIQUE NOT NULL,
+            title_template TEXT NOT NULL,
+            content_template TEXT NOT NULL,
+            priority TEXT DEFAULT 'normal',
+            enabled BOOLEAN DEFAULT 1,
+            created_at DATETIME DEFAULT (datetime('now')),
+            updated_at DATETIME DEFAULT (datetime('now'))
+        );`,
+		`CREATE TABLE IF NOT EXISTS notification_settings (
+            user_id INTEGER PRIMARY KEY,
+            notification_type TEXT NOT NULL,
+            enabled BOOLEAN DEFAULT 1,
+            auto_clear_days INTEGER DEFAULT 30,
+            created_at DATETIME DEFAULT (datetime('now')),
+            updated_at DATETIME DEFAULT (datetime('now')),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );`,
+		`CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read);`,
+		`CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);`,
+		`CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read);`,
 	}
 
 	for _, s := range stmts {
@@ -843,4 +880,257 @@ func SetSystemConfig(key, value, description, updatedBy string) error {
 		key, value, description, now, updatedBy,
 	)
 	return err
+}
+
+// ============ Notification Management Functions ============
+
+// CreateNotification 创建通知
+func CreateNotification(userID int, ntype, title, content, priority string, expiresAt *time.Time) (int64, error) {
+	now := time.Now().UTC()
+	var expiresAtStr string
+	if expiresAt != nil {
+		expiresAtStr = expiresAt.Format("2006-01-02 15:04:05")
+	}
+
+	result, err := DB.Exec(
+		`INSERT INTO notifications (user_id, type, title, content, priority, is_read, created_at, expires_at) 
+		 VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
+		userID, ntype, title, content, priority, now, expiresAtStr,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+// GetNotificationsPaginated 分页获取通知
+func GetNotificationsPaginated(userID int, page, pageSize int, filters map[string]string) ([]map[string]interface{}, int, error) {
+	offset := (page - 1) * pageSize
+	query := "SELECT count(*) FROM notifications WHERE user_id = ?"
+	args := []interface{}{userID}
+
+	// 应用过滤器
+	if read, ok := filters["read"]; ok && read != "" {
+		query += " AND is_read = ?"
+		args = append(args, read == "true")
+	}
+	if ntype, ok := filters["type"]; ok && ntype != "" {
+		query += " AND type = ?"
+		args = append(args, ntype)
+	}
+	if priority, ok := filters["priority"]; ok && priority != "" {
+		query += " AND priority = ?"
+		args = append(args, priority)
+	}
+
+	var total int
+	err := DB.QueryRow(query, args...).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	query = `SELECT id, user_id, type, title, content, priority, is_read, read_at, created_at, expires_at
+	          FROM notifications WHERE user_id = ?`
+
+	if read, ok := filters["read"]; ok && read != "" {
+		query += " AND is_read = ?"
+	}
+	if ntype, ok := filters["type"]; ok && ntype != "" {
+		query += " AND type = ?"
+	}
+	if priority, ok := filters["priority"]; ok && priority != "" {
+		query += " AND priority = ?"
+	}
+
+	query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+	args = append(args, pageSize, offset)
+
+	rows, err := DB.Query(query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var results []map[string]interface{}
+	for rows.Next() {
+		var id int64
+		var userIDInt int
+		var ntype, title, content, priority string
+		var isRead bool
+		var readAt, createdAt sql.NullString
+		var expiresAt sql.NullString
+
+		if err := rows.Scan(&id, &userIDInt, &ntype, &title, &content, &priority, &isRead, &readAt, &createdAt, &expiresAt); err != nil {
+			return nil, 0, err
+		}
+
+		results = append(results, map[string]interface{}{
+			"id":       id,
+			"user_id":  userIDInt,
+			"type":     ntype,
+			"title":    title,
+			"content":  content,
+			"priority": priority,
+			"is_read":  isRead,
+			"read_at": func() interface{} {
+				if readAt.Valid {
+					return readAt.String
+				}
+				return nil
+			}(),
+			"created_at": createdAt.String,
+			"expires_at": func() interface{} {
+				if expiresAt.Valid {
+					return expiresAt.String
+				}
+				return nil
+			}(),
+		})
+	}
+
+	return results, total, nil
+}
+
+// MarkNotificationAsRead 标记通知为已读
+func MarkNotificationAsRead(userID, notificationID int) error {
+	now := time.Now().UTC()
+	result, err := DB.Exec(
+		"UPDATE notifications SET is_read = 1, read_at = ? WHERE id = ? AND user_id = ?",
+		now, notificationID, userID,
+	)
+	if err != nil {
+		return err
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("通知不存在")
+	}
+	return nil
+}
+
+// MarkAllNotificationsAsRead 标记所有通知为已读
+func MarkAllNotificationsAsRead(userID int) (int64, error) {
+	now := time.Now().UTC()
+	result, err := DB.Exec(
+		"UPDATE notifications SET is_read = 1, read_at = ? WHERE user_id = ? AND is_read = 0",
+		now, userID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// GetUnreadNotificationsCount 获取未读通知数量
+func GetUnreadNotificationsCount(userID int, ntypes []string) (int, error) {
+	query := "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0"
+	args := []interface{}{userID}
+
+	if len(ntypes) > 0 {
+		placeholders := make([]string, len(ntypes))
+		for i := range ntypes {
+			placeholders[i] = "?"
+			args = append(args, ntypes[i])
+		}
+		query += " AND type IN (" + strings.Join(placeholders, ",") + ")"
+	}
+
+	var count int
+	err := DB.QueryRow(query, args...).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// DeleteNotification 删除通知
+func DeleteNotification(userID, notificationID int) error {
+	result, err := DB.Exec("DELETE FROM notifications WHERE id = ? AND user_id = ?", notificationID, userID)
+	if err != nil {
+		return err
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("通知不存在")
+	}
+	return nil
+}
+
+// ClearNotifications 清空通知
+func ClearNotifications(userID int, olderThanDays int) (int64, error) {
+	var condition string
+	var args []interface{}
+
+	if olderThanDays > 0 {
+		cutoffDate := time.Now().UTC().AddDate(0, 0, -olderThanDays)
+		condition = " AND created_at < ?"
+		args = []interface{}{userID, cutoffDate.Format("2006-01-02 15:04:05")}
+	} else {
+		args = []interface{}{userID}
+	}
+
+	query := "DELETE FROM notifications WHERE user_id = ?" + condition
+	result, err := DB.Exec(query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// CleanupExpiredNotifications 清理过期通知
+func CleanupExpiredNotifications() (int64, error) {
+	result, err := DB.Exec(
+		"DELETE FROM notifications WHERE expires_at IS NOT NULL AND expires_at < ?",
+		time.Now().UTC().Format("2006-01-02 15:04:05"),
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// GetNotificationByID 根据ID获取通知
+func GetNotificationByID(userID, notificationID int) (map[string]interface{}, error) {
+	var id int64
+	var userIDInt int
+	var ntype, title, content, priority string
+	var isRead bool
+	var readAt, createdAt sql.NullString
+	var expiresAt sql.NullString
+
+	err := DB.QueryRow(
+		`SELECT id, user_id, type, title, content, priority, is_read, read_at, created_at, expires_at
+		 FROM notifications WHERE id = ? AND user_id = ?`,
+		notificationID, userID,
+	).Scan(&id, &userIDInt, &ntype, &title, &content, &priority, &isRead, &readAt, &createdAt, &expiresAt)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("通知不存在")
+		}
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"id":       id,
+		"user_id":  userIDInt,
+		"type":     ntype,
+		"title":    title,
+		"content":  content,
+		"priority": priority,
+		"is_read":  isRead,
+		"read_at": func() interface{} {
+			if readAt.Valid {
+				return readAt.String
+			}
+			return nil
+		}(),
+		"created_at": createdAt.String,
+		"expires_at": func() interface{} {
+			if expiresAt.Valid {
+				return expiresAt.String
+			}
+			return nil
+		}(),
+	}, nil
 }

@@ -17,9 +17,11 @@ import (
 	"todoapp/internal/db"
 	"todoapp/internal/response"
 	"todoapp/internal/validator"
+	"todoapp/internal/websocket"
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
+	wsclient "todoapp/internal/websocket"
 )
 
 const (
@@ -108,6 +110,15 @@ func main() {
 	}
 	log.Println("Database initialized.")
 
+	// Initialize WebSocket Hub
+	wsHub := websocket.NewHub()
+	go wsHub.Run()
+	log.Println("WebSocket Hub initialized.")
+
+	// Start cleanup tasks
+	go startCleanupTasks()
+	log.Println("Cleanup tasks started.")
+
 	// Create router with Gorilla Mux for better routing
 	router := mux.NewRouter()
 
@@ -135,8 +146,15 @@ func main() {
 	protected.HandleFunc("/users/me", handleMe).Methods("GET")
 	protected.HandleFunc("/tasks", handleTasks).Methods("GET", "POST")
 	protected.HandleFunc("/tasks/{id}", handleTaskByID).Methods("GET", "PATCH", "DELETE")
-	protected.HandleFunc("/sync", handleSync).Methods("POST")
+	protected.HandleFunc("/sync", func(w http.ResponseWriter, r *http.Request) { handleSync(w, r, wsHub) }).Methods("POST")
 	protected.HandleFunc("/export", handleExport).Methods("GET")
+	protected.HandleFunc("/notifications", handleGetNotifications).Methods("GET")
+	protected.HandleFunc("/notifications", handleCreateNotification).Methods("POST")
+	protected.HandleFunc("/notifications/{id}/read", handleMarkAsRead).Methods("PATCH")
+	protected.HandleFunc("/notifications/read-all", handleMarkAllAsRead).Methods("PATCH")
+	protected.HandleFunc("/notifications/{id}", handleDeleteNotification).Methods("DELETE")
+	protected.HandleFunc("/notifications/clear", handleClearNotifications).Methods("DELETE")
+	protected.HandleFunc("/notifications/unread-count", handleGetUnreadCount).Methods("GET")
 
 	// Admin routes (requires authentication and admin role)
 	admin := router.PathPrefix("/api/v1/admin").Subrouter()
@@ -144,7 +162,10 @@ func main() {
 	admin.Use(adminMiddleware)
 
 	admin.HandleFunc("/users", handleAdminListUsers).Methods("GET")
-	admin.HandleFunc("/users", handleAdminCreateUser).Methods("POST")
+	admin.HandleFunc("/users", func(w http.ResponseWriter, r *http.Request) {
+		email := getEmailFromContext(r.Context())
+		handleAdminCreateUserWithNotification(w, r, email, wsHub)
+	}).Methods("POST")
 	admin.HandleFunc("/users/{id}", handleAdminUpdateUser).Methods("PATCH")
 	admin.HandleFunc("/users/{id}/password", handleAdminResetPassword).Methods("POST")
 	admin.HandleFunc("/users/{id}/lock", handleAdminLockUser).Methods("POST")
@@ -156,6 +177,11 @@ func main() {
 
 	admin.HandleFunc("/config", handleAdminGetConfig).Methods("GET")
 	admin.HandleFunc("/config", handleAdminSetConfig).Methods("PUT")
+
+	// WebSocket endpoint (requires authentication, bypasses encryption)
+	router.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		handleWebSocket(w, r, wsHub)
+	}).Methods("GET")
 
 	// CORS handling for development
 	corsHandler := handlers.CORS(
@@ -557,7 +583,7 @@ type syncReq struct {
 	} `json:"changes"`
 }
 
-func handleSync(w http.ResponseWriter, r *http.Request) {
+func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 	var s syncReq
 	if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
 		response.ErrorResponse(w, "错误的请求", http.StatusBadRequest)
@@ -581,6 +607,7 @@ func handleSync(w http.ResponseWriter, r *http.Request) {
 
 	serverChanges := []map[string]interface{}{}
 	clientChanges := []map[string]interface{}{}
+	syncFailed := false
 
 	for _, c := range s.Changes {
 		op := strings.ToLower(c.Op)
@@ -600,6 +627,8 @@ func handleSync(w http.ResponseWriter, r *http.Request) {
 						"local_id": c.LocalID, "server_id": serverID, "op": "insert",
 					})
 				}
+			} else {
+				syncFailed = true
 			}
 		case "update":
 			if idVal, ok := c.Payload["id"].(float64); ok {
@@ -634,6 +663,13 @@ func handleSync(w http.ResponseWriter, r *http.Request) {
 				})
 			}
 		}
+	}
+
+	// 发送同步结果通知
+	if syncFailed {
+		sendNotificationToUser(userID, "sync_failed", "同步失败", "部分任务同步失败，请检查网络连接", "high", wsHub)
+	} else if len(clientChanges) > 0 {
+		sendNotificationToUser(userID, "sync_success", "同步完成", fmt.Sprintf("成功同步 %d 个任务", len(clientChanges)), "normal", wsHub)
 	}
 
 	resp := map[string]interface{}{
@@ -769,7 +805,8 @@ func handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
 	response.SuccessResponse(w, users, http.StatusOK)
 }
 
-func handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
+// handleAdminCreateUserWithNotification 创建用户并发送通知
+func handleAdminCreateUserWithNotification(w http.ResponseWriter, r *http.Request, adminEmail string, wsHub *wsclient.Hub) {
 	var req adminCreateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.ErrorResponse(w, "无效的请求体", http.StatusBadRequest)
@@ -798,9 +835,12 @@ func handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	adminID := getUserIDFromContext(r.Context())
-	adminEmail := getEmailFromContext(r.Context())
 	ip := getClientIP(r)
 	_ = db.LogAdminAction(toInt(adminID), adminEmail, "create_user", req.Email, userID, fmt.Sprintf("Created user with role: %s", req.Role), ip)
+
+	// 发送通知给新用户
+	roleName := map[string]string{"admin": "管理员", "user": "普通用户"}[req.Role]
+	sendNotificationToUser(int(userID), "account_created", "账户已创建", fmt.Sprintf("您已被创建为%s", roleName), "normal", wsHub)
 
 	log.Printf("Admin %s created user %s (ID: %d)", adminEmail, req.Email, userID)
 	response.SuccessResponse(w, map[string]interface{}{"id": userID, "email": req.Email, "role": req.Role}, http.StatusCreated)
@@ -1045,4 +1085,372 @@ func getEmailFromContext(ctx context.Context) string {
 func toInt(s string) int {
 	i, _ := strconv.Atoi(s)
 	return i
+}
+
+// ============ Notification Handlers ============
+
+type notificationCreateRequest struct {
+	Type      string  `json:"type"` // system_error, sync_failed, maintenance, etc.
+	Title     string  `json:"title"`
+	Content   string  `json:"content"`
+	Priority  string  `json:"priority"`   // urgent, high, normal, low
+	ExpiresAt *string `json:"expires_at"` // Optional: ISO 8601 format
+}
+
+type notificationUpdateRequest struct {
+	IsRead *bool `json:"is_read"`
+}
+
+func handleGetNotifications(w http.ResponseWriter, r *http.Request) {
+	userIDStr := getUserIDFromContext(r.Context())
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	filters := map[string]string{
+		"read":     r.URL.Query().Get("read"),
+		"type":     r.URL.Query().Get("type"),
+		"priority": r.URL.Query().Get("priority"),
+	}
+
+	notifications, total, err := db.GetNotificationsPaginated(userID, page, pageSize, filters)
+	if err != nil {
+		response.ErrorResponse(w, "获取通知失败", http.StatusInternalServerError)
+		return
+	}
+
+	response.SuccessResponse(w, map[string]interface{}{
+		"notifications": notifications,
+		"pagination": map[string]interface{}{
+			"page":      page,
+			"page_size": pageSize,
+			"total":     total,
+			"pages":     (total + pageSize - 1) / pageSize,
+		},
+	}, http.StatusOK)
+}
+
+func handleCreateNotification(w http.ResponseWriter, r *http.Request) {
+	userIDStr := getUserIDFromContext(r.Context())
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	var req notificationCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.ErrorResponse(w, "无效的请求体", http.StatusBadRequest)
+		return
+	}
+
+	if req.Type == "" || req.Title == "" || req.Content == "" {
+		response.ErrorResponse(w, "类型、标题和内容是必填项", http.StatusBadRequest)
+		return
+	}
+
+	if req.Priority == "" {
+		req.Priority = "normal"
+	}
+
+	validPriorities := map[string]bool{"urgent": true, "high": true, "normal": true, "low": true}
+	if !validPriorities[req.Priority] {
+		response.ErrorResponse(w, "无效的优先级", http.StatusBadRequest)
+		return
+	}
+
+	var expiresAt *time.Time
+	if req.ExpiresAt != nil {
+		t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
+		if err != nil {
+			response.ErrorResponse(w, "无效的过期时间格式", http.StatusBadRequest)
+			return
+		}
+		expiresAt = &t
+	}
+
+	notificationID, err := db.CreateNotification(userID, req.Type, req.Title, req.Content, req.Priority, expiresAt)
+	if err != nil {
+		response.ErrorResponse(w, "创建通知失败", http.StatusInternalServerError)
+		return
+	}
+
+	notification, err := db.GetNotificationByID(userID, int(notificationID))
+	if err != nil {
+		response.ErrorResponse(w, "创建通知失败", http.StatusInternalServerError)
+		return
+	}
+
+	response.SuccessResponse(w, notification, http.StatusCreated)
+}
+
+func handleMarkAsRead(w http.ResponseWriter, r *http.Request) {
+	userIDStr := getUserIDFromContext(r.Context())
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	vars := mux.Vars(r)
+	notificationIDStr := vars["id"]
+	notificationID, err := strconv.Atoi(notificationIDStr)
+	if err != nil {
+		response.ErrorResponse(w, "无效的通知ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := db.MarkNotificationAsRead(userID, notificationID); err != nil {
+		if err.Error() == "通知不存在" {
+			response.ErrorResponse(w, err.Error(), http.StatusNotFound)
+		} else {
+			response.ErrorResponse(w, "标记已读失败", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	response.SuccessResponse(w, map[string]string{"status": "已标记为已读"}, http.StatusOK)
+}
+
+func handleMarkAllAsRead(w http.ResponseWriter, r *http.Request) {
+	userIDStr := getUserIDFromContext(r.Context())
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	count, err := db.MarkAllNotificationsAsRead(userID)
+	if err != nil {
+		response.ErrorResponse(w, "标记全部已读失败", http.StatusInternalServerError)
+		return
+	}
+
+	response.SuccessResponse(w, map[string]interface{}{
+		"status":       "已标记全部为已读",
+		"marked_count": count,
+	}, http.StatusOK)
+}
+
+func handleDeleteNotification(w http.ResponseWriter, r *http.Request) {
+	userIDStr := getUserIDFromContext(r.Context())
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	vars := mux.Vars(r)
+	notificationIDStr := vars["id"]
+	notificationID, err := strconv.Atoi(notificationIDStr)
+	if err != nil {
+		response.ErrorResponse(w, "无效的通知ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := db.DeleteNotification(userID, notificationID); err != nil {
+		if err.Error() == "通知不存在" {
+			response.ErrorResponse(w, err.Error(), http.StatusNotFound)
+		} else {
+			response.ErrorResponse(w, "删除通知失败", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	response.SuccessResponse(w, map[string]string{"status": "已删除"}, http.StatusOK)
+}
+
+func handleClearNotifications(w http.ResponseWriter, r *http.Request) {
+	userIDStr := getUserIDFromContext(r.Context())
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	olderThanDaysStr := r.URL.Query().Get("older_than_days")
+	olderThanDays := 30
+	if olderThanDaysStr != "" {
+		olderThanDays, _ = strconv.Atoi(olderThanDaysStr)
+		if olderThanDays < 0 {
+			olderThanDays = 0
+		}
+	}
+
+	count, err := db.ClearNotifications(userID, olderThanDays)
+	if err != nil {
+		response.ErrorResponse(w, "清空通知失败", http.StatusInternalServerError)
+		return
+	}
+
+	response.SuccessResponse(w, map[string]interface{}{
+		"status":        "已清空",
+		"cleared_count": count,
+	}, http.StatusOK)
+}
+
+func handleGetUnreadCount(w http.ResponseWriter, r *http.Request) {
+	userIDStr := getUserIDFromContext(r.Context())
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	typeParam := r.URL.Query().Get("type")
+	var ntypes []string
+	if typeParam != "" {
+		ntypes = strings.Split(typeParam, ",")
+	}
+
+	count, err := db.GetUnreadNotificationsCount(userID, ntypes)
+	if err != nil {
+		response.ErrorResponse(w, "获取未读数量失败", http.StatusInternalServerError)
+		return
+	}
+
+	response.SuccessResponse(w, map[string]interface{}{
+		"unread_count": count,
+	}, http.StatusOK)
+}
+
+// ============ Helper Functions ============
+
+// startCleanupTasks 启动定期清理任务
+func startCleanupTasks() {
+	// 每小时清理一次过期通知和令牌
+	ticker := time.NewTicker(1 * time.Hour)
+	go func() {
+		for range ticker.C {
+			cleanupExpiredNotifications()
+			cleanupExpiredTokens()
+		}
+	}()
+
+	// 每天清理一次旧日志
+	dailyTicker := time.NewTicker(24 * time.Hour)
+	go func() {
+		for range dailyTicker.C {
+			db.CleanupOldLoginLogs()
+		}
+	}()
+}
+
+// cleanupExpiredNotifications 清理过期通知
+func cleanupExpiredNotifications() {
+	count, err := db.CleanupExpiredNotifications()
+	if err != nil {
+		log.Printf("Failed to cleanup expired notifications: %v", err)
+	} else if count > 0 {
+		log.Printf("Cleaned up %d expired notifications", count)
+	}
+}
+
+// cleanupExpiredTokens 清理过期令牌
+func cleanupExpiredTokens() {
+	err := db.CleanupExpiredTokens()
+	if err != nil {
+		log.Printf("Failed to cleanup expired tokens: %v", err)
+	}
+}
+
+// sendNotificationToUser 发送通知给用户（数据库 + WebSocket）
+func sendNotificationToUser(userID int, ntype, title, content, priority string, wsHub *wsclient.Hub) (int64, error) {
+	// 1. 保存到数据库
+	notificationID, err := db.CreateNotification(userID, ntype, title, content, priority, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	// 2. 通过WebSocket实时推送（如果用户在线）
+	if wsHub.IsUserConnected(int64(userID)) {
+		notif := map[string]interface{}{
+			"id":         notificationID,
+			"type":       ntype,
+			"title":      title,
+			"content":    content,
+			"priority":   priority,
+			"is_read":    false,
+			"created_at": time.Now().Format(time.RFC3339),
+		}
+
+		err := wsHub.BroadcastToUser(int64(userID), wsclient.Message{
+			Type:      "notification",
+			Data:      notif,
+			Timestamp: time.Now().Format(time.RFC3339),
+		})
+
+		if err != nil {
+			// WebSocket发送失败，但不影响数据库存储
+			log.Printf("Failed to send notification via WebSocket: %v", err)
+		}
+	}
+
+	return notificationID, nil
+}
+
+// ============ WebSocket Handlers ============
+
+// handleWebSocket WebSocket连接处理
+func handleWebSocket(w http.ResponseWriter, r *http.Request, wsHub *websocket.Hub) {
+	// 从query参数获取加密设置
+	encryptionEnabled := r.URL.Query().Get("encryption") == "true"
+
+	// 从query参数或header获取token
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		token = r.Header.Get("Authorization")
+		if strings.HasPrefix(token, "Bearer ") {
+			token = token[7:]
+		}
+	}
+
+	if token == "" {
+		log.Printf("WebSocket connection rejected: missing token from %s", r.RemoteAddr)
+		http.Error(w, "未授权", http.StatusUnauthorized)
+		return
+	}
+
+	// 验证token
+	claims, err := auth.ValidateToken(token)
+	if err != nil || claims.TokenType != "access" {
+		log.Printf("WebSocket connection rejected: invalid token from %s", r.RemoteAddr)
+		http.Error(w, "无效的令牌", http.StatusUnauthorized)
+		return
+	}
+
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		http.Error(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	// 升级HTTP连接为WebSocket连接
+	conn, err := wsclient.Upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("WebSocket upgrade failed for user %s: %v", claims.Email, err)
+		return
+	}
+
+	log.Printf("WebSocket connected: %s (ID: %d, encryption: %v)", claims.Email, userID, encryptionEnabled)
+
+	// 创建客户端并启动读写循环
+	client := websocket.NewClient(wsHub, conn, int64(userID), claims.Email, encryptionEnabled)
+	wsHub.Register(client)
+
+	// 启动读写goroutine
+	go client.WritePump()
+	client.ReadPump()
 }
