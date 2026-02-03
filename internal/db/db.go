@@ -142,6 +142,15 @@ func InitDB(dataSourceName string) error {
             is_active BOOLEAN DEFAULT 1,
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );`,
+		`CREATE TABLE IF NOT EXISTS deleted_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER,
+            user_id INTEGER,
+            task_data TEXT,
+            deleted_at DATETIME,
+            is_restorable BOOLEAN DEFAULT 1,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        );`,
 		// Indexes for performance
 		`CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_tasks_server_version ON tasks(server_version);`,
@@ -190,6 +199,7 @@ func InitDB(dataSourceName string) error {
 		`CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read);`,
 		`CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_devices_device_id ON devices(device_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_deleted_tasks_user ON deleted_tasks(user_id, is_restorable);`,
 	}
 
 	for _, s := range stmts {

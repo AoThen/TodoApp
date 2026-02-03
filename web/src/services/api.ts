@@ -213,21 +213,12 @@ class ApiService {
     await this.client.post('/import', data);
   }
 
-  // Device operations
-  async pairDevice(data: { key: string; device_type: string; device_id: string }) {
-    return this.client.post('/devices/pair', data);
+  async batchDeleteTasks(taskIds: number[]) {
+    return this.client.delete('/tasks/batch', { data: { task_ids: taskIds } });
   }
 
-  async getDevices() {
-    return this.client.get('/devices');
-  }
-
-  async regenerateKey(deviceId: string) {
-    return this.client.post(`/devices/${deviceId}/regenerate`);
-  }
-
-  async revokeDevice(deviceId: string) {
-    return this.client.delete(`/devices/${deviceId}`);
+  async restoreTask(taskId: number) {
+    return this.client.post(`/tasks/${taskId}/restore`);
   }
 
   // User operations

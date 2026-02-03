@@ -4,6 +4,9 @@ import { apiService } from './services/api';
 import { syncManager } from './services/syncManager';
 import AdminPanel from './components/admin/AdminPanel';
 import DevicePairing from './components/DevicePairing';
+import BatchDeleteDialog from './components/BatchDeleteDialog';
+import UndoToast from './components/UndoToast';
+import { toast } from 'react-toastify';
 import './App.css';
 
 const App: React.FC = () => {
@@ -17,6 +20,10 @@ const App: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showPairing, setShowPairing] = useState(false);
+  const [showBatchConfirm, setShowBatchConfirm] = useState(false);
+  const [undoTaskIds, setUndoTaskIds] = useState<number[]>([]);
+  const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
+  const [selectAll, setSelectAll] = useState(false);
 
   // Initialize IndexedDB and load data
   useEffect(() => {
@@ -162,6 +169,83 @@ const App: React.FC = () => {
     }
   };
 
+  const toggleTaskSelection = (localId: string, checked: boolean) => {
+    const newSelected = new Set(selectedTasks);
+    if (checked) {
+      newSelected.add(localId);
+    } else {
+      newSelected.delete(localId);
+      setSelectAll(false);
+    }
+    setSelectedTasks(newSelected);
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    setSelectAll(checked);
+    if (checked) {
+      const allIds = tasks.map(t => t.local_id);
+      setSelectedTasks(new Set(allIds));
+    } else {
+      setSelectedTasks(new Set());
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (!authToken) {
+      alert('Please login first');
+      setShowBatchConfirm(false);
+      return;
+    }
+
+    const selectedTasksArr = Array.from(selectedTasks);
+    if (selectedTasksArr.length === 0) {
+      alert('请先选择要删除的任务');
+      return;
+    }
+
+    const tasksToDelete = tasks.filter(t => selectedTasks.has(t.local_id));
+    const taskIds = tasksToDelete.map(t => t.server_id).filter((id): id is number => id) as number[];
+
+    try {
+      setLoading(true);
+      const response = await apiService.batchDeleteTasks(taskIds);
+      setShowBatchConfirm(false);
+
+      // 从IndexedDB和state中移除任务
+      await Promise.all(tasksToDelete.map(t => indexedDBService.deleteTask(t.local_id)));
+      setTasks(prev => prev.filter(t => !selectedTasksArr.includes(t.local_id)));
+
+      // 设置可撤销的taskIds
+      setUndoTaskIds(taskIds);
+      setSelectedTasks(new Set());
+      setSelectAll(false);
+
+    } catch (error: error) {
+      console.error('Batch delete failed:', error);
+      alert('批量删除失败');
+      setShowBatchConfirm(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUndo = async () => {
+    try {
+      setLoading(true);
+      await Promise.all(undoTaskIds.map(id => apiService.restoreTask(id)));
+
+      // 撤销后刷新任务列表
+      await loadTasks();
+
+      setUndoTaskIds([]);
+    } catch (error) {
+      console.error('Undo failed:', error);
+      alert('撤销失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleManualSync = async () => {
     if (!authToken) {
       alert('Please login first');
@@ -247,36 +331,69 @@ const App: React.FC = () => {
       </header>
 
       <main className="app-main">
-        <form onSubmit={handleAddTask} className="add-task-form">
-          <input
-            type="text"
-            value={newTaskTitle}
-            onChange={(e) => setNewTaskTitle(e.target.value)}
-            placeholder="Add a new task..."
-          />
-          <button type="submit">Add Task</button>
-        </form>
+         <form onSubmit={handleAddTask} className="add-task-form">
+           <input
+             type="text"
+             value={newTaskTitle}
+             onChange={(e) => setNewTaskTitle(e.target.value)}
+             placeholder="Add a new task..."
+           />
+           <button type="submit">Add Task</button>
+         </form>
 
-        <ul className="task-list">
-          {tasks.map(task => (
-            <li key={task.local_id} className={`task-item ${task.status}`}>
-              <input
-                type="checkbox"
-                checked={task.status === 'done'}
-                onChange={() => handleToggleStatus(task)}
-              />
-              <span className="task-title">{task.title}</span>
-              <div className="task-actions">
-                <span className={`priority ${task.priority}`}>{task.priority}</span>
-                <button onClick={() => handleDeleteTask(task)}>Delete</button>
-              </div>
-            </li>
-          ))}
-          {tasks.length === 0 && (
-            <li className="no-tasks">No tasks yet. Add one above!</li>
-          )}
-        </ul>
-      </main>
+         {/* 批量操作工具栏 */}
+         <div className="batch-actions-bar">
+           <input
+             type="checkbox"
+             checked={selectAll}
+             onChange={(e) => handleSelectAll(e.target.checked)}
+           />
+           <span>已选择 <strong>{selectedTasks.size}</strong> 个任务</span>
+           {selectedTasks.size > 0 && (
+             <>
+               <button
+                 className="btn btn-danger"
+                 onClick={() => setShowBatchConfirm(true)}
+               >
+                 批量删除 ({selectedTasks.size})
+               </button>
+               <button
+                 className="btn btn-secondary"
+                 onClick={handleManualSync}
+                 disabled={isSyncing || !isOnline}
+               >
+                 {isSyncing ? "同步中..." : "Sync Now"}
+               </button>
+             </>
+           )}
+         </div>
+
+         <ul className="task-list">
+           {tasks.map(task => (
+             <li key={task.local_id} className={`task-item ${task.status}`}>
+               <input
+                 type="checkbox"
+                 className="task-select-checkbox"
+                 checked={selectedTasks.has(task.local_id)}
+                 onChange={(e) => toggleTaskSelection(task.local_id, e.target.checked)}
+               />
+               <input
+                 type="checkbox"
+                 checked={task.status === 'done'}
+                 onChange={() => handleToggleStatus(task)}
+               />
+               <span className="task-title">{task.title}</span>
+               <div className="task-actions">
+                 <span className={`priority ${task.priority}`}>{task.priority}</span>
+                 <button onClick={() => handleDeleteTask(task)}>Delete</button>
+               </div>
+             </li>
+           ))}
+           {tasks.length === 0 && (
+             <li className="no-tasks">No tasks yet. Add one above!</li>
+           )}
+         </ul>
+       </main>
 
       {showConflicts && (
         <div className="conflicts-modal">
@@ -288,6 +405,26 @@ const App: React.FC = () => {
 
       {showPairing && (
         <DevicePairing onClose={() => setShowPairing(false)} />
+      )}
+
+      {showBatchConfirm && (
+        <BatchDeleteDialog
+          isOpen={showBatchConfirm}
+          count={selectedTasks.size}
+          onConfirm={handleBatchDelete}
+          onCancel={() => setShowBatchConfirm(false)}
+        />
+      )}
+
+      {undoTaskIds.length > 0 && (
+        <UndoToast
+          taskIds={undoTaskIds}
+          onClose={() => setUndoTaskIds([])}
+          onUndoComplete={async () => {
+            await loadTasks();
+            toast.success('已撤销删除');
+          }}
+        />
       )}
     </div>
   );

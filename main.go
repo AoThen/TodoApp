@@ -162,6 +162,10 @@ func main() {
 	protected.HandleFunc("/users/me", handleMe).Methods("GET")
 	protected.HandleFunc("/tasks", handleTasks).Methods("GET", "POST")
 	protected.HandleFunc("/tasks/{id}", handleTaskByID).Methods("GET", "PATCH", "DELETE")
+	protected.HandleFunc("/tasks/batch", func(w http.ResponseWriter, r *http.Request) {
+		handleBatchDeleteTasks(w, r, wsHub)
+	}).Methods("DELETE")
+	protected.HandleFunc("/tasks/{id}/restore", handleRestoreTask).Methods("POST")
 	protected.HandleFunc("/sync", func(w http.ResponseWriter, r *http.Request) { handleSync(w, r, wsHub) }).Methods("POST")
 	protected.HandleFunc("/export", handleExport).Methods("GET")
 	protected.HandleFunc("/notifications", handleGetNotifications).Methods("GET")
@@ -1145,6 +1149,86 @@ func generateRandomKey() string {
 	return string(b)
 }
 
+// handleBatchDeleteTasks 批量删除任务
+func handleBatchDeleteTasks(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
+	userIDStr := getUserIDFromContext(r.Context())
+	if userIDStr == "" {
+		response.ErrorResponse(w, "未授权", http.StatusUnauthorized)
+		return
+	}
+
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		TaskIDs []int64 `json:"task_ids"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.ErrorResponse(w, "无效的请�数据", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.TaskIDs) == 0 {
+		response.ErrorResponse(w, "未选择要删除的任务", http.StatusBadRequest)
+		return
+	}
+
+	// 批量软删除任务
+	count, err := db.BatchDeleteTasks(userID, req.TaskIDs)
+	if err != nil {
+		log.Printf("批量删除失败: %v", err)
+		response.ErrorResponse(w, "批量删除失败", http.StatusInternalServerError)
+		return
+	}
+
+	// 发送通知
+	sendNotificationToUser(userID, "tasks_deleted", "任务已删除", fmt.Sprintf("已删除 %d 个任务，30秒内可撤销", count), "normal", wsHub)
+
+	response.SuccessResponse(w, map[string]interface{}{
+		"status":              "deleted",
+		"count":               count,
+		"can_undo":            true,
+		"undo_window_seconds": 30,
+	}, http.StatusOK)
+}
+
+// handleRestoreTask 恢复删除的任务（撤销）
+func handleRestoreTask(w http.ResponseWriter, r *http.Request) {
+	userIDStr := getUserIDFromContext(r.Context())
+	if userIDStr == "" {
+		response.ErrorResponse(w, "未授权", http.StatusUnauthorized)
+		return
+	}
+
+	vars := mux.Vars(r)
+	taskID, err := strconv.ParseInt(vars["id"], 10, 64)
+	if err != nil {
+		response.ErrorResponse(w, "无效的任务ID", http.StatusBadRequest)
+		return
+	}
+
+	userID, _ := strconv.Atoi(userIDStr)
+
+	// 恢复任务
+	err = db.RestoreDeletedTask(taskID, userID)
+	if err != nil {
+		if _, ok := err.(*db.UndoExpiredError); ok {
+			response.ErrorResponse(w, "已超过30秒撤销期限", http.StatusGone)
+		} else {
+			response.ErrorResponse(w, "恢复失败", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	response.SuccessResponse(w, map[string]string{
+		"status": "restored",
+	}, http.StatusOK)
+}
+
 // handleExport 导出数据（任务）为 JSON 或 CSV 格式
 func handleExport(w http.ResponseWriter, r *http.Request) {
 	// 从上下文获取用户 ID
@@ -1872,11 +1956,15 @@ func startCleanupTasks() {
 		}
 	}()
 
-	// 每天清理一次旧日志
+	// 每天清理一次旧日志和删除记录
 	dailyTicker := time.NewTicker(24 * time.Hour)
 	go func() {
 		for range dailyTicker.C {
 			db.CleanupOldLoginLogs()
+			count, _ := db.CleanupOldDeletedTasks()
+			if count > 0 {
+				log.Printf("Cleaned up %d old deleted_task records", count)
+			}
 		}
 	}()
 }
