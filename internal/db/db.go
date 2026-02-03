@@ -723,6 +723,15 @@ func LogAdminAction(adminID int, adminEmail, action, targetEmail string, targetU
 	return err
 }
 
+// LogExportAction 记录导出操作审计日志
+func LogExportAction(userID int, exportType, format string, count int) error {
+	_, err := DB.Exec(
+		"INSERT INTO admin_logs (admin_id, admin_email, action, target_user_id, target_email, details, ip_address, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		userID, "", "export_"+exportType, 0, "", fmt.Sprintf("格式: %s, 导出条数: %d", format, count), "", time.Now().UTC(),
+	)
+	return err
+}
+
 // GetAdminLogs 获取管理员操作日志
 func GetAdminLogs(filters map[string]string) ([]map[string]interface{}, error) {
 	query := "SELECT * FROM admin_logs WHERE 1=1"

@@ -16,6 +16,8 @@ import (
 	"todoapp/internal/crypto"
 	"todoapp/internal/db"
 	"todoapp/internal/response"
+	"todoapp/internal/types"
+	"todoapp/internal/utils"
 	"todoapp/internal/validator"
 	"todoapp/internal/websocket"
 
@@ -605,62 +607,273 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 
 	now := time.Now().UTC()
 
+	// ✅ 使用事务保护同步操作
+	tx, err := db.DB.Begin()
+	if err != nil {
+		log.Printf("事务开始失败: %v", err)
+		response.ErrorResponse(w, "事务开始失败", http.StatusInternalServerError)
+		return
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		} else {
+			tx.Commit()
+		}
+	}()
+
 	serverChanges := []map[string]interface{}{}
 	clientChanges := []map[string]interface{}{}
+	conflicts := []map[string]interface{}{}
 	syncFailed := false
 
 	for _, c := range s.Changes {
 		op := strings.ToLower(c.Op)
+
 		switch op {
 		case "insert":
 			title := ""
+			description := ""
+			status := "todo"
+			priority := "medium"
+
 			if v, ok := c.Payload["title"].(string); ok {
 				title = v
 			}
-			res, err := db.DB.Exec("INSERT INTO tasks (user_id, local_id, server_version, title, status, created_at, updated_at, last_modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", userID, c.LocalID, 1, title, "todo", now, now, now)
-			if err == nil {
-				if serverID, err2 := res.LastInsertId(); err2 == nil {
-					serverChanges = append(serverChanges, map[string]interface{}{
-						"id": serverID, "server_version": 1, "title": title, "updated_at": now.Format(time.RFC3339), "is_deleted": false,
-					})
-					clientChanges = append(clientChanges, map[string]interface{}{
-						"local_id": c.LocalID, "server_id": serverID, "op": "insert",
-					})
+			if v, ok := c.Payload["description"].(string); ok {
+				description = v
+			}
+			if v, ok := c.Payload["status"].(string); ok {
+				status = v
+			}
+			if v, ok := c.Payload["priority"].(string); ok {
+				priority = v
+			}
+
+			// ✅ 检查 local_id 是否已存在（冲突检测）
+			existingID, _, checkErr := db.TaskExistsByLocalID(userID, c.LocalID)
+			if checkErr == nil && existingID > 0 {
+				// 冲突：local_id重复，使用生成的新标题插入
+				newTitle := fmt.Sprintf("%s (副本: %d)", title, existingID)
+				res, insertErr := tx.Exec(
+					"INSERT INTO tasks (user_id, local_id, server_version, title, description, status, priority, created_at, updated_at, last_modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+					userID, c.LocalID+"_"+randomString(8), 1, newTitle, description, status, priority, now, now, now,
+				)
+
+				if insertErr == nil {
+					if serverID, err2 := res.LastInsertId(); err2 == nil {
+						serverChanges = append(serverChanges, map[string]interface{}{
+							"id": serverID, "server_version": 1, "title": newTitle, "updated_at": now.Format(time.RFC3339), "is_deleted": false,
+						})
+						clientChanges = append(clientChanges, map[string]interface{}{
+							"local_id": c.LocalID, "server_id": serverID, "op": "insert",
+						})
+
+						// 记录冲突
+						recordConflict(c.LocalID, existingID, "duplicate_insert", userID)
+						conflicts = append(conflicts, map[string]interface{}{
+							"local_id":  c.LocalID,
+							"server_id": existingID,
+							"reason":    "duplicate_insert",
+						})
+					}
+				} else {
+					log.Printf("插入副本失败: %v", insertErr)
+					syncFailed = true
 				}
 			} else {
-				syncFailed = true
+				// 正常插入
+				res, insertErr := tx.Exec(
+					"INSERT INTO tasks (user_id, local_id, server_version, title, description, status, priority, created_at, updated_at, last_modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+					userID, c.LocalID, 1, title, description, status, priority, now, now, now,
+				)
+
+				if insertErr == nil {
+					if serverID, err2 := res.LastInsertId(); err2 == nil {
+						serverChanges = append(serverChanges, map[string]interface{}{
+							"id": serverID, "server_version": 1, "title": title, "updated_at": now.Format(time.RFC3339),
+							"description": description, "status": status, "priority": priority, "is_deleted": false,
+						})
+						clientChanges = append(clientChanges, map[string]interface{}{
+							"local_id": c.LocalID, "server_id": serverID, "op": "insert",
+						})
+					}
+				} else {
+					log.Printf("插入任务失败: %v", insertErr)
+					syncFailed = true
+				}
 			}
+
 		case "update":
 			if idVal, ok := c.Payload["id"].(float64); ok {
 				id := int64(idVal)
-				var oldVer int
-				_ = db.DB.QueryRow("SELECT server_version FROM tasks WHERE id = ?", id).Scan(&oldVer)
-				newVer := oldVer + 1
-				title := ""
-				if v, ok := c.Payload["title"].(string); ok {
-					title = v
+
+				// ✅ 获取服务器当前版本和数据
+				oldVer, serverTitle, serverDesc, serverStatus, _, err := db.GetTaskForSync(id)
+
+				if err != nil {
+					log.Printf("查询任务失败: %v", err)
+					syncFailed = true
+					continue
 				}
-				_, _ = db.DB.Exec("UPDATE tasks SET title = ?, updated_at = ?, server_version = ? WHERE id = ?", title, now, newVer, id)
-				serverChanges = append(serverChanges, map[string]interface{}{
-					"id": id, "server_version": newVer, "title": title, "updated_at": now.Format(time.RFC3339), "is_deleted": false,
-				})
-				clientChanges = append(clientChanges, map[string]interface{}{
-					"local_id": c.LocalID, "server_id": id, "op": "update",
-				})
+
+				newVer := oldVer + 1
+
+				// ✅ 版本检查和冲突检测
+				if c.CV != oldVer {
+					log.Printf("检测到冲突: client_version=%d, server_version=%d", c.CV, oldVer)
+
+					// 获取客户端更新
+					clientTitle := ""
+					clientDesc := ""
+					clientStatus := serverStatus
+
+					if v, ok := c.Payload["title"].(string); ok {
+						clientTitle = v
+					}
+					if v, ok := c.Payload["description"].(string); ok {
+						clientDesc = v
+					}
+					if v, ok := c.Payload["status"].(string); ok {
+						clientStatus = v
+					}
+
+					// ✅ 智能合并
+					mergedTitle, mergedDesc, mergedStatus := intelligentMerge(serverTitle, serverDesc, serverStatus, map[string]interface{}{
+						"title":       clientTitle,
+						"description": clientDesc,
+						"status":      clientStatus,
+					})
+
+					// 应用合并结果
+					priority := "medium"
+					if v, ok := c.Payload["priority"].(string); ok {
+						priority = v
+					}
+
+					updateErr := db.UpdateTaskWithVersion(id, mergedTitle, mergedDesc, mergedStatus, priority, newVer)
+					if updateErr != nil {
+						log.Printf("应用合并结果失败: %v", updateErr)
+						syncFailed = true
+					} else {
+						serverChanges = append(serverChanges, map[string]interface{}{
+							"id": id, "server_version": newVer, "title": mergedTitle, "description": mergedDesc,
+							"status": mergedStatus, "priority": priority, "updated_at": now.Format(time.RFC3339), "is_deleted": false,
+						})
+						clientChanges = append(clientChanges, map[string]interface{}{
+							"local_id": c.LocalID, "server_id": id, "op": "update",
+						})
+
+						// 记录冲突
+						recordConflict(c.LocalID, id, "intelligent_merge", userID)
+						conflicts = append(conflicts, map[string]interface{}{
+							"local_id":   c.LocalID,
+							"server_id":  id,
+							"reason":     "intelligent_merge",
+							"resolution": "智能合并",
+							"merged_data": map[string]interface{}{
+								"title":       mergedTitle,
+								"description": mergedDesc,
+								"status":      mergedStatus,
+							},
+						})
+					}
+				} else {
+					// 正常更新
+					title := serverTitle
+					description := serverDesc
+					status := serverStatus
+					priority := "medium"
+
+					if v, ok := c.Payload["title"].(string); ok {
+						title = v
+					}
+					if v, ok := c.Payload["description"].(string); ok {
+						description = v
+					}
+					if v, ok := c.Payload["status"].(string); ok {
+						status = v
+					}
+					if v, ok := c.Payload["priority"].(string); ok {
+						priority = v
+					}
+
+					updateErr := db.UpdateTaskWithVersion(id, title, description, status, priority, newVer)
+					if updateErr != nil {
+						log.Printf("更新任务失败: %v", updateErr)
+						syncFailed = true
+					} else {
+						serverChanges = append(serverChanges, map[string]interface{}{
+							"id": id, "server_version": newVer, "title": title, "updated_at": now.Format(time.RFC3339),
+							"description": description, "status": status, "priority": priority, "is_deleted": false,
+						})
+						clientChanges = append(clientChanges, map[string]interface{}{
+							"local_id": c.LocalID, "server_id": id, "op": "update",
+						})
+					}
+				}
 			}
+
 		case "delete":
 			if idVal, ok := c.Payload["id"].(float64); ok {
 				id := int64(idVal)
-				var oldVer int
-				_ = db.DB.QueryRow("SELECT server_version FROM tasks WHERE id = ?", id).Scan(&oldVer)
+
+				oldVer, _, _, _, isDeleted, err := db.GetTaskForSync(id)
+
+				if err != nil {
+					log.Printf("查询任务失败: %v", err)
+					syncFailed = true
+					continue
+				}
+
 				newVer := oldVer + 1
-				_, _ = db.DB.Exec("UPDATE tasks SET is_deleted = 1, updated_at = ?, server_version = ? WHERE id = ?", now, newVer, id)
-				serverChanges = append(serverChanges, map[string]interface{}{
-					"id": id, "server_version": newVer, "is_deleted": true, "updated_at": now.Format(time.RFC3339),
-				})
-				clientChanges = append(clientChanges, map[string]interface{}{
-					"local_id": c.LocalID, "server_id": id, "op": "delete",
-				})
+
+				// ✅ 版本检查和冲突检测
+				if c.CV != oldVer {
+					log.Printf("删除冲突检测: client_version=%d, server_version=%d", c.CV, oldVer)
+
+					if isDeleted {
+						// 服务器已删除，忽略客户端删除
+						continue
+					} else {
+						// 冲突：客户端想删除但服务器有更新
+						// 策略：软删除，记录冲突
+						deleteErr := db.SoftDeleteTaskWithVersion(id, newVer)
+						if deleteErr != nil {
+							log.Printf("删除任务失败: %v", deleteErr)
+							syncFailed = true
+						} else {
+							serverChanges = append(serverChanges, map[string]interface{}{
+								"id": id, "server_version": newVer, "is_deleted": true, "updated_at": now.Format(time.RFC3339),
+							})
+							clientChanges = append(clientChanges, map[string]interface{}{
+								"local_id": c.LocalID, "server_id": id, "op": "delete",
+							})
+
+							// 记录冲突：服务器被标记为删除
+							recordConflict(c.LocalID, id, "delete_while_modified", userID)
+							conflicts = append(conflicts, map[string]interface{}{
+								"local_id":  c.LocalID,
+								"server_id": id,
+								"reason":    "delete_while_modified",
+							})
+						}
+					}
+				} else {
+					// 正常删除
+					deleteErr := db.SoftDeleteTaskWithVersion(id, newVer)
+					if deleteErr != nil {
+						log.Printf("删除任务失败: %v", deleteErr)
+						syncFailed = true
+					} else {
+						serverChanges = append(serverChanges, map[string]interface{}{
+							"id": id, "server_version": newVer, "is_deleted": true, "updated_at": now.Format(time.RFC3339),
+						})
+						clientChanges = append(clientChanges, map[string]interface{}{
+							"local_id": c.LocalID, "server_id": id, "op": "delete",
+						})
+					}
+				}
 			}
 		}
 	}
@@ -668,6 +881,8 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 	// 发送同步结果通知
 	if syncFailed {
 		sendNotificationToUser(userID, "sync_failed", "同步失败", "部分任务同步失败，请检查网络连接", "high", wsHub)
+	} else if len(conflicts) > 0 {
+		sendNotificationToUser(userID, "sync_conflict", "同步完成但存在冲突", fmt.Sprintf("成功同步 %d 个任务，但检测到 %d 个冲突", len(clientChanges), len(conflicts)), "high", wsHub)
 	} else if len(clientChanges) > 0 {
 		sendNotificationToUser(userID, "sync_success", "同步完成", fmt.Sprintf("成功同步 %d 个任务", len(clientChanges)), "normal", wsHub)
 	}
@@ -676,7 +891,7 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 		"server_changes": serverChanges,
 		"client_changes": clientChanges,
 		"last_sync_at":   now.Format(time.RFC3339),
-		"conflicts":      []interface{}{},
+		"conflicts":      conflicts, // ✅ 返回实际冲突
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
@@ -691,6 +906,12 @@ func handleExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userIDInt, err := strconv.Atoi(userID)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
 	t := r.URL.Query().Get("type")
 	if t != "tasks" {
 		response.ErrorResponse(w, "不支持的导出类型", http.StatusBadRequest)
@@ -702,8 +923,8 @@ func handleExport(w http.ResponseWriter, r *http.Request) {
 		format = "json"
 	}
 
-	// 只获取当前用户的任务
-	tasks, _, err := db.GetTasksPaginated(0, 1, 10000) // 临时解决方案，应该添加用户过滤
+	// 获取当前用户的任务（修复：正确传递userID）
+	tasks, _, err := db.GetTasksPaginated(userIDInt, 1, 10000)
 	if err != nil {
 		response.ErrorResponse(w, "导出错误", http.StatusInternalServerError)
 		return
@@ -711,38 +932,102 @@ func handleExport(w http.ResponseWriter, r *http.Request) {
 
 	if format == "json" {
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", "attachment;filename=tasks.json")
+
+		// 记录导出审计日志
+		_ = db.LogExportAction(userIDInt, "tasks", format, len(tasks))
+
 		json.NewEncoder(w).Encode(tasks)
 		return
 	}
 
 	if format == "csv" {
-		w.Header().Set("Content-Type", "text/csv")
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", "attachment;filename=tasks.csv")
 
-		w.Write([]byte("id,local_id,server_version,title,description,status,priority,due_at,created_at,updated_at,completed_at,is_deleted,last_modified\n"))
+		// 写入UTF-8 BOM（Excel兼容）
+		w.Write([]byte{0xEF, 0xBB, 0xBF})
 
-		for _, row := range tasks {
-			line := []string{
-				toString(row["id"]),
-				toString(row["local_id"]),
-				toString(row["server_version"]),
-				toString(row["title"]),
-				toString(row["description"]),
-				toString(row["status"]),
-				toString(row["priority"]),
-				toString(row["due_at"]),
-				toString(row["created_at"]),
-				toString(row["updated_at"]),
-				toString(row["completed_at"]),
-				toString(row["is_deleted"]),
-				toString(row["last_modified"]),
-			}
-			w.Write([]byte(strings.Join(line, ",") + "\n"))
+		// 使用CSVStreamer进行流式写入
+		streamer := utils.NewCSVStreamer(w)
+		defer streamer.Close()
+
+		headers := []string{
+			"id", "local_id", "server_version", "title", "description",
+			"status", "priority", "due_at", "created_at", "updated_at",
+			"completed_at", "is_deleted", "last_modified",
 		}
+		if err := streamer.WriteHeader(headers); err != nil {
+			log.Printf("写入CSV表头失败: %v", err)
+			return
+		}
+
+		for _, task := range tasks {
+			if err := streamer.WriteRow(task); err != nil {
+				log.Printf("写入CSV行失败: %v", err)
+				continue
+			}
+		}
+
+		// 记录导出审计日志
+		_ = db.LogExportAction(userIDInt, "tasks", format, len(tasks))
+
+		log.Printf("用户 %d 导出了 %d 个任务到 %s 格式", userIDInt, len(tasks), format)
 		return
 	}
 
 	response.ErrorResponse(w, "未知的格式", http.StatusBadRequest)
+}
+
+// intelligentMerge 策略：字段级冲突智能合并
+func intelligentMerge(serverTitle, serverDesc, serverStatus string, clientProps map[string]interface{}) (string, string, string) {
+	mergedTitle := serverTitle
+	mergedDesc := serverDesc
+	mergedStatus := serverStatus
+
+	// 标题：优先服务器
+	if clientTitle, ok := clientProps["title"].(string); ok && clientTitle != "" {
+		if clientTitle != serverTitle {
+			mergedTitle = serverTitle
+		} else {
+			mergedTitle = clientTitle
+		}
+	}
+
+	// 描述：合并两者的描述
+	if clientDesc, ok := clientProps["description"].(string); ok {
+		if clientDesc != serverDesc && serverDesc != "" && clientDesc != "" {
+			mergedDesc = fmt.Sprintf("[服务器更新] %s\n\n[客户端更新] %s", serverDesc, clientDesc)
+		} else if clientDesc != "" {
+			mergedDesc = clientDesc
+		}
+	}
+
+	// 状态：保留较新的状态
+	if clientStatus, ok := clientProps["status"].(string); ok {
+		if clientStatus != serverStatus {
+			mergedStatus = types.PrioritizeStatus(clientStatus, serverStatus)
+		}
+	}
+
+	return mergedTitle, mergedDesc, mergedStatus
+}
+
+// recordConflict 记录冲突到数据库
+func recordConflict(localID string, serverID int64, reason string, userID int) {
+	options := []types.ConflictResolution{types.ConflictKeepServer, types.ConflictKeepClient, types.ConflictMerge}
+	optionsJSON, _ := json.Marshal(options)
+	_ = db.RecordConflict(localID, serverID, reason, string(optionsJSON))
+}
+
+// randomString 生成随机字符串（用于local_id冲突处理）
+func randomString(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+	}
+	return string(b)
 }
 
 func toString(v interface{}) string {
