@@ -130,6 +130,18 @@ func InitDB(dataSourceName string) error {
             options TEXT,
             created_at DATETIME
         );`,
+		`CREATE TABLE IF NOT EXISTS devices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            device_type TEXT,
+            device_id TEXT UNIQUE,
+            pairing_key TEXT,
+            server_url TEXT,
+            paired_at DATETIME,
+            last_seen DATETIME,
+            is_active BOOLEAN DEFAULT 1,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );`,
 		// Indexes for performance
 		`CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_tasks_server_version ON tasks(server_version);`,
@@ -176,6 +188,8 @@ func InitDB(dataSourceName string) error {
 		`CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read);`,
 		`CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read);`,
+		`CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_devices_device_id ON devices(device_id);`,
 	}
 
 	for _, s := range stmts {

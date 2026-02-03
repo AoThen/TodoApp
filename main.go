@@ -106,6 +106,20 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// Load environment variables
+	environment := os.Getenv("ENVIRONMENT")
+	if environment == "" {
+		environment = "development"
+		log.Println("未设置ENVIRONMENT，默认使用development模式")
+	}
+
+	// WebSocket 加密强制模式配置
+	enforceWSEncryption := environment == "production"
+	if envVal := os.Getenv("ENFORCE_WS_ENCRYPTION"); envVal != "" {
+		enforceWSEncryption = envVal == "true"
+	}
+	log.Printf("环境: %s, WebSocket强制加密: %v", environment, enforceWSEncryption)
+
 	// Initialize database with connection pool
 	if err := db.InitDB("todoapp.db"); err != nil {
 		log.Fatalf("failed to init db: %v", err)
@@ -158,6 +172,12 @@ func main() {
 	protected.HandleFunc("/notifications/clear", handleClearNotifications).Methods("DELETE")
 	protected.HandleFunc("/notifications/unread-count", handleGetUnreadCount).Methods("GET")
 
+	// Device pairing routes
+	protected.HandleFunc("/devices/pair", handleDevicePairing).Methods("POST")
+	protected.HandleFunc("/devices", handleListDevices).Methods("GET")
+	protected.HandleFunc("/devices/{id}/regenerate", handleRegenerateDeviceKey).Methods("POST")
+	protected.HandleFunc("/devices/{id}", handleRevokeDevice).Methods("DELETE")
+
 	// Admin routes (requires authentication and admin role)
 	admin := router.PathPrefix("/api/v1/admin").Subrouter()
 	admin.Use(authMiddleware)
@@ -180,10 +200,12 @@ func main() {
 	admin.HandleFunc("/config", handleAdminGetConfig).Methods("GET")
 	admin.HandleFunc("/config", handleAdminSetConfig).Methods("PUT")
 
-	// WebSocket endpoint (requires authentication, bypasses encryption)
-	router.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+	// WebSocket endpoint (requires authentication, with optional encryption)
+	// 应用WebSocket加密中间件
+	wsMiddleware := webSocketEncryptionMiddleware(enforceWSEncryption)
+	router.Handle("/ws", wsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handleWebSocket(w, r, wsHub)
-	}).Methods("GET")
+	}))).Methods("GET")
 
 	// CORS handling for development
 	corsHandler := handlers.CORS(
@@ -296,6 +318,27 @@ func adminMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// webSocketEncryptionMiddleware 验证WebSocket加密设置
+func webSocketEncryptionMiddleware(enforceEncryption bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			encryptionEnabled := r.URL.Query().Get("encryption") == "true"
+
+			if enforceEncryption && !encryptionEnabled {
+				log.Printf("拒绝非加密WebSocket连接（生产环境强制加密）: %s", r.RemoteAddr)
+				response.ErrorResponse(w, "生产环境必须启用加密WebSocket连接", http.StatusForbidden)
+				return
+			}
+
+			if !encryptionEnabled {
+				log.Printf("警告：WebSocket连接未加密（%s）", r.RemoteAddr)
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func getUserIDFromContext(ctx context.Context) string {
@@ -895,6 +938,211 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// handleDevicePairing 处理设备配对请求
+func handleDevicePairing(w http.ResponseWriter, r *http.Request) {
+	userIDStr := getUserIDFromContext(r.Context())
+	if userIDStr == "" {
+		response.ErrorResponse(w, "未授权", http.StatusUnauthorized)
+		return
+	}
+
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Key        string `json:"key"`
+		DeviceType string `json:"device_type"`
+		DeviceID   string `json:"device_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.ErrorResponse(w, "无效的请求数据", http.StatusBadRequest)
+		return
+	}
+
+	// 验证必填字段
+	if req.Key == "" || req.DeviceType == "" || req.DeviceID == "" {
+		response.ErrorResponse(w, "配对密钥、设备类型和设备ID为必填项", http.StatusBadRequest)
+		return
+	}
+
+	// 验证密钥格式（64字符hex）
+	if len(req.Key) != 64 {
+		response.ErrorResponse(w, "配对密钥格式无效", http.StatusBadRequest)
+		return
+	}
+
+	// 验证设备类型
+	validDeviceTypes := map[string]bool{"web": true, "android": true, "ios": true}
+	if !validDeviceTypes[req.DeviceType] {
+		response.ErrorResponse(w, "无效的设备类型", http.StatusBadRequest)
+		return
+	}
+
+	// 检查设备是否已配对
+	existing, _ := db.ValidatePairingKey(userID, req.Key)
+	if existing {
+		response.ErrorResponse(w, "该设备已配对", http.StatusConflict)
+		return
+	}
+
+	// 获取服务器URL
+	serverURL := os.Getenv("SERVER_URL")
+	if serverURL == "" {
+		serverURL = "http://localhost:8080"
+	}
+
+	// 注册设备
+	err = db.RegisterDevice(userID, req.DeviceType, req.DeviceID, req.Key, serverURL)
+	if err != nil {
+		log.Printf("设备注册失败: %v", err)
+		response.ErrorResponse(w, "设备注册失败", http.StatusInternalServerError)
+		return
+	}
+
+	// 记录审计日志
+	log.Printf("用户 %d 注册设备: type=%s, id=%s", userID, req.DeviceType, req.DeviceID)
+
+	response.SuccessResponse(w, map[string]interface{}{
+		"status":     "paired",
+		"device_id":  req.DeviceID,
+		"server_url": serverURL,
+	}, http.StatusOK)
+}
+
+// handleListDevices 获取用户的设备列表
+func handleListDevices(w http.ResponseWriter, r *http.Request) {
+	userIDStr := getUserIDFromContext(r.Context())
+	if userIDStr == "" {
+		response.ErrorResponse(w, "未授权", http.StatusUnauthorized)
+		return
+	}
+
+	userID, _ := strconv.Atoi(userIDStr)
+
+	devices, err := db.GetUserDevices(userID)
+	if err != nil {
+		log.Printf("获取设备列表失败: %v", err)
+		response.ErrorResponse(w, "获取设备列表失败", http.StatusInternalServerError)
+		return
+	}
+
+	response.SuccessResponse(w, map[string]interface{}{
+		"devices": devices,
+		"count":   len(devices),
+	}, http.StatusOK)
+}
+
+// handleRegenerateDeviceKey 重新生成设备配对密钥
+func handleRegenerateDeviceKey(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	deviceID := vars["id"]
+
+	if deviceID == "" {
+		response.ErrorResponse(w, "设备ID不能为空", http.StatusBadRequest)
+		return
+	}
+
+	// 验证用户是否有权限操作此设备
+	userID, serverURL, _, isActive, err := db.GetDeviceInfoByDeviceID(deviceID)
+	if err != nil {
+		response.ErrorResponse(w, "设备不存在", http.StatusNotFound)
+		return
+	}
+
+	if !isActive {
+		response.ErrorResponse(w, "设备已撤销", http.StatusBadRequest)
+		return
+	}
+
+	// 检查当前用户是否是设备所有者
+	currentUserIDStr := getUserIDFromContext(r.Context())
+	currentUserID, _ := strconv.Atoi(currentUserIDStr)
+	if currentUserID != userID {
+		response.ErrorResponse(w, "无权操作此设备", http.StatusForbidden)
+		return
+	}
+
+	// 生成新密钥
+	newKey := generateRandomKey()
+
+	// 更新数据库
+	err = db.RegeneratePairingKey(deviceID, newKey)
+	if err != nil {
+		log.Printf("密钥更新失败: %v", err)
+		response.ErrorResponse(w, "密钥更新失败", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("用户 %d 重新生成了设备 %s 的配对密钥", currentUserID, deviceID)
+
+	response.SuccessResponse(w, map[string]interface{}{
+		"status":     "regenerated",
+		"new_key":    newKey,
+		"device_id":  deviceID,
+		"server_url": serverURL,
+	}, http.StatusOK)
+}
+
+// handleRevokeDevice 撤销设备
+func handleRevokeDevice(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	deviceID := vars["id"]
+
+	if deviceID == "" {
+		response.ErrorResponse(w, "设备ID不能为空", http.StatusBadRequest)
+		return
+	}
+
+	// 验证用户是否有权限操作此设备
+	userID, _, _, isActive, err := db.GetDeviceInfoByDeviceID(deviceID)
+	if err != nil {
+		response.ErrorResponse(w, "设备不存在", http.StatusNotFound)
+		return
+	}
+
+	if !isActive {
+		response.ErrorResponse(w, "设备已撤销", http.StatusBadRequest)
+		return
+	}
+
+	// 检查当前用户是否是设备所有者
+	currentUserIDStr := getUserIDFromContext(r.Context())
+	currentUserID, _ := strconv.Atoi(currentUserIDStr)
+	if currentUserID != userID {
+		response.ErrorResponse(w, "无权操作此设备", http.StatusForbidden)
+		return
+	}
+
+	// 撤销设备
+	err = db.RevokeDevice(deviceID)
+	if err != nil {
+		log.Printf("撤销设备失败: %v", err)
+		response.ErrorResponse(w, "撤销设备失败", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("用户 %d 撤销了设备 %s", currentUserID, deviceID)
+
+	response.SuccessResponse(w, map[string]interface{}{
+		"status":    "revoked",
+		"device_id": deviceID,
+	}, http.StatusOK)
+}
+
+// generateRandomKey 生成32字节随机密钥（hex格式，64字符）
+func generateRandomKey() string {
+	const charset = "0123456789abcdef"
+	b := make([]byte, 64)
+	for i := range b {
+		b[i] = charset[time.Now().UnixNano()%16]
+	}
+	return string(b)
 }
 
 // handleExport 导出数据（任务）为 JSON 或 CSV 格式
@@ -1693,18 +1941,31 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, wsHub *websocket.Hu
 	// 从query参数获取加密设置
 	encryptionEnabled := r.URL.Query().Get("encryption") == "true"
 
-	// 从query参数或header获取token
-	token := r.URL.Query().Get("token")
+	// ✅ 优先从 Sec-WebSocket-Protocol subprotocol 获取token（更安全）
+	var token string
+	protocols := strings.Split(r.Header.Get("Sec-WebSocket-Protocol"), ",")
+	for _, protocol := range protocols {
+		trimmed := strings.TrimSpace(protocol)
+		if strings.HasPrefix(trimmed, "todoapp.") {
+			token = strings.TrimPrefix(trimmed, "todoapp.")
+			break
+		}
+	}
+
+	// 降级：从query参数或header获取token（向后兼容）
 	if token == "" {
-		token = r.Header.Get("Authorization")
-		if strings.HasPrefix(token, "Bearer ") {
-			token = token[7:]
+		token = r.URL.Query().Get("token")
+		if token == "" {
+			token = r.Header.Get("Authorization")
+			if strings.HasPrefix(token, "Bearer ") {
+				token = token[7:]
+			}
 		}
 	}
 
 	if token == "" {
 		log.Printf("WebSocket connection rejected: missing token from %s", r.RemoteAddr)
-		http.Error(w, "未授权", http.StatusUnauthorized)
+		response.ErrorResponse(w, "未授权", http.StatusUnauthorized)
 		return
 	}
 
@@ -1712,17 +1973,18 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, wsHub *websocket.Hu
 	claims, err := auth.ValidateToken(token)
 	if err != nil || claims.TokenType != "access" {
 		log.Printf("WebSocket connection rejected: invalid token from %s", r.RemoteAddr)
-		http.Error(w, "无效的令牌", http.StatusUnauthorized)
+		response.ErrorResponse(w, "无效的令牌", http.StatusUnauthorized)
 		return
 	}
 
 	userID, err := strconv.Atoi(claims.UserID)
 	if err != nil {
-		http.Error(w, "无效的用户ID", http.StatusBadRequest)
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
 		return
 	}
 
 	// 升级HTTP连接为WebSocket连接
+	// 如果使用subprotocol，需要传递给Upgrade
 	conn, err := wsclient.Upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade failed for user %s: %v", claims.Email, err)

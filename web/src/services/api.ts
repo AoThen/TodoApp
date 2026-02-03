@@ -213,6 +213,23 @@ class ApiService {
     await this.client.post('/import', data);
   }
 
+  // Device operations
+  async pairDevice(data: { key: string; device_type: string; device_id: string }) {
+    return this.client.post('/devices/pair', data);
+  }
+
+  async getDevices() {
+    return this.client.get('/devices');
+  }
+
+  async regenerateKey(deviceId: string) {
+    return this.client.post(`/devices/${deviceId}/regenerate`);
+  }
+
+  async revokeDevice(deviceId: string) {
+    return this.client.delete(`/devices/${deviceId}`);
+  }
+
   // User operations
   async getCurrentUser(): Promise<{ id: string; email: string }> {
     const response = await this.client.get('/users/me');
