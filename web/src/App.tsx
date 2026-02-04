@@ -7,10 +7,11 @@ import DevicePairing from './components/DevicePairing';
 import BatchDeleteDialog from './components/BatchDeleteDialog';
 import UndoToast from './components/UndoToast';
 import ImportDialog from './components/ImportDialog';
+import ErrorBoundary from './components/common/ErrorBoundary';
 import { toast } from 'react-toastify';
 import './App.css';
 
-const App: React.FC = () => {
+const AppContent: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -439,13 +440,21 @@ const App: React.FC = () => {
        )}
 
 {showImport && (
-          <ImportDialog
-            isOpen={showImport}
-            onClose={() => setShowImport(false)}
-            onImportSuccess={loadTasks}
-          />
-        )}
-     </div>
+           <ImportDialog
+             isOpen={showImport}
+             onClose={() => setShowImport(false)}
+             onImportSuccess={loadTasks}
+           />
+         )}
+      </div>
+   );
+};
+
+const App: React.FC = () => {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
   );
 };
 

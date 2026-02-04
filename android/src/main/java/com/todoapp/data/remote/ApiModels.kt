@@ -56,6 +56,7 @@ data class LoginRequest(
 
 data class LoginResponse(
     @SerializedName("access_token") val accessToken: String,
+    @SerializedName("refresh_token") val refreshToken: String? = null,
     @SerializedName("expires_in") val expiresIn: Int
 )
 

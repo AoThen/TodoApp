@@ -1,7 +1,7 @@
 import { encrypt as cryptoEncrypt, decrypt as cryptoDecrypt } from '../utils/crypto';
 
-const PING_INTERVAL = 30000; // 30秒
-const RECONNECT_DELAY_BASE = 1000; // 1秒
+const PING_INTERVAL = 30000;
+const RECONNECT_DELAY_BASE = 1000;
 const MAX_RECONNECT_ATTEMPTS = 5;
 
 export interface WSMessage {
@@ -34,11 +34,11 @@ class WebSocketService {
     this.encryptionEnabled = enableEncryption;
     this.reconnectAttempts = 0;
 
-    const encryptionParam = enableEncryption ? '&encryption=true' : '';
-    const wsUrl = `ws://localhost:8080/ws?token=${token}${encryptionParam}`;
+    const protocol = enableEncryption ? 'todoapp.encryption' : 'todoapp';
+    const wsUrl = `ws://localhost:8080/ws`;
 
     try {
-      this.ws = new WebSocket(wsUrl);
+      this.ws = new WebSocket(wsUrl, [`${protocol}.${token}`]);
 
       this.ws.onopen = () => {
         console.log('[WebSocket] Connected');

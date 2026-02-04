@@ -1,18 +1,18 @@
 package com.todoapp.ui.tasks
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.todoapp.TodoApp
+import com.todoapp.R
 import com.todoapp.data.local.Task
-import com.todoapp.data.remote.ApiService
-import com.todoapp.data.remote.RetrofitClient
+import com.todoapp.data.repository.TaskRepository
+import com.todoapp.utils.DateTimeUtils
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.UUID
+import javax.inject.Inject
 
 sealed class AddTaskState {
     object Idle : AddTaskState()
@@ -27,14 +27,10 @@ data class AddTaskFormState(
     val isFormValid: Boolean = false
 )
 
-class AddTaskViewModel(
-    application: Application,
-    private val taskDao: com.todoapp.data.local.TaskDao,
-    private val deltaQueueDao: com.todoapp.data.local.DeltaQueueDao
-) : AndroidViewModel(application) {
-
-    private val context = getApplication<TodoApp>().applicationContext
-    private val apiService: ApiService = RetrofitClient.getApiService(context)
+@HiltViewModel
+class AddTaskViewModel @Inject constructor(
+    private val taskRepository: TaskRepository
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow<AddTaskState>(AddTaskState.Idle)
     val uiState: StateFlow<AddTaskState> = _uiState.asStateFlow()
@@ -48,20 +44,20 @@ class AddTaskViewModel(
     private var currentStatus: String = "todo"
     private var currentPriority: String = "medium"
 
-    fun validateTitle(title: String) {
+    fun validateTitle(title: String, context: android.content.Context) {
         currentTitle = title.trim()
         val error = when {
-            currentTitle.isEmpty() -> "标题不能为空"
-            currentTitle.length > 200 -> "标题不能超过200个字符"
+            currentTitle.isEmpty() -> context.getString(R.string.task_title_empty)
+            currentTitle.length > 200 -> context.getString(R.string.task_title_too_long)
             else -> null
         }
         _formState.value = _formState.value.copy(titleError = error)
     }
 
-    fun validateDescription(description: String) {
+    fun validateDescription(description: String, context: android.content.Context) {
         currentDescription = description.trim()
         val error = when {
-            currentDescription.length > 2000 -> "描述不能超过2000个字符"
+            currentDescription.length > 2000 -> context.getString(R.string.task_description_too_long)
             else -> null
         }
         _formState.value = _formState.value.copy(descriptionError = error)
@@ -79,64 +75,34 @@ class AddTaskViewModel(
         currentPriority = priority
     }
 
-    fun validateForm() {
-        validateTitle(currentTitle)
-        validateDescription(currentDescription)
+    fun validateForm(context: android.content.Context) {
+        validateTitle(currentTitle, context)
+        validateDescription(currentDescription, context)
         validateDueDate(currentDueDate)
     }
 
-    fun createTask() {
+    fun createTask(context: android.content.Context) {
         viewModelScope.launch {
             _uiState.value = AddTaskState.Loading
-            try {
-                if (!_formState.value.isFormValid) {
-                    _uiState.value = AddTaskState.Error("请修正表单中的错误")
-                    return@launch
-                }
 
-                val now = System.currentTimeMillis()
-                val localId = UUID.randomUUID().toString()
-                val userId = "current-user"
+            if (!_formState.value.isFormValid) {
+                _uiState.value = AddTaskState.Error(context.getString(R.string.task_fix_form_errors))
+                return@launch
+            }
 
-                val task = Task(
-                    localId = localId,
-                    userId = userId,
-                    title = currentTitle,
-                    description = currentDescription,
-                    status = currentStatus,
-                    priority = currentPriority,
-                    dueAt = if (currentDueDate.isNotBlank()) "${currentDueDate}T00:00:00Z" else null,
-                    createdAt = now.toString(),
-                    updatedAt = now.toString(),
-                    lastModified = now.toString()
-                )
-
-                val taskId = taskDao.insertTask(task)
-
-                val deltaChange = com.todoapp.data.local.DeltaChange(
-                    localId = localId,
-                    op = "insert",
-                    payload = """
-                        {
-                            "local_id": "$localId",
-                            "title": "${currentTitle}",
-                            "description": "${currentDescription}",
-                            "status": "$currentStatus",
-                            "priority": "$currentPriority",
-                            "due_at": ${if (currentDueDate.isNotBlank()) "\"${currentDueDate}T00:00:00Z\"" else "null"}
-                        }
-                    """.trimIndent(),
-                    clientVersion = 1,
-                    timestamp = now.toString()
-                )
-
-                deltaQueueDao.insertDelta(deltaChange)
-
-                _uiState.value = AddTaskState.Success(task.copy(id = taskId))
-
+            taskRepository.createTask(
+                title = currentTitle,
+                description = currentDescription,
+                status = currentStatus,
+                priority = currentPriority,
+                dueAt = if (currentDueDate.isNotBlank()) "${currentDueDate}T00:00:00Z" else null
+            ).onSuccess { task ->
+                _uiState.value = AddTaskState.Success(task)
                 resetForm()
-            } catch (e: Exception) {
-                _uiState.value = AddTaskState.Error("创建任务失败: ${e.message}")
+            }.onError { e ->
+                _uiState.value = AddTaskState.Error(
+                    context.getString(R.string.task_create_failed, e.message)
+                )
             }
         }
     }
@@ -158,16 +124,5 @@ class AddTaskViewModel(
             "status" to currentStatus,
             "priority" to currentPriority
         )
-    }
-
-    class Factory(
-        private val application: Application,
-        private val taskDao: com.todoapp.data.local.TaskDao,
-        private val deltaQueueDao: com.todoapp.data.local.DeltaQueueDao
-    ) : ViewModelProvider.Factory {
-        override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-            @Suppress("UNCHECKED_CAST")
-            return AddTaskViewModel(application, taskDao, deltaQueueDao) as T
-        }
     }
 }

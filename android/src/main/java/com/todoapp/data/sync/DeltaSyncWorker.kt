@@ -27,7 +27,9 @@ class DeltaSyncWorker(
                 return@withContext Result.success()
             }
 
-            val syncMeta = database.syncMetaDao().getSyncMeta("current-user")
+            // Get current user ID from secure storage
+            val userId = getCurrentUserId()
+            val syncMeta = database.syncMetaDao().getSyncMeta(userId)
             val lastSyncAt = syncMeta?.lastSyncAt ?: ""
 
             val changes: List<DeltaChangeRequest> = pendingDeltas.map { delta ->
@@ -84,7 +86,7 @@ class DeltaSyncWorker(
 
             database.syncMetaDao().insertSyncMeta(
                 SyncMeta(
-                    userId = "current-user",
+                    userId = userId,
                     lastSyncAt = syncResponse.lastSyncAt
                 )
             )
@@ -96,6 +98,36 @@ class DeltaSyncWorker(
             } else {
                 Result.failure()
             }
+        }
+    }
+
+    private fun getCurrentUserId(): String {
+        return try {
+            // Extract user ID from access token (JWT payload)
+            val token = RetrofitClient.getAccessToken(applicationContext)
+            if (token.isNotEmpty()) {
+                parseUserIdFromToken(token)
+            } else {
+                "default-user"
+            }
+        } catch (e: Exception) {
+            "default-user"
+        }
+    }
+
+    private fun parseUserIdFromToken(token: String): String {
+        return try {
+            val parts = token.split(".")
+            if (parts.size == 3) {
+                val payload = android.util.Base64.decode(parts[1], android.util.Base64.DEFAULT)
+                    .toString(Charsets.UTF_8)
+                val json = org.json.JSONObject(payload)
+                json.optString("user_id", json.optString("sub", "default-user"))
+            } else {
+                "default-user"
+            }
+        } catch (e: Exception) {
+            "default-user"
         }
     }
 

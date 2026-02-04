@@ -1,17 +1,18 @@
 package com.todoapp.ui.pairing
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
-import com.todoapp.TodoApp
+import com.todoapp.R
 import com.todoapp.data.crypto.KeyStorage
 import com.todoapp.data.remote.RetrofitClient
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 data class PairingData(
     val type: String,
@@ -28,38 +29,41 @@ sealed class PairingState {
     data class Error(val message: String) : PairingState()
 }
 
-class PairingViewModel(application: Application) : AndroidViewModel(application) {
-    
-    private val context = getApplication<TodoApp>().applicationContext
-    private val _pairingState = MutableStateFlow<PairingState>(PairingState.Idle)
+@HiltViewModel
+class PairingViewModel @Inject constructor() : ViewModel() {
+
+    private var _pairingState = MutableStateFlow<PairingState>(PairingState.Idle)
     val pairingState: StateFlow<PairingState> = _pairingState.asStateFlow()
 
-    fun pairDevice(qrData: String) {
+    fun pairDevice(qrData: String, context: android.content.Context) {
         viewModelScope.launch {
             _pairingState.value = PairingState.Loading
-            
+
             try {
-                // Parse QR data
                 val pairingData = parsePairingData(qrData)
-                
-                // Validate pairing data
+
                 if (!isValidPairingData(pairingData)) {
-                    _pairingState.value = PairingState.Error("无效的配对数据")
+                    _pairingState.value = PairingState.Error(
+                        context.getString(R.string.pairing_failed)
+                    )
                     return@launch
                 }
-                
-                // Store encryption key and server URL
+
                 KeyStorage.saveKey(context, pairingData.key, pairingData.server)
-                
-                // Store server URL in RetrofitClient
                 RetrofitClient.setBaseUrl(pairingData.server)
-                
-                _pairingState.value = PairingState.Success("配对成功")
-                
+
+                _pairingState.value = PairingState.Success(
+                    context.getString(R.string.pairing_success)
+                )
+
             } catch (e: JsonSyntaxException) {
-                _pairingState.value = PairingState.Error("二维码格式错误")
+                _pairingState.value = PairingState.Error(
+                    context.getString(R.string.pairing_invalid_qr)
+                )
             } catch (e: Exception) {
-                _pairingState.value = PairingState.Error("配对失败: ${e.message}")
+                _pairingState.value = PairingState.Error(
+                    context.getString(R.string.pairing_failed) + ": ${e.message}"
+                )
             }
         }
     }

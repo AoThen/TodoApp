@@ -66,10 +66,17 @@
     <color name="task_status_in_progress">#ff9800</color>
     <color name="task_status_completed">#4caf50</color>
     
-    <!-- Priority colors -->
+    <!-- Task Priority colors -->
     <color name="priority_low">#4caf50</color>
     <color name="priority_medium">#ff9800</color>
     <color name="priority_high">#f44336</color>
+
+    <!-- Notification Priority colors -->
+    <color name="notification_priority_urgent">#FF0000</color>
+    <color name="notification_priority_high">#FF8000</color>
+    <color name="notification_priority_normal">#0080FF</color>
+    <color name="notification_priority_low">#00FF00</color>
+    <color name="notification_priority_default">#CCCCCC</color>
     
     <!-- Legacy colors for compatibility -->
     <color name="purple_200">#FFBB86FC</color>

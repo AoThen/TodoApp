@@ -10,13 +10,14 @@ import android.view.ViewGroup
 import android.widget.DatePicker
 import android.widget.Toast
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import com.todoapp.R
-import com.todoapp.TodoApp
 import com.todoapp.databinding.FragmentAddTaskBinding
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.Locale
@@ -24,11 +25,9 @@ import java.util.Locale
 class AddTaskFragment : Fragment(), DatePickerDialog.OnDateSetListener {
 
     private var _binding: FragmentAddTaskBinding? = null
-    private val binding get(): FragmentAddTaskBinding = _binding!!
+    private val binding get() = _binding!!
 
-
-
-    private lateinit var viewModel: AddTaskViewModel
+    private val viewModel: AddTaskViewModel by viewModels()
 
     private var hasUnsavedChanges: Boolean = false
 
@@ -43,14 +42,6 @@ class AddTaskFragment : Fragment(), DatePickerDialog.OnDateSetListener {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-
-        val database = (requireActivity().application as TodoApp).database
-        val factory = AddTaskViewModel.Factory(
-            requireActivity().application,
-            database.taskDao(),
-            database.deltaQueueDao()
-        )
-        viewModel = androidx.lifecycle.ViewModelProvider(this, factory)[AddTaskViewModel::class.java]
 
         setupObservers()
         setupClickListeners()
@@ -68,7 +59,7 @@ class AddTaskFragment : Fragment(), DatePickerDialog.OnDateSetListener {
                             hideLoading()
                             Toast.makeText(
                                 requireContext(),
-                                "任务创建成功",
+                                R.string.task_create_success,
                                 Toast.LENGTH_SHORT
                             ).show()
                             navigateBack()
@@ -122,7 +113,6 @@ class AddTaskFragment : Fragment(), DatePickerDialog.OnDateSetListener {
             showDatePicker()
         }
 
-        // Status Chip选择
         binding.chipStatusTodo.setOnClickListener {
             selectStatus("todo")
         }
@@ -133,7 +123,6 @@ class AddTaskFragment : Fragment(), DatePickerDialog.OnDateSetListener {
             selectStatus("done")
         }
 
-        // Priority Chip选择
         binding.chipPriorityLow.setOnClickListener {
             selectPriority("low")
         }
@@ -151,7 +140,7 @@ class AddTaskFragment : Fragment(), DatePickerDialog.OnDateSetListener {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 val title = s.toString().trim()
-                viewModel.validateTitle(title)
+                viewModel.validateTitle(title, requireContext())
                 hasUnsavedChanges = true
             }
         })
@@ -159,7 +148,7 @@ class AddTaskFragment : Fragment(), DatePickerDialog.OnDateSetListener {
         binding.etTitle.setOnFocusChangeListener { _, hasFocus ->
             if (!hasFocus) {
                 val title = binding.etTitle.text.toString().trim()
-                viewModel.validateTitle(title)
+                viewModel.validateTitle(title, requireContext())
             }
         }
 
@@ -168,7 +157,7 @@ class AddTaskFragment : Fragment(), DatePickerDialog.OnDateSetListener {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 val description = s.toString().trim()
-                viewModel.validateDescription(description)
+                viewModel.validateDescription(description, requireContext())
                 hasUnsavedChanges = true
             }
         })
@@ -176,7 +165,7 @@ class AddTaskFragment : Fragment(), DatePickerDialog.OnDateSetListener {
         binding.etDescription.setOnFocusChangeListener { _, hasFocus ->
             if (!hasFocus) {
                 val description = binding.etDescription.text.toString().trim()
-                viewModel.validateDescription(description)
+                viewModel.validateDescription(description, requireContext())
             }
         }
     }
@@ -246,7 +235,7 @@ class AddTaskFragment : Fragment(), DatePickerDialog.OnDateSetListener {
     }
 
     private fun createTask() {
-        viewModel.createTask()
+        viewModel.createTask(requireContext())
     }
 
     private fun showLoading() {
@@ -275,13 +264,13 @@ class AddTaskFragment : Fragment(), DatePickerDialog.OnDateSetListener {
     }
 
     private fun showDiscardConfirmation() {
-        androidx.appcompat.app.AlertDialog.Builder(requireContext())
-            .setTitle("放弃更改")
-            .setMessage("您有未保存的更改，确定要返回吗？")
-            .setPositiveButton("放弃返回") { _, _ ->
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(getString(R.string.discard_changes))
+            .setMessage(getString(R.string.discard_changes_message))
+            .setPositiveButton(getString(R.string.discard_and_return)) { _, _ ->
                 navigateBack()
             }
-            .setNegativeButton("继续编辑", null)
+            .setNegativeButton(getString(R.string.continue_editing), null)
             .show()
     }
 

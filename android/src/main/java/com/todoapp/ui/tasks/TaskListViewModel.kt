@@ -1,26 +1,26 @@
 package com.todoapp.ui.tasks
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.Constraints
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
-import com.todoapp.TodoApp
-import com.todoapp.data.local.AppDatabase
-import com.todoapp.data.local.DeltaChange
-import com.todoapp.data.local.Task
-import com.todoapp.data.remote.RetrofitClient
+import com.todoapp.R
+import com.todoapp.data.repository.TaskRepository
 import com.todoapp.data.sync.DeltaSyncWorker
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.UUID
+import javax.inject.Inject
 
 sealed class SyncState {
     object Idle : SyncState()
@@ -29,61 +29,95 @@ sealed class SyncState {
     data class Error(val message: String) : SyncState()
 }
 
-class TaskListViewModel(application: Application) : AndroidViewModel(application) {
-    
-    private val context = getApplication<TodoApp>().applicationContext
-    private val database = (getApplication() as TodoApp).database
-    private val taskDao = database.taskDao()
-    private val deltaQueueDao = database.deltaQueueDao()
-    
-    val tasks = taskDao.getAllTasks()
-    
+@HiltViewModel
+class TaskListViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val taskRepository: TaskRepository
+) : ViewModel() {
+
+    val tasks = taskRepository.allTasks
+
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
-    
+
     private val _connectionState = MutableStateFlow(true)
     val connectionState: StateFlow<Boolean> = _connectionState.asStateFlow()
 
-    init {
-        checkConnectionStatus()
+    private val connectivityManager: ConnectivityManager by lazy {
+        context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     }
 
-    fun toggleTaskCompletion(task: Task) {
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+
+    init {
+        startNetworkMonitoring()
+    }
+
+    private fun startNetworkMonitoring() {
+        val networkRequest = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
+            .build()
+
+        networkCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                _connectionState.value = true
+            }
+
+            override fun onLost(network: Network) {
+                _connectionState.value = false
+            }
+
+            override fun onCapabilitiesChanged(
+                network: Network,
+                networkCapabilities: NetworkCapabilities
+            ) {
+                val hasInternet = networkCapabilities.hasCapability(
+                    NetworkCapabilities.NET_CAPABILITY_INTERNET
+                )
+                _connectionState.value = hasInternet
+            }
+        }
+
+        connectivityManager.registerNetworkCallback(networkRequest, networkCallback!!)
+        updateConnectionStatus()
+    }
+
+    private fun updateConnectionStatus() {
+        val network = connectivityManager.activeNetwork
+        val capabilities = connectivityManager.getNetworkCapabilities(network)
+        _connectionState.value = capabilities?.hasCapability(
+            NetworkCapabilities.NET_CAPABILITY_INTERNET
+        ) == true
+    }
+
+    fun toggleTaskCompletion(task: com.todoapp.data.local.Task) {
         viewModelScope.launch {
-            val isCompleting = task.status != "completed"
-            val updatedTask = task.copy(
-                status = if (isCompleting) "completed" else "todo",
-                updatedAt = getCurrentTimestamp(),
-                lastModified = getCurrentTimestamp(),
-                completedAt = if (isCompleting) getCurrentTimestamp() else null
-            )
-            
-            taskDao.updateTask(updatedTask)
-            
-            // Add to delta queue for sync
-            addToDeltaQueue("update", updatedTask)
+            taskRepository.toggleTaskCompletion(task)
+                .onError { e ->
+                    _syncState.value = SyncState.Error(
+                        context.getString(R.string.sync_update_failed, e.message)
+                    )
+                }
         }
     }
 
-    fun deleteTask(task: Task) {
+    fun deleteTask(task: com.todoapp.data.local.Task) {
         viewModelScope.launch {
-            val deletedTask = task.copy(
-                isDeleted = true,
-                updatedAt = getCurrentTimestamp(),
-                lastModified = getCurrentTimestamp()
-            )
-            
-            taskDao.updateTask(deletedTask)
-            
-            // Add to delta queue for sync
-            addToDeltaQueue("delete", deletedTask)
+            taskRepository.deleteTask(task)
+                .onError { e ->
+                    _syncState.value = SyncState.Error(
+                        context.getString(R.string.sync_delete_failed, e.message)
+                    )
+                }
         }
     }
 
     fun triggerManualSync() {
         viewModelScope.launch {
             _syncState.value = SyncState.Syncing
-            
+
             try {
                 val workRequest = OneTimeWorkRequestBuilder<DeltaSyncWorker>()
                     .setConstraints(
@@ -92,58 +126,25 @@ class TaskListViewModel(application: Application) : AndroidViewModel(application
                             .build()
                     )
                     .build()
-                
+
                 WorkManager.getInstance(context).enqueue(workRequest)
-                
-                // Wait a moment and then check status (simplified)
+
                 kotlinx.coroutines.delay(2000)
                 _syncState.value = SyncState.Success
-                
+
             } catch (e: Exception) {
-                _syncState.value = SyncState.Error("同步失败: ${e.message}")
+                _syncState.value = SyncState.Error(
+                    context.getString(R.string.sync_failed, e.message)
+                )
             }
         }
     }
 
-    private fun checkConnectionStatus() {
-        viewModelScope.launch {
-            while (true) {
-                try {
-                    val url = java.net.URL(RetrofitClient.getBaseUrl())
-                    val connection = url.openConnection() as java.net.HttpURLConnection
-                    connection.requestMethod = "HEAD"
-                    connection.connectTimeout = 5000
-                    connection.readTimeout = 5000
-                    val responseCode = connection.responseCode
-                    _connectionState.value = responseCode in 200..399
-                    connection.disconnect()
-                } catch (e: Exception) {
-                    _connectionState.value = false
-                }
-                
-                kotlinx.coroutines.delay(30000) // Check every 30 seconds
-            }
+    override fun onCleared() {
+        super.onCleared()
+        networkCallback?.let {
+            connectivityManager.unregisterNetworkCallback(it)
         }
-    }
-
-    private suspend fun addToDeltaQueue(operation: String, task: Task) {
-        try {
-            val delta = DeltaChange(
-                localId = task.localId,
-                op = operation,
-                payload = com.google.gson.Gson().toJson(task),
-                clientVersion = (task.serverVersion ?: 0) + 1,
-                timestamp = getCurrentTimestamp()
-            )
-            
-            deltaQueueDao.insertDelta(delta)
-        } catch (e: Exception) {
-            // Handle error
-        }
-    }
-
-    private fun getCurrentTimestamp(): String {
-        return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault())
-            .format(Date())
+        networkCallback = null
     }
 }

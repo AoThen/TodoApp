@@ -10,27 +10,28 @@ import android.view.ViewGroup
 import android.widget.DatePicker
 import android.widget.Toast
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import com.todoapp.R
 import com.todoapp.TodoApp
 import com.todoapp.data.local.Task
+import com.todoapp.utils.DateTimeUtils
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Locale
 
 class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
 
     private var _binding: com.todoapp.databinding.FragmentTaskDetailBinding? = null
-    private val binding get(): com.todoapp.databinding.FragmentTaskDetailBinding = _binding!!
+    private val binding get() = _binding!!
 
     private val taskId: String? by lazy { arguments?.getString("taskId") }
 
-    private lateinit var viewModel: TaskDetailViewModel
+    private val viewModel: TaskDetailViewModel by viewModels()
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
 
@@ -45,10 +46,6 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-
-        val database = (requireActivity().application as TodoApp).database
-        val factory = TaskDetailViewModel.Factory(database.taskDao())
-        viewModel = ViewModelProvider(this, factory)[TaskDetailViewModel::class.java]
 
         setupObservers()
         setupClickListeners()
@@ -104,7 +101,6 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
             showDatePicker()
         }
 
-        // 状态 Chip选择
         binding.chipEditStatusTodo.setOnClickListener {
             selectStatus("todo")
         }
@@ -115,7 +111,6 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
             selectStatus("done")
         }
 
-        // 优先级 Chip选择
         binding.chipEditPriorityLow.setOnClickListener {
             selectPriority("low")
         }
@@ -135,14 +130,14 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 val title = s.toString().trim()
-                viewModel.validateTitle(title)
+                viewModel.validateTitle(title, requireContext())
             }
         })
 
         binding.etTitle.setOnFocusChangeListener { _, hasFocus ->
             if (!hasFocus) {
                 val title = binding.etTitle.text.toString().trim()
-                viewModel.validateTitle(title)
+                viewModel.validateTitle(title, requireContext())
             }
         }
 
@@ -151,14 +146,14 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 val description = s.toString().trim()
-                viewModel.validateDescription(description)
+                viewModel.validateDescription(description, requireContext())
             }
         })
 
         binding.etEditDescription.setOnFocusChangeListener { _, hasFocus ->
             if (!hasFocus) {
                 val description = binding.etEditDescription.text.toString().trim()
-                viewModel.validateDescription(description)
+                viewModel.validateDescription(description, requireContext())
             }
         }
 
@@ -198,18 +193,18 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
         when (priority) {
             "low" -> {
                 binding.chipEditPriorityLow.isChecked = true
-                binding.chipEditPriorityMedium.isChecked = false
-                binding.chipEditPriorityHigh.isChecked = false
+                binding.chipPriorityMedium.isChecked = false
+                binding.chipPriorityHigh.isChecked = false
             }
             "medium" -> {
                 binding.chipEditPriorityLow.isChecked = false
-                binding.chipEditPriorityMedium.isChecked = true
-                binding.chipEditPriorityHigh.isChecked = false
+                binding.chipPriorityMedium.isChecked = true
+                binding.chipPriorityHigh.isChecked = false
             }
             "high" -> {
                 binding.chipEditPriorityLow.isChecked = false
-                binding.chipEditPriorityMedium.isChecked = false
-                binding.chipEditPriorityHigh.isChecked = true
+                binding.chipPriorityMedium.isChecked = false
+                binding.chipPriorityHigh.isChecked = true
             }
         }
     }
@@ -251,12 +246,16 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
         binding.btnDelete.visibility = View.VISIBLE
     }
 
-    private fun showTaskDetail(task: com.todoapp.data.local.Task) {
+    private fun showTaskDetail(task: Task) {
         binding.layoutViewMode.visibility = View.VISIBLE
         binding.layoutEditMode.visibility = View.GONE
 
         binding.tvTitle.text = task.title
-        binding.tvDescription.text = if (task.description.isBlank()) "无描述" else task.description
+        binding.tvDescription.text = if (task.description.isBlank()) {
+            getString(R.string.task_no_description)
+        } else {
+            task.description
+        }
 
         when (task.status) {
             "todo" -> {
@@ -307,20 +306,18 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
         binding.etDueDate.setText(task.dueAt?.takeIf { it.isNotBlank() }?.substringBefore("T") ?: "")
 
         val createdAt = try {
-            val parsed = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).parse(task.createdAt)
-            SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(parsed)
+            DateTimeUtils.formatForFullDisplay(task.createdAt)
         } catch (e: Exception) {
-            "未知"
+            getString(R.string.time_unknown)
         }
-        binding.tvMetadata.text = "创建时间: $createdAt"
+        binding.tvMetadata.text = getString(R.string.metadata_created_at, createdAt)
 
         val updatedAt = try {
-            val parsed = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).parse(task.updatedAt)
-            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(parsed)
+            DateTimeUtils.formatForFullDisplay(task.updatedAt)
         } catch (e: Exception) {
-            "未知"
+            getString(R.string.time_unknown)
         }
-        binding.tvUpdatedAt.text = "更新时间: $updatedAt"
+        binding.tvUpdatedAt.text = getString(R.string.metadata_updated_at, updatedAt)
 
         binding.priorityIndicator.setBackgroundColor(
             when (task.priority) {
@@ -331,8 +328,10 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
         )
     }
 
+    private var _isEditMode = false
+
     private fun toggleEditMode() {
-        viewModel.getCurrentTask()?.let { task: com.todoapp.data.local.Task ->
+        viewModel.getCurrentTask()?.let { task ->
             _isEditMode = !_isEditMode
             setEditMode(_isEditMode)
 
@@ -352,19 +351,17 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
         }
     }
 
-    private var _isEditMode = false
-
     private fun setEditMode(isEdit: Boolean) {
         if (isEdit) {
-            binding.toolbar.title = "编辑任务"
-            binding.toolbar.subtitle = "修改任务信息"
+            binding.toolbar.title = getString(R.string.edit_task_title)
+            binding.toolbar.subtitle = getString(R.string.metadata_modify_task)
         } else {
-            binding.toolbar.title = "任务详情"
+            binding.toolbar.title = getString(R.string.task_detail_title)
             binding.toolbar.subtitle = null
         }
     }
 
-    private fun populateFormFields(task: com.todoapp.data.local.Task) {
+    private fun populateFormFields(task: Task) {
         binding.etTitle.setText(task.title)
         binding.etEditDescription.setText(task.description)
         binding.etEditDueDate.setText(task.dueAt?.takeIf { it.isNotBlank() }?.substringBefore("T") ?: "")
@@ -385,33 +382,33 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
     }
 
     private fun loadData() {
-        taskId?.let { viewModel.loadTask(it) }
+        taskId?.let { viewModel.loadTask(it, requireContext()) }
     }
 
     private fun saveTask() {
-        viewModel.updateTask()
+        viewModel.updateTask(requireContext())
     }
 
     private fun showDeleteConfirmation() {
         viewModel.getCurrentTask()?.let { task ->
-            androidx.appcompat.app.AlertDialog.Builder(requireContext())
-                .setTitle("确认删除")
-                .setMessage("确定要删除任务 '${task.title}' 吗？此操作无法撤销。")
-                .setPositiveButton("删除") { _, _ ->
-                    viewModel.deleteTask(task.localId.toString())
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(getString(R.string.confirm_delete))
+                .setMessage(getString(R.string.confirm_delete_task_message, task.title))
+                .setPositiveButton(getString(R.string.delete)) { _, _ ->
+                    viewModel.deleteTask(requireContext())
                     navigateBack()
                 }
-                .setNegativeButton("取消", null)
+                .setNegativeButton(getString(R.string.cancel), null)
                 .show()
         }
     }
 
     private fun showDiscardConfirmation() {
-        androidx.appcompat.app.AlertDialog.Builder(requireContext())
-            .setTitle("放弃更改")
-            .setMessage("您有未保存的更改，确定要返回吗？")
-            .setPositiveButton("放弃返回") { _, _ ->
-                viewModel.revertChanges()
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(getString(R.string.discard_changes))
+            .setMessage(getString(R.string.discard_changes_message))
+            .setPositiveButton(getString(R.string.discard_and_return)) { _, _ ->
+                viewModel.revertChanges(requireContext())
                 _isEditMode = false
                 setEditMode(false)
                 binding.layoutViewMode.visibility = View.VISIBLE
@@ -419,7 +416,7 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
                 binding.fabEdit.visibility = View.VISIBLE
                 binding.btnDelete.visibility = View.VISIBLE
             }
-            .setNegativeButton("继续编辑", null)
+            .setNegativeButton(getString(R.string.continue_editing), null)
             .show()
     }
 

@@ -155,8 +155,8 @@ class TaskListFragment : Fragment() {
 
     private fun showDeleteTaskDialog(task: Task) {
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle(getString(R.string.task_delete))
-            .setMessage("确定要删除任务 \"${task.title}\" 吗？")
+            .setTitle(getString(R.string.confirm_delete))
+            .setMessage(getString(R.string.confirm_delete_task_message, task.title))
             .setPositiveButton(getString(R.string.delete)) { _, _ ->
                 viewModel.deleteTask(task)
             }

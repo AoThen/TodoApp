@@ -77,8 +77,16 @@ cd todoapp
 ### 2. 设置环境变量
 ```bash
 cp .env.example .env
-# 编辑 .env 文件，设置 JWT_SECRET
+# 编辑 .env 文件，配置以下必需的环境变量：
+#
+# JWT_SECRET - JWT 签名密钥 (至少32字符)
 export JWT_SECRET="$(openssl rand -hex 32)"
+#
+# INITIAL_ADMIN_EMAIL - 初始管理员邮箱 (首次启动必需)
+export INITIAL_ADMIN_EMAIL="admin@example.com"
+#
+# INITIAL_ADMIN_PASSWORD - 初始管理员密码 (首次启动必需，至少8字符)
+export INITIAL_ADMIN_PASSWORD="YourSecurePassword123!"
 ```
 
 ### 3. 启动后端
@@ -118,11 +126,13 @@ cd android
 ### 任务
 | 方法 | 端点 | 描述 | 认证 |
 |------|------|------|------|
-| GET | `/api/v1/tasks` | 获取任务列表（支持分页） | 是 |
+| GET | `/api/v1/tasks` | 获取任务列表（支持分页、筛选、排序） | 是 |
 | POST | `/api/v1/tasks` | 创建新任务 | 是 |
 | GET | `/api/v1/tasks/{id}` | 获取单个任务 | 是 |
 | PATCH | `/api/v1/tasks/{id}` | 更新任务 | 是 |
-| DELETE | `/api/v1/tasks/{id}` | 删除任务 | 是 |
+| DELETE | `/api/v1/tasks/{id}` | 删除任务（支持30秒内撤销） | 是 |
+| POST | `/api/v1/tasks/{id}/restore` | 恢复已删除任务 | 是 |
+| DELETE | `/api/v1/tasks/batch` | 批量删除任务 | 是 |
 
 ### 同步
 | 方法 | 端点 | 描述 | 认证 |
@@ -156,10 +166,25 @@ cd android
 | GET | `/api/v1/admin/config` | 获取系统配置 | 管理员 |
 | PUT | `/api/v1/admin/config` | 更新系统配置 | 管理员 |
 
+### 设备管理
+| 方法 | 端点 | 描述 | 认证 |
+|------|------|------|------|
+| GET | `/api/v1/devices` | 获取已配对设备列表 | 是 |
+| POST | `/api/v1/devices/pair` | 配对新设备 | 是 |
+| POST | `/api/v1/devices/{id}/regenerate` | 重新生成配对密钥 | 是 |
+| DELETE | `/api/v1/devices/{id}` | 撤销设备 | 是 |
+
+### 用户
+| 方法 | 端点 | 描述 | 认证 |
+|------|------|------|------|
+| POST | `/api/v1/users/register` | 用户注册 | 否 |
+| GET | `/api/v1/users/me` | 获取当前用户信息 | 是 |
+
 ### 其他
 | 方法 | 端点 | 描述 | 认证 |
 |------|------|------|------|
 | GET | `/api/v1/export` | 导出数据 (JSON/CSV) | 是 |
+| POST | `/api/v1/import` | 导入数据 (JSON/CSV) | 是 |
 | GET | `/api/v1/health` | 健康检查 | 否 |
 
 ## 项目结构
@@ -235,15 +260,21 @@ todoapp/
 
 ## 安全特性
 
-- ✅ JWT 访问令牌 + HttpOnly 刷新令牌 Cookie
-- ✅ 速率限制防止暴力破解
-- ✅ 账户锁定机制
-- ✅ 完整的登录审计日志
-- ✅ bcrypt 密码哈希
-- ✅ 输入验证和 SQL 注入防护
-- ✅ CORS 保护
-- ✅ WebSocket 加密连接
+- ✅ JWT 访问令牌（15分钟）+ 刷新令牌（7天）
+- ✅ 速率限制（15分钟窗口内最多5次尝试）
+- ✅ 账户锁定机制（5次失败锁定30分钟）
+- ✅ bcrypt 密码哈希（cost 12）
 - ✅ AES-256-GCM 端到端加密（设备配对）
+- ✅ WebSocket 加密连接
+- ✅ 完整的登录审计日志
+- ✅ 输入验证和 SQL 注入防护
+- ✅ 安全响应头（XSS Protection, HSTS, CSP）
+- ✅ SameSite HttpOnly Cookie
+
+**安全环境变量：**
+- `JWT_SECRET` - JWT 签名密钥（必需，最少32字符）
+- `ENCRYPTION_KEY` - AES-256-GCM 加密密钥（32字节hex）
+- `INITIAL_ADMIN_EMAIL/PASSWORD` - 首次启动必需的管理员账户
 
 ## 开发命令
 
@@ -284,16 +315,30 @@ make clean                                  # 清理
 
 ## 数据库
 
-TodoApp 使用 SQLite 作为存储引擎，具有以下表：
+TodoApp 使用 SQLite WAL 模式，具有以下表：
 
-- `users` - 用户信息
-- `tasks` - 任务数据
-- `notifications` - 通知数据
-- `delta_queue` - 离线更改队列
-- `devices` - 已配对设备
-- `login_logs` - 登录日志
-- `tokens` - 刷新令牌存储
-- `conflicts` - 冲突记录
+### 核心表
+| 表名 | 描述 | 关键字段 |
+|------|------|----------|
+| `users` | 用户账户 | email, password_hash, role, is_locked |
+| `tasks` | 任务数据 | user_id, local_id, server_version, status, priority |
+| `notifications` | 通知 | user_id, type, priority, is_read |
+| `devices` | 已配对设备 | user_id, device_id, device_type, pairing_key |
+
+### 同步与日志
+| 表名 | 描述 | 关键字段 |
+|------|------|----------|
+| `delta_queue` | 离线更改队列 | user_id, local_id, op, payload |
+| `conflicts` | 同步冲突 | local_id, server_id, reason, resolved |
+| `tokens` | 刷新令牌 | user_id, token_hash, expires_at |
+| `login_logs` | 登录日志 | user_id, ip, success, attempt_count |
+| `admin_logs` | 管理操作日志 | admin_id, action, details |
+
+### 系统配置
+| 表名 | 描述 | 关键字段 |
+|------|------|----------|
+| `system_config` | 系统配置 | key, value, description |
+| `deleted_tasks` | 软删除任务（30秒内可恢复） | task_id, deleted_at |
 
 ## 故障排除
 
@@ -302,15 +347,32 @@ TodoApp 使用 SQLite 作为存储引擎，具有以下表：
 **1. 编译错误 "cgo: C compiler not found"**
 ```bash
 sudo apt-get install gcc  # Ubuntu/Debian
+brew install gcc          # macOS
 ```
 
-**2. JWT_SECRET 错误**
+**2. 首次启动 "INITIAL_ADMIN_EMAIL and INITIAL_ADMIN_PASSWORD required"**
+确保设置了环境变量：
 ```bash
-export JWT_SECRET="$(openssl rand -hex 32)"
+export INITIAL_ADMIN_EMAIL="admin@example.com"
+export INITIAL_ADMIN_PASSWORD="YourSecurePassword123!"
 ```
 
-**3. Android 模拟器连接问题**
+**3. WebSocket 连接失败**
+- 开发环境检查 `ws://localhost:8080/ws` 是否可达
+- 生产环境确保启用 WSS（SSL/TLS）
+- 检查 `ENFORCE_WS_ENCRYPTION` 设置
+
+**4. 数据库锁定错误**
+- 确保没有其他进程访问数据库
+- SQLite 支持 WAL 模式，但并发写入有限制
+
+**5. Android 模拟器连接问题**
 - 使用 `10.0.2.2` 而非 `localhost` 访问主机服务
+- 确保后端允许模拟器 IP 访问（CORS）
+
+**6. Token 过期清理**
+- 刷新令牌每7天过期
+- 重新登录获取新令牌对
 
 更多故障排除请参考 [DEPLOYMENT.md](DEPLOYMENT.md)。
 

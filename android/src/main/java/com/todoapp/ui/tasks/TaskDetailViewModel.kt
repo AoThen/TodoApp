@@ -1,13 +1,18 @@
 package com.todoapp.ui.tasks
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.todoapp.R
 import com.todoapp.data.local.Task
-import kotlinx.coroutines.flow.StateFlow
+import com.todoapp.data.local.TaskDao
+import com.todoapp.data.repository.TaskRepository
+import com.todoapp.utils.DateTimeUtils
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 sealed class TaskDetailState {
     object Idle : TaskDetailState()
@@ -22,9 +27,11 @@ data class TaskFormState(
     val isFormValid: Boolean = false
 )
 
-class TaskDetailViewModel(
-    private val taskDao: com.todoapp.data.local.TaskDao
-) : androidx.lifecycle.ViewModel() {
+@HiltViewModel
+class TaskDetailViewModel @Inject constructor(
+    private val taskDao: TaskDao,
+    private val taskRepository: TaskRepository
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow<TaskDetailState>(TaskDetailState.Idle)
     val uiState: StateFlow<TaskDetailState> = _uiState.asStateFlow()
@@ -42,12 +49,12 @@ class TaskDetailViewModel(
     private var currentStatus: String = "todo"
     private var currentPriority: String = "medium"
 
-    fun loadTask(taskId: String) {
+    fun loadTask(taskId: String, context: android.content.Context) {
         viewModelScope.launch {
             _uiState.value = TaskDetailState.Loading
-            try {
-                val task = taskDao.getTaskById(taskId.toLongOrNull() ?: 0)
-                if (task != null) {
+
+            taskRepository.getTaskById(taskId.toLongOrNull() ?: 0)
+                .onSuccess { task ->
                     originalTask = task.copy()
                     currentTitle = task.title
                     currentDescription = task.description
@@ -55,32 +62,34 @@ class TaskDetailViewModel(
                     currentStatus = task.status
                     currentPriority = task.priority
                     hasUnsavedChanges = false
-                    validateForm(currentTitle, currentDescription, currentDueDate)
+                    validateForm(currentTitle, currentDescription, currentDueDate, context)
                     _uiState.value = TaskDetailState.Success(task)
-                } else {
-                    _uiState.value = TaskDetailState.Error("任务不存在")
                 }
-            } catch (e: Exception) {
-                _uiState.value = TaskDetailState.Error("加载失败: ${e.message}")
-            }
+                .onError { e ->
+                    val errorMessage = when {
+                        e is NoSuchElementException -> context.getString(R.string.task_not_found)
+                        else -> context.getString(R.string.task_load_failed, e.message)
+                    }
+                    _uiState.value = TaskDetailState.Error(errorMessage)
+                }
         }
     }
 
-    fun validateTitle(title: String) {
+    fun validateTitle(title: String, context: android.content.Context) {
         currentTitle = title
         val error = when {
-            title.isBlank() -> "标题不能为空"
-            title.length > 200 -> "标题不能超过200个字符"
+            title.isBlank() -> context.getString(R.string.task_title_empty)
+            title.length > 200 -> context.getString(R.string.task_title_too_long)
             else -> null
         }
         _formState.value = _formState.value.copy(titleError = error)
         checkUnsavedChanges()
     }
 
-    fun validateDescription(description: String) {
+    fun validateDescription(description: String, context: android.content.Context) {
         currentDescription = description
         val error = when {
-            description.length > 2000 -> "描述不能超过2000个字符"
+            description.length > 2000 -> context.getString(R.string.task_description_too_long)
             else -> null
         }
         _formState.value = _formState.value.copy(descriptionError = error)
@@ -102,9 +111,9 @@ class TaskDetailViewModel(
         checkUnsavedChanges()
     }
 
-    fun validateForm(title: String, description: String, dueDate: String) {
-        validateTitle(title)
-        validateDescription(description)
+    fun validateForm(title: String, description: String, dueDate: String, context: android.content.Context) {
+        validateTitle(title, context)
+        validateDescription(description, context)
         validateDueDate(dueDate)
     }
 
@@ -118,52 +127,61 @@ class TaskDetailViewModel(
         )
     }
 
-    fun updateTask() {
+    fun updateTask(context: android.content.Context) {
         viewModelScope.launch {
             _uiState.value = TaskDetailState.Loading
-            try {
-                val task = getCurrentTask() ?: return@launch
-                if (!_formState.value.isFormValid) {
-                    _uiState.value = TaskDetailState.Error("请修正表单中的错误")
-                    return@launch
+
+            val task = getCurrentTask() ?: return@launch
+
+            if (!_formState.value.isFormValid) {
+                _uiState.value = TaskDetailState.Error(context.getString(R.string.task_fix_form_errors))
+                return@launch
+            }
+
+            val updated = task.copy(
+                title = currentTitle,
+                description = currentDescription,
+                status = currentStatus,
+                priority = currentPriority,
+                dueAt = if (currentDueDate.isNotBlank()) "${currentDueDate}T00:00:00Z" else task.dueAt,
+                updatedAt = DateTimeUtils.getCurrentTimestamp(),
+                serverVersion = (task.serverVersion ?: 0) + 1,
+                lastModified = DateTimeUtils.getCurrentTimestamp()
+            )
+
+            taskRepository.updateTask(updated)
+                .onSuccess {
+                    originalTask = updated.copy()
+                    hasUnsavedChanges = false
+                    _uiState.value = TaskDetailState.Success(updated)
                 }
-
-                val now = System.currentTimeMillis()
-
-                val updated = task.copy(
-                    title = currentTitle,
-                    description = currentDescription,
-                    status = currentStatus,
-                    priority = currentPriority,
-                    dueAt = if (currentDueDate.isNotBlank()) "${currentDueDate}T00:00:00Z" else task.dueAt,
-                    updatedAt = now.toString(),
-                    serverVersion = (task.serverVersion ?: 0) + 1,
-                    lastModified = now.toString()
-                )
-
-                taskDao.updateTask(updated)
-                originalTask = updated.copy()
-                hasUnsavedChanges = false
-                _uiState.value = TaskDetailState.Success(updated)
-            } catch (e: Exception) {
-                _uiState.value = TaskDetailState.Error("更新失败: ${e.message}")
-            }
+                .onError { e ->
+                    _uiState.value = TaskDetailState.Error(
+                        context.getString(R.string.task_update_failed, e.message)
+                    )
+                }
         }
     }
 
-    fun deleteTask(taskId: String) {
+    fun deleteTask(context: android.content.Context) {
         viewModelScope.launch {
             _uiState.value = TaskDetailState.Loading
-            try {
-                taskDao.softDeleteTask(taskId.toLongOrNull() ?: 0, System.currentTimeMillis().toString())
-                _uiState.value = TaskDetailState.Success(getCurrentTask() ?: return@launch)
-            } catch (e: Exception) {
-                _uiState.value = TaskDetailState.Error("删除失败: ${e.message}")
-            }
+
+            val task = getCurrentTask() ?: return@launch
+
+            taskRepository.deleteTask(task)
+                .onSuccess {
+                    _uiState.value = TaskDetailState.Success(task)
+                }
+                .onError { e ->
+                    _uiState.value = TaskDetailState.Error(
+                        context.getString(R.string.task_delete_failed, e.message)
+                    )
+                }
         }
     }
 
-    fun revertChanges() {
+    fun revertChanges(context: android.content.Context) {
         originalTask?.let { task ->
             currentTitle = task.title
             currentDescription = task.description
@@ -191,12 +209,5 @@ class TaskDetailViewModel(
             return state.task
         }
         return null
-    }
-
-    class Factory(private val taskDao: com.todoapp.data.local.TaskDao) : ViewModelProvider.Factory {
-        override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            @Suppress("UNCHECKED_CAST")
-            return TaskDetailViewModel(taskDao) as T
-        }
     }
 }

@@ -2,8 +2,6 @@ import axios, { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios';
 import { Task, DeltaChange } from './indexedDB';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080/api/v1';
-
-// Request timeout (30 seconds)
 const REQUEST_TIMEOUT = 30000;
 
 class ApiService {
@@ -17,53 +15,46 @@ class ApiService {
         'Content-Type': 'application/json',
       },
       timeout: REQUEST_TIMEOUT,
-      withCredentials: true, // Enable credentials for CORS
+      withCredentials: true,
     });
 
-    // Request interceptor to add auth token
     this.client.interceptors.request.use(
       (config) => {
-        const token = localStorage.getItem('access_token');
+        const token = this.getAccessToken();
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
-        // Add request ID for tracing
         config.headers['X-Request-ID'] = this.generateRequestId();
         return config;
       },
       (error) => Promise.reject(error)
     );
 
-    // Response interceptor for token refresh and error handling
     this.client.interceptors.response.use(
       (response) => response,
       async (error: AxiosError) => {
         const originalRequest = error.config as unknown as { _retry?: boolean } & Record<string, unknown>;
-        
-        // Handle 401 Unauthorized
+
         if (error.response?.status === 401 && !originalRequest._retry) {
           originalRequest._retry = true;
-          
+
           try {
-            // Prevent multiple simultaneous refresh attempts
             if (!this.refreshPromise) {
               this.refreshPromise = this.performTokenRefresh();
             }
-            
+
             await this.refreshPromise;
             this.refreshPromise = null;
-            
-            // Retry the original request
+
             return this.client(originalRequest as AxiosRequestConfig);
           } catch (refreshError) {
             this.refreshPromise = null;
-            // Clear tokens and redirect to login
             this.clearTokens();
+            window.location.href = '/login';
             throw refreshError;
           }
         }
 
-        // Log error for debugging (in production, use proper logging service)
         if (process.env.NODE_ENV === 'development') {
           console.error('API Error:', error.message);
         }
@@ -73,35 +64,44 @@ class ApiService {
     );
   }
 
-  // Generate unique request ID for tracing
   private generateRequestId(): string {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
 
-  // Clear all stored tokens
+  private getAccessToken(): string | null {
+    const token = localStorage.getItem('access_token');
+    return token || null;
+  }
+
+  private getRefreshToken(): string | null {
+    return localStorage.getItem('refresh_token');
+  }
+
   private clearTokens(): void {
     localStorage.removeItem('access_token');
-    // Clear any other stored auth data
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('token_expires_at');
     sessionStorage.clear();
   }
 
-  // Auth operations
   async login(email: string, password: string): Promise<{
     access_token: string;
+    refresh_token: string;
     expires_in: number;
   }> {
     try {
       const response = await this.client.post('/auth/login', { email, password });
-      const { access_token, expires_in } = response.data;
-      
-      if (!access_token) {
-        throw new Error('No access token received');
+      const { access_token, refresh_token, expires_in } = response.data;
+
+      if (!access_token || !refresh_token) {
+        throw new Error('No tokens received');
       }
 
       localStorage.setItem('access_token', access_token);
+      localStorage.setItem('refresh_token', refresh_token);
       localStorage.setItem('token_expires_at', String(Date.now() + expires_in * 1000));
-      
-      return { access_token, expires_in };
+
+      return { access_token, refresh_token, expires_in };
     } catch (error) {
       if (process.env.NODE_ENV === 'development') {
         console.error('Login error:', error);
@@ -115,15 +115,24 @@ class ApiService {
   }
 
   private async performTokenRefresh(): Promise<void> {
+    const refreshToken = this.getRefreshToken();
+    if (!refreshToken) {
+      this.clearTokens();
+      throw new Error('No refresh token available');
+    }
+
     try {
-      const response = await this.client.post('/auth/refresh');
-      const { access_token, expires_in } = response.data;
-      
+      const response = await this.client.post('/auth/refresh', { refresh_token: refreshToken });
+      const { access_token, refresh_token, expires_in } = response.data;
+
       if (!access_token) {
         throw new Error('No access token received from refresh');
       }
 
       localStorage.setItem('access_token', access_token);
+      if (refresh_token) {
+        localStorage.setItem('refresh_token', refresh_token);
+      }
       localStorage.setItem('token_expires_at', String(Date.now() + expires_in * 1000));
     } catch (error) {
       this.clearTokens();
@@ -132,10 +141,10 @@ class ApiService {
   }
 
   async logout(): Promise<void> {
+    const refreshToken = this.getRefreshToken();
     try {
-      await this.client.post('/auth/logout');
+      await this.client.post('/auth/logout', { refresh_token: refreshToken });
     } catch (error) {
-      // Log but don't throw - logout should always clear local state
       if (process.env.NODE_ENV === 'development') {
         console.warn('Logout API call failed:', error);
       }
@@ -144,7 +153,6 @@ class ApiService {
     }
   }
 
-  // Check if token is expired
   isTokenExpired(): boolean {
     const expiresAt = localStorage.getItem('token_expires_at');
     if (!expiresAt) return true;
@@ -225,6 +233,33 @@ class ApiService {
   async getCurrentUser(): Promise<{ id: string; email: string }> {
     const response = await this.client.get('/users/me');
     return response.data;
+  }
+
+  // Device operations
+  async getDevices(): Promise<{ data: { devices: Array<{
+    id: number;
+    device_type: string;
+    device_id: string;
+    server_url: string;
+    paired_at: string;
+    last_seen: string;
+    is_active: boolean;
+  }> }> {
+    const response = await this.client.get('/devices');
+    return response.data;
+  }
+
+  async pairDevice(data: { key: string; device_type: string; device_id: string }): Promise<void> {
+    await this.client.post('/devices/pair', data);
+  }
+
+  async regenerateKey(deviceId: string): Promise<{ data: { new_key: string } }> {
+    const response = await this.client.post(`/devices/${deviceId}/regenerate`);
+    return response.data;
+  }
+
+  async revokeDevice(deviceId: string): Promise<void> {
+    await this.client.delete(`/devices/${deviceId}`);
   }
 }
 

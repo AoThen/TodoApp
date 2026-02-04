@@ -2,6 +2,8 @@ package com.todoapp.data.local
 
 import android.content.Context
 import androidx.room.*
+import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.sqlite.db.SupportSQLiteOpenHelper
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "tasks")
@@ -183,7 +185,7 @@ interface NotificationDao {
 
 @Database(
     entities = [Task::class, DeltaChange::class, SyncMeta::class, Conflict::class, Notification::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -194,17 +196,55 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun notificationDao(): NotificationDao
 
     companion object {
+        private const val DATABASE_NAME = "todoapp.db"
+        private const val VERSION_1 = 1
+        private const val VERSION_2 = 2
+        private const val VERSION_3 = 3
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
+
+        private val MIGRATION_1_2 = object : Migration(VERSION_1, VERSION_2) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Version 1 to 2: Added indexes to notifications table for better query performance
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_notifications_userId ON notifications(userId)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_notifications_isRead ON notifications(isRead)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_notifications_createdAt ON notifications(createdAt)")
+            }
+        }
+
+        private val MIGRATION_2_3 = object : Migration(VERSION_2, VERSION_3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Version 2 to 3: Added isArchived field to tasks for better task management
+                database.execSQL("ALTER TABLE tasks ADD COLUMN isArchived INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE tasks ADD COLUMN archivedAt TEXT DEFAULT NULL")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_userId ON tasks(userId)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_status ON tasks(status)")
+            }
+        }
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
-                    "todoapp.db"
-                ).build().also { INSTANCE = it }
+                    DATABASE_NAME
+                )
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .fallbackToDestructiveMigration()
+                    .build()
+                    .also { INSTANCE = it }
             }
+        }
+
+        @VisibleForTesting
+        fun getInMemoryInstance(context: Context): AppDatabase {
+            return Room.inMemoryDatabaseBuilder(
+                context.applicationContext,
+                AppDatabase::class.java
+            )
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .build()
         }
     }
 }

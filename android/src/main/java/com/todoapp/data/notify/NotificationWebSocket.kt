@@ -28,19 +28,31 @@ class NotificationWebSocket(
 
     private object Config {
         val TAG = "NotificationWebSocket"
-        val SERVER_URL = "10.0.2.2:8080"
+    }
+
+    private fun getServerAddress(): String {
+        val baseUrl = com.todoapp.data.remote.RetrofitClient.getBaseUrl()
+        return try {
+            val url = java.net.URL(baseUrl)
+            val host = url.host
+            val port = if (url.port > 0) url.port else if (url.protocol == "https") 443 else 80
+            "$host:$port"
+        } catch (e: Exception) {
+            "10.0.2.2:8080"
+        }
     }
 
     fun connect() {
+        val serverAddress = getServerAddress()
         val encryptionParam = if (encryptionEnabled) "&encryption=true" else ""
-        val url = "ws://${Config.SERVER_URL}/ws?token=$token$encryptionParam"
+        val url = "ws://$serverAddress/ws?token=$token$encryptionParam"
         val request = Request.Builder()
             .url(url)
             .build()
 
         webSocket = okHttpClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(ws: WebSocket, response: Response) {
-                android.util.Log.d(Config.TAG, "WebSocket connected")
+                android.util.Log.d(Config.TAG, "WebSocket connected to $serverAddress")
                 reconnectAttempts = 0
                 sendHandshake()
             }

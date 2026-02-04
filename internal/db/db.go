@@ -221,14 +221,12 @@ func seedIfEmpty() {
 		return
 	}
 	if count == 0 {
-		// Get admin credentials from environment variables or use defaults
 		adminEmail := os.Getenv("INITIAL_ADMIN_EMAIL")
-		if adminEmail == "" {
-			adminEmail = "admin@example.com"
-		}
 		adminPassword := os.Getenv("INITIAL_ADMIN_PASSWORD")
-		if adminPassword == "" {
-			adminPassword = "Admin123!"
+
+		if adminEmail == "" || adminPassword == "" {
+			log.Println("seed: INITIAL_ADMIN_EMAIL and INITIAL_ADMIN_PASSWORD environment variables are required when initializing the database for the first time")
+			return
 		}
 
 		password := []byte(adminPassword)
@@ -247,7 +245,7 @@ func seedIfEmpty() {
 		// Initialize default system config
 		initSystemConfig(now)
 
-		log.Printf("seed: created admin user %s (password: %s)", adminEmail, adminPassword)
+		log.Printf("seed: created admin user %s", adminEmail)
 	}
 }
 

@@ -3,26 +3,19 @@ package com.todoapp
 import android.app.Application
 import androidx.work.Configuration
 import androidx.work.WorkManager
+import com.todoapp.config.AppConfig
 import com.todoapp.data.crypto.KeyStorage
-import com.todoapp.data.local.AppDatabase
 import com.todoapp.data.remote.RetrofitClient
+import dagger.hilt.android.HiltAndroidApp
 
+@HiltAndroidApp
 class TodoApp : Application(), Configuration.Provider {
-
-    // Database instance
-    val database: AppDatabase by lazy {
-        AppDatabase.getInstance(this)
-    }
-
-    // Repository instances
-    val retrofitClient by lazy {
-        RetrofitClient
-    }
 
     override fun onCreate() {
         super.onCreate()
-        
-        // Initialize WorkManager for background sync
+
+        AppConfig.initialize(this)
+
         WorkManager.initialize(this, workManagerConfiguration)
     }
 
@@ -32,9 +25,6 @@ class TodoApp : Application(), Configuration.Provider {
             .build()
     }
 
-    /**
-     * Check if user is already paired (has encryption key)
-     */
     fun isUserPaired(): Boolean {
         return try {
             KeyStorage.hasValidPairing(this)
@@ -43,11 +33,8 @@ class TodoApp : Application(), Configuration.Provider {
         }
     }
 
-    /**
-     * Check if user is logged in (has access token)
-     */
     fun isUserLoggedIn(): Boolean {
-        return retrofitClient.hasToken(this) && 
-        retrofitClient.getAccessToken(this).isNotEmpty()
+        return RetrofitClient.hasToken(this) &&
+        RetrofitClient.getAccessToken(this).isNotEmpty()
     }
 }
