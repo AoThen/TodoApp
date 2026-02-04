@@ -20,7 +20,9 @@ const BatchDeleteDialog: React.FC<BatchDeleteDialogProps> = ({ isOpen, count, on
     }
   };
 
-  return isOpen && (
+  if (!isOpen) return null;
+
+  return (
     <div className="modal-overlay">
       <div className="modal-content">
         <h3>确认批量删除</h3>
