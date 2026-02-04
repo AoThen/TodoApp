@@ -28,7 +28,7 @@
         <action
             android:id="@+id/action_loginFragment_to_taskListFragment"
             app:destination="@id/taskListFragment"
-            app:popUpTo="@id/nav_graph"
+            app:popUpTo="@id/pairingFragment"
             app:popUpToInclusive="true" />
     </fragment>
 
@@ -69,7 +69,7 @@
 
         <action
             android:id="@+id/action_addTaskFragment_to_taskListFragment"
-            app:popUpTo="@id/nav_graph"
+            app:popUpTo="@id/taskListFragment"
             app:popUpToInclusive="true" />
     </fragment>
 

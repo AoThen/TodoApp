@@ -84,4 +84,9 @@
     <string name="cd_sync_status">同步状态</string>
     <string name="cd_menu">菜单</string>
     <string name="cd_back">返回</string>
+
+    <!-- Task detail titles -->
+    <string name="add_task_title">添加任务</string>
+    <string name="edit_task_title">编辑任务</string>
+    <string name="task_detail_title">任务详情</string>
 </resources>

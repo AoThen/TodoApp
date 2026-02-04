@@ -31,7 +31,7 @@
             <!-- 加载指示器 -->
             <ProgressBar
                 android:id="@+id/progressBar"
-                style="?attr/circularProgress"
+                style="@style/Widget.MaterialComponents.CircularProgressIndicator"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
@@ -353,7 +353,7 @@
                 android:layout_marginTop="24dp"
                 app:icon="@drawable/ic_delete"
                 android:contentDescription="删除任务"
-                android:textColor="@color/colorOnError" />
+                 android:textColor="@color/md_theme_light_error" />
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
@@ -368,6 +368,6 @@
         app:srcCompat="@drawable/ic_edit"
         android:layout_gravity="bottom|end"
         android:layout_margin="16dp"
-        app:tint="@color/colorPrimary" />
+         app:tint="@color/md_theme_light_onPrimary" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
