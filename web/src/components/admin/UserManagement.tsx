@@ -63,6 +63,7 @@ const UserManagement: React.FC = () => {
   const handleClearFilters = () => {
     setFilters({ email: '', role: '' });
     setPagination(prev => ({ ...prev, page: 1 }));
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -316,5 +317,5 @@ const UserManagement: React.FC = () => {
     </div>
   );
 };
-
 export default UserManagement;
+
