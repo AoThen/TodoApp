@@ -42,7 +42,14 @@ const UserManagement: React.FC = () => {
         role: filters.role,
       });
       setUsers(data.users);
-      setPagination(data.pagination);
+      setPagination({
+        page: data.pagination.page,
+        pageSize: data.pagination.page_size,
+        total: data.pagination.total,
+        pages: data.pagination.pages,
+        hasPrev: data.pagination.has_prev,
+        hasNext: data.pagination.has_next,
+      });
       setError(null);
     } catch (err) {
       setError('加载用户列表失败');
