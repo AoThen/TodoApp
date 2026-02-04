@@ -10,6 +10,9 @@ import android.view.ViewGroup
 import android.widget.DatePicker
 import android.widget.Toast
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
 import com.todoapp.R
@@ -23,7 +26,7 @@ class AddTaskFragment : Fragment(), DatePickerDialog.OnDateSetListener {
     private var _binding: FragmentAddTaskBinding? = null
     private val binding get(): FragmentAddTaskBinding = _binding!!
 
-    private val args by navArgs()
+
 
     private lateinit var viewModel: AddTaskViewModel
 
@@ -56,7 +59,7 @@ class AddTaskFragment : Fragment(), DatePickerDialog.OnDateSetListener {
 
     private fun setupObservers() {
         viewLifecycleOwner.lifecycleScope.launch {
-            lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.uiState.collect { state ->
                     when (state) {
                         is AddTaskState.Idle -> hideLoading()
@@ -80,7 +83,7 @@ class AddTaskFragment : Fragment(), DatePickerDialog.OnDateSetListener {
         }
 
         viewLifecycleOwner.lifecycleScope.launch {
-            lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.formState.collect { state ->
                     binding.tilTitle.error = state.titleError
                     binding.tilDescription.error = state.descriptionError

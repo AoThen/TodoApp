@@ -1,13 +1,9 @@
 package com.todoapp.ui.tasks
 
-import androidx.fragment.app.Fragment
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.lifecycle
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.viewmodelScope
-import com.todoapp.TodoApp
-import com.todoapp.data.Task
-import com.todoapp.data.local.AppDatabase
+import androidx.lifecycle.viewModelScope
+import com.todoapp.data.local.Task
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -55,7 +51,7 @@ class TaskDetailViewModel(
                     originalTask = task.copy()
                     currentTitle = task.title
                     currentDescription = task.description
-                    currentDueDate = task.dueAt.substringBefore("T").takeIf { task.dueAt.isNotBlank() } ?: ""
+                    currentDueDate = task.dueAt?.substringBefore("T")?.takeIf { it.isNotBlank() } ?: ""
                     currentStatus = task.status
                     currentPriority = task.priority
                     hasUnsavedChanges = false
@@ -116,7 +112,7 @@ class TaskDetailViewModel(
         hasUnsavedChanges = originalTask != null && (
             currentTitle != originalTask!!.title ||
             currentDescription != originalTask!!.description ||
-            currentDueDate != originalTask!!.dueAt.substringBefore("T").takeIf { originalTask!!.dueAt.isNotBlank() } ?: "" ||
+            currentDueDate != originalTask!!.dueAt?.substringBefore("T")?.takeIf { it.isNotBlank() } ?: "" ||
             currentStatus != originalTask!!.status ||
             currentPriority != originalTask!!.priority
         )
@@ -139,7 +135,7 @@ class TaskDetailViewModel(
                     description = currentDescription,
                     status = currentStatus,
                     priority = currentPriority,
-                    dueAt = if (currentDueDate.isNotBlank()) "$currentDueDateT00:00:00Z" else task.dueAt,
+                    dueAt = if (currentDueDate.isNotBlank()) "${currentDueDate}T00:00:00Z" else task.dueAt,
                     updatedAt = now.toString(),
                     serverVersion = (task.serverVersion ?: 0) + 1,
                     lastModified = now.toString()
@@ -171,7 +167,7 @@ class TaskDetailViewModel(
         originalTask?.let { task ->
             currentTitle = task.title
             currentDescription = task.description
-            currentDueDate = task.dueAt.substringBefore("T").takeIf { task.dueAt.isNotBlank() } ?: ""
+            currentDueDate = task.dueAt?.substringBefore("T")?.takeIf { it.isNotBlank() } ?: ""
             currentStatus = task.status
             currentPriority = task.priority
             hasUnsavedChanges = false
@@ -198,7 +194,7 @@ class TaskDetailViewModel(
     }
 
     class Factory(private val taskDao: com.todoapp.data.local.TaskDao) : ViewModelProvider.Factory {
-        override fun <T : ViewModel> create(modelClass: Class): T {
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
             @Suppress("UNCHECKED_CAST")
             return TaskDetailViewModel(taskDao) as T
         }

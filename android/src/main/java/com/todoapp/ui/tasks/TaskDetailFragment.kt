@@ -10,15 +10,14 @@ import android.view.ViewGroup
 import android.widget.DatePicker
 import android.widget.Toast
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
-import androidx.navigation.fragment.navArgs
 import com.todoapp.R
 import com.todoapp.TodoApp
-import com.todoapp.data.Task
-import com.todoapp.data.local.AppDatabase
+import com.todoapp.data.local.Task
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -29,11 +28,10 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
     private var _binding: com.todoapp.databinding.FragmentTaskDetailBinding? = null
     private val binding get(): com.todoapp.databinding.FragmentTaskDetailBinding = _binding!!
 
-    private val args: com.todoapp.ui.tasks.TaskDetailFragmentArgs by navArgs()
+    private val taskId: String? by lazy { arguments?.getString("taskId") }
 
     private lateinit var viewModel: TaskDetailViewModel
 
-    // 日期选择器
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
 
     override fun onCreateView(
@@ -59,7 +57,7 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
 
     private fun setupObservers() {
         viewLifecycleOwner.lifecycleScope.launch {
-            lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.uiState.collect { state ->
                     when (state) {
                         is TaskDetailState.Idle -> hideLoading()
@@ -72,7 +70,7 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
         }
 
         viewLifecycleOwner.lifecycleScope.launch {
-            lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.formState.collect { state ->
                     binding.tilTitle.error = state.titleError
                     binding.btnSave.isEnabled = state.isFormValid
@@ -91,7 +89,7 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
         }
 
         binding.btnCancel.setOnClickListener {
-            if (viewModel.getCurrentTask()?.isEdited == true) {
+            if (viewModel.hasUnsavedChanges) {
                 showDiscardConfirmation()
             } else {
                 navigateBack()
@@ -253,7 +251,7 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
         binding.btnDelete.visibility = View.VISIBLE
     }
 
-    private fun showTaskDetail(task: Task) {
+    private fun showTaskDetail(task: com.todoapp.data.local.Task) {
         binding.layoutViewMode.visibility = View.VISIBLE
         binding.layoutEditMode.visibility = View.GONE
 
@@ -334,16 +332,16 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
     }
 
     private fun toggleEditMode() {
-        viewModel.getCurrentTask()?.let { task ->
+        viewModel.getCurrentTask()?.let { task: com.todoapp.data.local.Task ->
             _isEditMode = !_isEditMode
             setEditMode(_isEditMode)
-            
+
             if (_isEditMode) {
                 binding.layoutViewMode.visibility = View.GONE
                 binding.layoutEditMode.visibility = View.VISIBLE
                 binding.fabEdit.visibility = View.GONE
                 binding.btnDelete.visibility = View.GONE
-                
+
                 populateFormFields(task)
             } else {
                 binding.layoutViewMode.visibility = View.VISIBLE
@@ -366,7 +364,7 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
         }
     }
 
-    private fun populateFormFields(task: Task) {
+    private fun populateFormFields(task: com.todoapp.data.local.Task) {
         binding.etTitle.setText(task.title)
         binding.etEditDescription.setText(task.description)
         binding.etEditDueDate.setText(if (task.dueAt.isNotBlank()) task.dueAt.substringBefore("T") else "")
@@ -387,7 +385,7 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
     }
 
     private fun loadData() {
-        viewModel.loadTask(args.taskId)
+        taskId?.let { viewModel.loadTask(it) }
     }
 
     private fun saveTask() {

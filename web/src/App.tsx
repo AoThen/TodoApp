@@ -438,9 +438,13 @@ const App: React.FC = () => {
          />
        )}
 
-      {showImport && (
-        <ImportDialog onClose={() => setShowImport(false)} />
-      )}
+{showImport && (
+          <ImportDialog
+            isOpen={showImport}
+            onClose={() => setShowImport(false)}
+            onImportSuccess={loadTasks}
+          />
+        )}
      </div>
   );
 };

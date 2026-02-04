@@ -105,7 +105,7 @@ class AddTaskViewModel(
                     description = currentDescription,
                     status = currentStatus,
                     priority = currentPriority,
-                    dueAt = if (currentDueDate.isNotBlank()) "$currentDueDateT00:00:00Z" else null,
+                    dueAt = if (currentDueDate.isNotBlank()) "${currentDueDate}T00:00:00Z" else null,
                     createdAt = now.toString(),
                     updatedAt = now.toString(),
                     lastModified = now.toString()
@@ -123,7 +123,7 @@ class AddTaskViewModel(
                             "description": "${currentDescription}",
                             "status": "$currentStatus",
                             "priority": "$currentPriority",
-                            "due_at": ${if (currentDueDate.isNotBlank()) "\"$currentDueDateT00:00:00Z\"" else "null"}
+                            "due_at": ${if (currentDueDate.isNotBlank()) "\"${currentDueDate}T00:00:00Z\"" else "null"}
                         }
                     """.trimIndent(),
                     clientVersion = 1,
@@ -165,7 +165,7 @@ class AddTaskViewModel(
         private val taskDao: com.todoapp.data.local.TaskDao,
         private val deltaQueueDao: com.todoapp.data.local.DeltaQueueDao
     ) : ViewModelProvider.Factory {
-        override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class): T {
+        override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
             @Suppress("UNCHECKED_CAST")
             return AddTaskViewModel(application, taskDao, deltaQueueDao) as T
         }

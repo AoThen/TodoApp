@@ -155,8 +155,8 @@ class QRScannerActivity : AppCompatActivity() {
                             .pairDevice(
                                 PairingRequest(
                                     key = pairingData.key,
-                                    device_type = "android",
-                                    device_id = deviceId
+                                    deviceType = "android",
+                                    deviceId = deviceId!!
                                 )
                             )
 
@@ -221,12 +221,12 @@ class QRScannerActivity : AppCompatActivity() {
 
     private fun getDeviceID(): String {
         val prefs = getSharedPreferences("TodoAppPrefs", MODE_PRIVATE)
-        var deviceId = prefs.getString("device_id", "")
+        var deviceId = prefs.getString("device_id", null)
         if (deviceId.isNullOrEmpty()) {
             deviceId = android.provider.Settings.Secure.getString(
                 contentResolver,
                 android.provider.Settings.Secure.ANDROID_ID
-            )
+            ) ?: return ""
             prefs.edit().putString("device_id", deviceId).apply()
         }
         return deviceId
