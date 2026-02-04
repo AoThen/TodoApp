@@ -398,7 +398,7 @@ class TaskDetailFragment : Fragment() {
         viewModel.getCurrentTask()?.let { task ->
             androidx.appcompat.app.AlertDialog.Builder(requireContext())
                 .setTitle("确认删除")
-                .setMessage("确定要删除任务 "${task.title}" 吗？此操作无法撤销。")
+                .setMessage("确定要删除任务 '${task.title}' 吗？此操作无法撤销。")
                 .setPositiveButton("删除") { _, _ ->
                     viewModel.deleteTask(task.localId.toString())
                     navigateBack()

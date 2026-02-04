@@ -209,7 +209,7 @@ const App: React.FC = () => {
     const taskIds = tasksToDelete.map(t => t.server_id).filter((id): id is number => typeof id === 'number') as number[];
 
     try {
-      setLoading(true);
+      setIsLoading(true);
       const response = await apiService.batchDeleteTasks(taskIds);
       setShowBatchConfirm(false);
 
