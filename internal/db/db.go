@@ -645,6 +645,93 @@ func GetAllUsers() ([]map[string]interface{}, error) {
 	return results, nil
 }
 
+// GetUsersPaginated 分页获取用户列表
+func GetUsersPaginated(page, pageSize int, email, role string) ([]map[string]interface{}, int, error) {
+	// 验证分页参数
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	offset := (page - 1) * pageSize
+
+	// 构建查询条件
+	query := "SELECT COUNT(*) FROM users WHERE 1=1"
+	args := []interface{}{}
+
+	if email != "" {
+		query += " AND email LIKE ?"
+		args = append(args, "%"+email+"%")
+	}
+	if role != "" && (role == "admin" || role == "user") {
+		query += " AND role = ?"
+		args = append(args, role)
+	}
+
+	var total int
+	err := DB.QueryRow(query, args...).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// 获取分页数据
+	query = `
+		SELECT id, email, role, failed_attempts, locked_until, must_change_password, created_at, updated_at
+		FROM users WHERE 1=1
+	`
+
+	if email != "" {
+		query += " AND email LIKE ?"
+	}
+	if role != "" && (role == "admin" || role == "user") {
+		query += " AND role = ?"
+	}
+
+	query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+	results := append(args, pageSize, offset)
+
+	rows, err := DB.Query(query, results...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var userResults []map[string]interface{}
+	for rows.Next() {
+		var id int64
+		var emailStr, userRole string
+		var failedAttempts int
+		var lockedUntil sql.NullTime
+		var mustChangePassword bool
+		var createdAt, updatedAt string
+
+		if err := rows.Scan(&id, &emailStr, &userRole, &failedAttempts, &lockedUntil, &mustChangePassword, &createdAt, &updatedAt); err != nil {
+			return nil, 0, err
+		}
+
+		userResults = append(userResults, map[string]interface{}{
+			"id":              id,
+			"email":           emailStr,
+			"role":            userRole,
+			"failed_attempts": failedAttempts,
+			"locked_until": func() interface{} {
+				if lockedUntil.Valid {
+					return lockedUntil.Time.Format(time.RFC3339)
+				}
+				return nil
+			}(),
+			"must_change_password": mustChangePassword,
+			"created_at":           createdAt,
+			"updated_at":           updatedAt,
+			"is_locked":            lockedUntil.Valid && lockedUntil.Time.After(time.Now()),
+		})
+	}
+
+	return userResults, total, nil
+}
+
 // CreateUser 创建新用户
 func CreateUser(email, password, role string) (int64, error) {
 	// 检查邮箱是否已存在

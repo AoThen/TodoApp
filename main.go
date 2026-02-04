@@ -168,6 +168,7 @@ func main() {
 	protected.HandleFunc("/tasks/{id}/restore", handleRestoreTask).Methods("POST")
 	protected.HandleFunc("/sync", func(w http.ResponseWriter, r *http.Request) { handleSync(w, r, wsHub) }).Methods("POST")
 	protected.HandleFunc("/export", handleExport).Methods("GET")
+	protected.HandleFunc("/import", handleImport).Methods("POST")
 	protected.HandleFunc("/notifications", handleGetNotifications).Methods("GET")
 	protected.HandleFunc("/notifications", handleCreateNotification).Methods("POST")
 	protected.HandleFunc("/notifications/{id}/read", handleMarkAsRead).Methods("PATCH")
@@ -1149,6 +1150,31 @@ func generateRandomKey() string {
 	return string(b)
 }
 
+// toImportString 安全地转换JSON中的值为字符串（用于导入功能）
+func toImportString(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+
+	switch val := v.(type) {
+	case string:
+		return val
+	case float64:
+		return fmt.Sprintf("%f", val)
+	case int64:
+		return fmt.Sprintf("%d", val)
+	case bool:
+		if val {
+			return "true"
+		}
+		return "false"
+	case int:
+		return fmt.Sprintf("%d", val)
+	default:
+		return ""
+	}
+}
+
 // handleBatchDeleteTasks 批量删除任务
 func handleBatchDeleteTasks(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 	userIDStr := getUserIDFromContext(r.Context())
@@ -1226,6 +1252,146 @@ func handleRestoreTask(w http.ResponseWriter, r *http.Request) {
 
 	response.SuccessResponse(w, map[string]string{
 		"status": "restored",
+	}, http.StatusOK)
+}
+
+// handleImport 导入任务数据（JSON 或 CSV 格式）
+func handleImport(w http.ResponseWriter, r *http.Request) {
+	userID := getUserIDFromContext(r.Context())
+	if userID == "" {
+		response.ErrorResponse(w, "未授权", http.StatusUnauthorized)
+		return
+	}
+
+	userIDInt, err := strconv.Atoi(userID)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	// 解析 multipart/form-data
+	err = r.ParseMultipartForm(10 << 20)
+	if err != nil {
+		response.ErrorResponse(w, "文件过大或格式错误", http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		response.ErrorResponse(w, "未找到文件", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	if file == nil {
+		response.ErrorResponse(w, "文件不能为空", http.StatusBadRequest)
+		return
+	}
+
+	// 获取格式
+	format := r.FormValue("format")
+	if format == "" {
+		header.Filename = strings.ToLower(header.Filename)
+		if strings.HasSuffix(header.Filename, ".csv") {
+			format = "csv"
+		} else if strings.HasSuffix(header.Filename, ".json") {
+			format = "json"
+		} else {
+			format = "json"
+		}
+	}
+
+	var tasks []map[string]interface{}
+	var importedCount, skippedCount int
+
+	if format == "json" {
+		// 解析JSON
+		var jsonTasks []map[string]interface{}
+		if err := json.NewDecoder(file).Decode(&jsonTasks); err != nil {
+			log.Printf("JSON解析失败: %v", err)
+			response.ErrorResponse(w, "JSON解析失败", http.StatusBadRequest)
+			return
+		}
+
+		for _, jsonTask := range jsonTasks {
+			task := map[string]interface{}{
+				"local_id":    toImportString(jsonTask["local_id"]),
+				"title":       toImportString(jsonTask["title"]),
+				"description": toImportString(jsonTask["description"]),
+				"status":      toImportString(jsonTask["status"]),
+				"priority":    toImportString(jsonTask["priority"]),
+			}
+
+			if task["title"] != "" {
+				tasks = append(tasks, task)
+			} else {
+				skippedCount++
+			}
+		}
+	} else if format == "csv" {
+		// 解析CSV
+		reader := utils.NewCSVReader(file)
+		csvRecords, err := reader.ReadAll()
+		if err != nil {
+			log.Printf("CSV解析失败: %v", err)
+			response.ErrorResponse(w, "CSV解析失败", http.StatusBadRequest)
+			return
+		}
+
+		for _, record := range csvRecords {
+			title := record["title"]
+			if title == "" {
+				skippedCount++
+				continue
+			}
+
+			description := record["description"]
+			status := record["status"]
+			if status == "" {
+				status = "todo"
+			}
+			priority := record["priority"]
+			if priority == "" {
+				priority = "medium"
+			}
+
+			task := map[string]interface{}{
+				"local_id":    fmt.Sprintf("import-%d", time.Now().UnixNano()),
+				"title":       title,
+				"description": description,
+				"status":      status,
+				"priority":    priority,
+			}
+			tasks = append(tasks, task)
+		}
+	} else {
+		response.ErrorResponse(w, "不支持的格式，请使用json或csv", http.StatusBadRequest)
+		return
+	}
+
+	if len(tasks) == 0 {
+		response.ErrorResponse(w, "没有可导入的任务数据", http.StatusBadRequest)
+		return
+	}
+
+	// 批量插入
+	insertedIDs, err := db.BatchInsertTasks(userIDInt, tasks)
+	if err != nil {
+		log.Printf("批量插入失败: %v", err)
+		response.ErrorResponse(w, "导入失败", http.StatusInternalServerError)
+		return
+	}
+
+	importedCount = len(insertedIDs)
+
+	// 记录导入审计日志
+	_ = db.LogExportAction(userIDInt, "import", format, importedCount)
+
+	response.SuccessResponse(w, map[string]interface{}{
+		"status":       "imported",
+		"imported":     importedCount,
+		"skipped":      skippedCount,
+		"inserted_ids": insertedIDs,
 	}, http.StatusOK)
 }
 
@@ -1413,13 +1579,43 @@ type adminConfigRequest struct {
 }
 
 func handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := db.GetAllUsers()
+	// 解析分页参数
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	// 解析过滤参数
+	email := r.URL.Query().Get("email")
+	role := r.URL.Query().Get("role")
+
+	users, total, err := db.GetUsersPaginated(page, pageSize, email, role)
 	if err != nil {
 		log.Printf("Failed to get users: %v", err)
 		response.ErrorResponse(w, "获取用户列表失败", http.StatusInternalServerError)
 		return
 	}
-	response.SuccessResponse(w, users, http.StatusOK)
+
+	totalPages := (total + pageSize - 1) / pageSize
+	hasPrev := page > 1
+	hasNext := page < totalPages
+
+	response.SuccessResponse(w, map[string]interface{}{
+		"users": users,
+		"pagination": map[string]interface{}{
+			"page":      page,
+			"page_size": pageSize,
+			"total":     total,
+			"pages":     totalPages,
+			"has_prev":  hasPrev,
+			"has_next":  hasNext,
+		},
+	}, http.StatusOK)
 }
 
 // handleAdminCreateUserWithNotification 创建用户并发送通知

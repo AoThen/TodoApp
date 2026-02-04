@@ -6,6 +6,7 @@ import AdminPanel from './components/admin/AdminPanel';
 import DevicePairing from './components/DevicePairing';
 import BatchDeleteDialog from './components/BatchDeleteDialog';
 import UndoToast from './components/UndoToast';
+import ImportDialog from './components/ImportDialog';
 import { toast } from 'react-toastify';
 import './App.css';
 
@@ -20,6 +21,7 @@ const App: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showPairing, setShowPairing] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [showBatchConfirm, setShowBatchConfirm] = useState(false);
   const [undoTaskIds, setUndoTaskIds] = useState<number[]>([]);
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
@@ -279,6 +281,14 @@ const App: React.FC = () => {
     }
   };
 
+  const handleImport = async () => {
+    if (!authToken) {
+      alert('Please login first');
+      return;
+    }
+    setShowImport(true);
+  };
+
   const handleLogout = async () => {
     await apiService.logout();
     setAuthToken(null);
@@ -322,6 +332,7 @@ const App: React.FC = () => {
           </button>
           <button onClick={() => handleExport('json')}>Export JSON</button>
           <button onClick={() => handleExport('csv')}>Export CSV</button>
+          <button onClick={() => setShowImport(true)}>Import</button>
           {isAdmin && (
             <button onClick={() => setShowAdminPanel(true)}>Admin Panel</button>
           )}
@@ -417,16 +428,20 @@ const App: React.FC = () => {
       )}
 
       {undoTaskIds.length > 0 && (
-        <UndoToast
-          taskIds={undoTaskIds}
-          onClose={() => setUndoTaskIds([])}
-          onUndoComplete={async () => {
-            await loadTasks();
-            toast.success('已撤销删除');
-          }}
-        />
+         <UndoToast
+           taskIds={undoTaskIds}
+           onClose={() => setUndoTaskIds([])}
+           onUndoComplete={async () => {
+             await loadTasks();
+             toast.success('已撤销删除');
+           }}
+         />
+       )}
+
+      {showImport && (
+        <ImportDialog onClose={() => setShowImport(false)} />
       )}
-    </div>
+     </div>
   );
 };
 

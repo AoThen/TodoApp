@@ -14,20 +14,55 @@ const UserManagement: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // 分页状态
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: 20,
+    total: 0,
+    pages: 0,
+    hasPrev: false,
+    hasNext: false,
+  });
+  const [filters, setFilters] = useState({
+    email: '',
+    role: '',
+  });
+
   useEffect(() => {
     loadUsers();
-  }, []);
+  }, [pagination.page, filters.email, filters.role]);
 
   const loadUsers = async () => {
+    setLoading(true);
     try {
-      const data = await adminService.getUsers();
-      setUsers(data);
+      const data = await adminService.getUsers({
+        page: pagination.page,
+        page_size: pagination.pageSize,
+        email: filters.email,
+        role: filters.role,
+      });
+      setUsers(data.users);
+      setPagination(data.pagination);
+      setError(null);
     } catch (err) {
       setError('加载用户列表失败');
     } finally {
       setLoading(false);
     }
   };
+
+  const handlePageChange = (newPage: number) => {
+    setPagination(prev => ({ ...prev, page: newPage }));
+  };
+
+  const handleFilterChange = (field: 'email' | 'role', value: string) => {
+    setFilters(prev => ({ ...prev, [field]: value }));
+    setPagination(prev => ({ ...prev, page: 1 })); // 重置到第一页
+  };
+
+  const handleClearFilters = () => {
+    setFilters({ email: '', role: '' });
+    setPagination(prev => ({ ...prev, page: 1 }));
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -124,9 +159,34 @@ const UserManagement: React.FC = () => {
     <div>
       <div className="section-header">
         <h2>用户管理</h2>
-        <button className="btn btn-primary" onClick={() => { setShowModal('create'); setFormData({ email: '', password: '', role: 'user' }); }}>
+        <button className="btn btn-primary" onClick={() => { setShowModal('create'); setFormData({ email: '', password: '', role: 'user' }); setShowModal(prev => prev || 'create'); setSuccess(null); setError(null); }}>
           创建用户
         </button>
+      </div>
+
+      {/* 过滤器 */}
+      <div className="admin-filters">
+        <input
+          type="text"
+          placeholder="搜索邮箱"
+          value={filters.email}
+          onChange={(e) => { setFilters(f => ({...f, email: e.target.value})); setPagination(p => ({...p, page: 1})); setError(null); success && setSuccess(null); }}
+          disabled={loading}
+        />
+        <select
+          value={filters.role}
+          onChange={(e) => handleFilterChange('role', e.target.value)}
+          disabled={loading}
+        >
+          <option value="">全部角色</option>
+          <option value="admin">管理员</option>
+          <option value="user">普通用户</option>
+        </select>
+        {(filters.email || filters.role) && (
+          <button className="btn btn-secondary btn-small" onClick={() => { setFilters({ email: '', role: '' }); setPagination(p => ({...p, page: 1})); setError(null); success && setSuccess(null); }}>
+            清除筛选
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -173,6 +233,27 @@ const UserManagement: React.FC = () => {
           ))}
         </tbody>
       </table>
+
+      {/* 分页控件 */}
+      {pagination.pages > 1 && (
+        <div className="pagination">
+          <span>第 {pagination.page} / 共 {pagination.pages} 页 ({pagination.total} 条)</span>
+          <div className="pagination-buttons">
+            <button
+              disabled={!pagination.hasPrev || loading}
+              onClick={() => handlePageChange(pagination.page - 1)}
+            >
+              上一页
+            </button>
+            <button
+              disabled={!pagination.hasNext || loading}
+              onClick={() => handlePageChange(pagination.page + 1)}
+            >
+              下一页
+            </button>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="modal-overlay" onClick={() => { setShowModal(null); setSelectedUser(null); }}>
