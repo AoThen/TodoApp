@@ -233,7 +233,7 @@ const App: React.FC = () => {
 
   const handleUndo = async () => {
     try {
-      setLoading(true);
+      setIsLoading(true);
       await Promise.all(undoTaskIds.map(id => apiService.restoreTask(id)));
 
       // 撤销后刷新任务列表
@@ -244,7 +244,7 @@ const App: React.FC = () => {
       console.error('Undo failed:', error);
       alert('撤销失败');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 

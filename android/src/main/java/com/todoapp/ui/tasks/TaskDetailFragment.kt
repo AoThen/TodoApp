@@ -439,6 +439,6 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
     }
 
     companion object {
-        private const TAG = "TaskDetailFragment"
+        private const val TAG = "TaskDetailFragment"
     }
 }
