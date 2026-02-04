@@ -222,7 +222,7 @@ const App: React.FC = () => {
       setSelectedTasks(new Set());
       setSelectAll(false);
 
-    } catch (error: error) {
+    } catch (error: unknown) {
       console.error('Batch delete failed:', error);
       alert('批量删除失败');
       setShowBatchConfirm(false);

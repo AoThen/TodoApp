@@ -24,7 +24,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-class TaskDetailFragment : Fragment() {
+class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
 
     private var _binding: com.todoapp.databinding.FragmentTaskDetailBinding? = null
     private val binding get(): com.todoapp.databinding.FragmentTaskDetailBinding = _binding!!
