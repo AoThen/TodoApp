@@ -25,7 +25,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     try {
       const users = await adminService.getUsers();
       const currentUserEmail = localStorage.getItem('user_email');
-      const currentUser = users.find((u: User) => u.email === currentUserEmail);
+      const currentUser = users.users.find((u: User) => u.email === currentUserEmail);
       
       if (currentUser && currentUser.role === 'admin') {
         setIsAdmin(true);

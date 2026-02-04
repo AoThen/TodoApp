@@ -304,7 +304,7 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
             }
         }
 
-        binding.etDueDate.setText(if (task.dueAt.isNotBlank()) task.dueAt.substringBefore("T") else "")
+        binding.etDueDate.setText(task.dueAt?.takeIf { it.isNotBlank() }?.substringBefore("T") ?: "")
 
         val createdAt = try {
             val parsed = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).parse(task.createdAt)
@@ -367,7 +367,7 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
     private fun populateFormFields(task: com.todoapp.data.local.Task) {
         binding.etTitle.setText(task.title)
         binding.etEditDescription.setText(task.description)
-        binding.etEditDueDate.setText(if (task.dueAt.isNotBlank()) task.dueAt.substringBefore("T") else "")
+        binding.etEditDueDate.setText(task.dueAt?.takeIf { it.isNotBlank() }?.substringBefore("T") ?: "")
 
         when (task.status) {
             "todo" -> selectStatus("todo")
