@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <navigation xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    android:id="@+id/nav_graph"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     app:startDestination="@id/pairingFragment">
 
     <!-- Pairing Fragment -->
@@ -11,7 +10,7 @@
         android:name="com.todoapp.ui.pairing.PairingFragment"
         android:label="@string/pairing_title"
         tools:layout="@layout/fragment_pairing">
-        
+
         <action
             android:id="@+id/action_pairingFragment_to_loginFragment"
             app:destination="@id/loginFragment"
@@ -25,7 +24,7 @@
         android:name="com.todoapp.ui.auth.LoginFragment"
         android:label="@string/login_title"
         tools:layout="@layout/fragment_login">
-        
+
         <action
             android:id="@+id/action_loginFragment_to_taskListFragment"
             app:destination="@id/taskListFragment"
@@ -39,14 +38,39 @@
         android:name="com.todoapp.ui.tasks.TaskListFragment"
         android:label="@string/tasks_title"
         tools:layout="@layout/fragment_task_list">
-        
+
         <action
             android:id="@+id/action_taskListFragment_to_taskDetailFragment"
-            app:destination="@id/taskDetailFragment" />
-        
+            app:destination="@id/taskDetailFragment">
+            <argument
+                android:name="taskId"
+                android:defaultValue="" />
+        </action>
+
         <action
             android:id="@+id/action_taskListFragment_to_addTaskFragment"
-            app:destination="@id/addTaskFragment" />
+            app:destination="@id/addTaskFragment">
+
+            <argument
+                android:name="sourceTaskId"
+                android:defaultValue="-1" />
+            <argument
+                android:name="isEdit"
+                android:defaultValue="false" />
+        </action>
+    </fragment>
+
+    <!-- Add Task Fragment -->
+    <fragment
+        android:id="@+id/addTaskFragment"
+        android:name="com.todoapp.ui.tasks.AddTaskFragment"
+        android:label="@string/add_task_title"
+        tools:layout="@layout/fragment_add_task">
+
+        <action
+            android:id="@+id/action_addTaskFragment_to_taskListFragment"
+            app:popUpTo="@id/nav_graph"
+            app:popUpToInclusive="true" />
     </fragment>
 
     <!-- Task Detail Fragment -->
@@ -55,18 +79,23 @@
         android:name="com.todoapp.ui.tasks.TaskDetailFragment"
         android:label="任务详情"
         tools:layout="@layout/fragment_task_detail">
-        
+
         <argument
             android:name="taskId"
             app:argType="string" />
-    </fragment>
 
-    <!-- Add Task Fragment -->
-    <fragment
-        android:id="@+id/addTaskFragment"
-        android:name="com.todoapp.ui.tasks.AddTaskFragment"
-        android:label="添加任务"
-        tools:layout="@layout/fragment_add_task" />
+        <action
+            android:id="@+id/action_taskDetail_to_taskList"
+            app:destination="@id/taskListFragment"
+            app:popUpTo="@id/taskListFragment"
+            app:popUpToInclusive="false" />
+
+        <action
+            android:id="@+id/action_taskDetail_to_addTask"
+            app:destination="@id/addTaskFragment"
+            app:popUpTo="@id/taskDetailFragment"
+            app:popUpToInclusive="true" />
+    </fragment>
 
     <!-- Calendar Fragment -->
     <fragment
@@ -81,7 +110,7 @@
         android:name="com.todoapp.ui.settings.SettingsFragment"
         android:label="@string/settings_title"
         tools:layout="@layout/fragment_settings">
-        
+
         <action
             android:id="@+id/action_settingsFragment_to_pairingFragment"
             app:destination="@id/pairingFragment" />

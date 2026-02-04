@@ -469,6 +469,81 @@ func GetUserEmail(userID int64) (string, error) {
 	return email, nil
 }
 
+// GetTasksStreaming 流式获取任务（用于大规模导出）
+func GetTasksStreaming(userID int, batchSize int, processFunc func([]map[string]interface{}) error) error {
+	offset := 0
+
+	for {
+		query := `
+			SELECT id, local_id, server_version, title, description, status, priority,
+			       due_at, created_at, updated_at, completed_at, is_deleted, last_modified
+			FROM tasks
+			WHERE user_id = ? AND is_deleted = 0
+			ORDER BY created_at DESC
+			LIMIT ? OFFSET ?
+		`
+		rows, err := DB.Query(query, userID, batchSize, offset)
+		if err != nil {
+			return err
+		}
+
+		var batch []map[string]interface{}
+		for rows.Next() {
+			var id int64
+			var localID sql.NullString
+			var serverVersion sql.NullInt64
+			var title sql.NullString
+			var description sql.NullString
+			var status sql.NullString
+			var priority sql.NullString
+			var dueAt sql.NullString
+			var createdAt sql.NullString
+			var updatedAt sql.NullString
+			var completedAt sql.NullString
+			var isDeleted sql.NullBool
+			var lastModified sql.NullString
+			if err := rows.Scan(&id, &localID, &serverVersion, &title, &description, &status, &priority, &dueAt, &createdAt, &updatedAt, &completedAt, &isDeleted, &lastModified); err != nil {
+				rows.Close()
+				return err
+			}
+			row := map[string]interface{}{
+				"id":       id,
+				"local_id": localID.String,
+				"server_version": func() interface{} {
+					if serverVersion.Valid {
+						return serverVersion.Int64
+					}
+					return 0
+				}(),
+				"title":         title.String,
+				"description":   description.String,
+				"status":        status.String,
+				"priority":      priority.String,
+				"due_at":        dueAt.String,
+				"created_at":    createdAt.String,
+				"updated_at":    updatedAt.String,
+				"completed_at":  completedAt.String,
+				"is_deleted":    isDeleted.Bool,
+				"last_modified": lastModified.String,
+			}
+			batch = append(batch, row)
+		}
+		rows.Close()
+
+		if len(batch) == 0 {
+			break
+		}
+
+		if err := processFunc(batch); err != nil {
+			return err
+		}
+
+		offset += batchSize
+	}
+
+	return nil
+}
+
 // GetTasksPaginated 分页获取任务
 func GetTasksPaginated(userID int, page, pageSize int) ([]map[string]interface{}, int, error) {
 	offset := (page - 1) * pageSize

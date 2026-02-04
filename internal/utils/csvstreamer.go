@@ -55,6 +55,16 @@ func (cs *CSVStreamer) WriteRow(task map[string]interface{}) error {
 	return nil
 }
 
+// WriteRows 批量写入行数据
+func (cs *CSVStreamer) WriteRows(tasks []map[string]interface{}) error {
+	for _, task := range tasks {
+		if err := cs.WriteRow(task); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Close 关闭流式写入器并刷新缓冲区
 func (cs *CSVStreamer) Close() {
 	cs.writer.Flush()

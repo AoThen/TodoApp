@@ -405,8 +405,12 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		log.Printf("登录失败 %s: %v", req.Email, err)
 
 		// 记录失败的登录尝试
-		_ = db.RecordFailedLogin(req.Email)
-		_ = db.LogLoginAttempt(req.Email, ip, false)
+		if err := db.RecordFailedLogin(req.Email); err != nil {
+			log.Printf("记录失败登录尝试错误: %v", err)
+		}
+		if err := db.LogLoginAttempt(req.Email, ip, false); err != nil {
+			log.Printf("记录登录尝试错误: %v", err)
+		}
 
 		// 检查账户是否被锁定
 		locked, lockedUntil, lockErr := db.IsAccountLocked(req.Email)
@@ -420,8 +424,12 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 重置失败登录尝试
-	_ = db.ResetFailedLogin(req.Email)
-	_ = db.LogLoginAttempt(req.Email, ip, true)
+	if err := db.ResetFailedLogin(req.Email); err != nil {
+		log.Printf("重置失败登录尝试错误: %v", err)
+	}
+	if err := db.LogLoginAttempt(req.Email, ip, true); err != nil {
+		log.Printf("记录登录尝试错误: %v", err)
+	}
 
 	// 生成令牌
 	accessToken, err := auth.GenerateAccessToken(userID, req.Email, accessTokenDuration)
@@ -537,7 +545,9 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 	c, err := r.Cookie("refresh_token")
 	if err == nil {
 		// 在数据库中撤销令牌
-		_ = db.RevokeRefreshToken(userID, c.Value)
+		if err := db.RevokeRefreshToken(userID, c.Value); err != nil {
+			log.Printf("撤销刷新令牌错误: %v", err)
+		}
 	}
 
 	// 清除 cookie
@@ -570,17 +580,24 @@ func handleTasks(w http.ResponseWriter, r *http.Request) {
 		userIDStr := getUserIDFromContext(r.Context())
 		userID := 0
 		if userIDStr != "" {
-			userID, _ = strconv.Atoi(userIDStr)
+			var err error
+			userID, err = strconv.Atoi(userIDStr)
+			if err != nil {
+				log.Printf("转换用户ID错误: %v", err)
+				userID = 0
+			}
 		}
 
 		// 解析分页参数
-		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-		if page < 1 {
+		pageStr := r.URL.Query().Get("page")
+		page, err := strconv.Atoi(pageStr)
+		if err != nil || page < 1 {
 			page = 1
 		}
 
-		pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
-		if pageSize < 1 || pageSize > 100 {
+		pageSizeStr := r.URL.Query().Get("page_size")
+		pageSize, err := strconv.Atoi(pageSizeStr)
+		if err != nil || pageSize < 1 || pageSize > 100 {
 			pageSize = 20
 		}
 
@@ -1385,7 +1402,9 @@ func handleImport(w http.ResponseWriter, r *http.Request) {
 	importedCount = len(insertedIDs)
 
 	// 记录导入审计日志
-	_ = db.LogExportAction(userIDInt, "import", format, importedCount)
+	if err := db.LogExportAction(userIDInt, "import", format, importedCount); err != nil {
+		log.Printf("记录导入审计日志错误: %v", err)
+	}
 
 	response.SuccessResponse(w, map[string]interface{}{
 		"status":       "imported",
@@ -1421,21 +1440,30 @@ func handleExport(w http.ResponseWriter, r *http.Request) {
 		format = "json"
 	}
 
-	// 获取当前用户的任务（修复：正确传递userID）
-	tasks, _, err := db.GetTasksPaginated(userIDInt, 1, 10000)
-	if err != nil {
-		response.ErrorResponse(w, "导出错误", http.StatusInternalServerError)
-		return
-	}
-
 	if format == "json" {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Disposition", "attachment;filename=tasks.json")
 
-		// 记录导出审计日志
-		_ = db.LogExportAction(userIDInt, "tasks", format, len(tasks))
+		w.Write([]byte("[\n"))
+		first := true
+		if err := db.GetTasksStreaming(userIDInt, 100, func(batch []map[string]interface{}) error {
+			for _, task := range batch {
+				if !first {
+					w.Write([]byte(",\n"))
+				}
+				first = false
+				if err := json.NewEncoder(w).Encode(task); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			response.ErrorResponse(w, "导出错误", http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte("\n]"))
 
-		json.NewEncoder(w).Encode(tasks)
+		log.Printf("用户 %d 流式导出任务到 JSON 格式", userIDInt)
 		return
 	}
 
@@ -1456,21 +1484,33 @@ func handleExport(w http.ResponseWriter, r *http.Request) {
 			"completed_at", "is_deleted", "last_modified",
 		}
 		if err := streamer.WriteHeader(headers); err != nil {
-			log.Printf("写入CSV表头失败: %v", err)
+			response.ErrorResponse(w, "导出错误", http.StatusInternalServerError)
 			return
 		}
 
-		for _, task := range tasks {
-			if err := streamer.WriteRow(task); err != nil {
-				log.Printf("写入CSV行失败: %v", err)
-				continue
+		totalExported := 0
+		if err := db.GetTasksStreaming(userIDInt, 100, func(batch []map[string]interface{}) error {
+			for _, task := range batch {
+				if task["description"] == nil {
+					task["description"] = ""
+				}
+				if err := streamer.WriteRow(task); err != nil {
+					return err
+				}
 			}
+			totalExported += len(batch)
+			return nil
+		}); err != nil {
+			response.ErrorResponse(w, "导出错误", http.StatusInternalServerError)
+			return
 		}
 
 		// 记录导出审计日志
-		_ = db.LogExportAction(userIDInt, "tasks", format, len(tasks))
+		if err := db.LogExportAction(userIDInt, "tasks", format, totalExported); err != nil {
+			log.Printf("记录导出审计日志错误: %v", err)
+		}
 
-		log.Printf("用户 %d 导出了 %d 个任务到 %s 格式", userIDInt, len(tasks), format)
+		log.Printf("用户 %d 流式导出了 %d 个任务到 CSV 格式（分批: 100条/批）", userIDInt, totalExported)
 		return
 	}
 
@@ -1514,8 +1554,14 @@ func intelligentMerge(serverTitle, serverDesc, serverStatus string, clientProps 
 // recordConflict 记录冲突到数据库
 func recordConflict(localID string, serverID int64, reason string, userID int) {
 	options := []types.ConflictResolution{types.ConflictKeepServer, types.ConflictKeepClient, types.ConflictMerge}
-	optionsJSON, _ := json.Marshal(options)
-	_ = db.RecordConflict(localID, serverID, reason, string(optionsJSON))
+	optionsJSON, err := json.Marshal(options)
+	if err != nil {
+		log.Printf("序列化冲突选项错误: %v", err)
+		optionsJSON = []byte("[]")
+	}
+	if err := db.RecordConflict(localID, serverID, reason, string(optionsJSON)); err != nil {
+		log.Printf("记录冲突错误: %v", err)
+	}
 }
 
 // randomString 生成随机字符串（用于local_id冲突处理）
@@ -1649,13 +1695,11 @@ func handleAdminCreateUserWithNotification(w http.ResponseWriter, r *http.Reques
 
 	adminID := getUserIDFromContext(r.Context())
 	ip := getClientIP(r)
-	_ = db.LogAdminAction(toInt(adminID), adminEmail, "create_user", req.Email, userID, fmt.Sprintf("Created user with role: %s", req.Role), ip)
+	if err := db.LogAdminAction(toInt(adminID), adminEmail, "create_user", req.Email, userID,
+		fmt.Sprintf("Created user with role: %s", req.Role), ip); err != nil {
+		log.Printf("记录管理操作日志错误: %v", err)
+	}
 
-	// 发送通知给新用户
-	roleName := map[string]string{"admin": "管理员", "user": "普通用户"}[req.Role]
-	sendNotificationToUser(int(userID), "account_created", "账户已创建", fmt.Sprintf("您已被创建为%s", roleName), "normal", wsHub)
-
-	log.Printf("Admin %s created user %s (ID: %d)", adminEmail, req.Email, userID)
 	response.SuccessResponse(w, map[string]interface{}{"id": userID, "email": req.Email, "role": req.Role}, http.StatusCreated)
 }
 
@@ -1685,17 +1729,33 @@ func handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	oldEmail, _ := db.GetUserEmail(userID)
+
 	if err := db.UpdateUser(userID, req.Email, req.Role); err != nil {
-		response.ErrorResponse(w, "更新用户失败", http.StatusInternalServerError)
+		response.ErrorResponse(w, "更新用户失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	adminID := getUserIDFromContext(r.Context())
 	adminEmail := getEmailFromContext(r.Context())
 	ip := getClientIP(r)
-	_ = db.LogAdminAction(toInt(adminID), adminEmail, "update_user", req.Email, userID,
-		fmt.Sprintf("Updated email: %s -> %s, role: %s", oldEmail, req.Email, req.Role), ip)
 
+	details := "用户信息更新"
+	if req.Email != "" && oldEmail != "" && oldEmail != fmt.Sprintf("ID:%d", userID) {
+		details = fmt.Sprintf("邮箱: %s -> %s", oldEmail, req.Email)
+	}
+	if req.Role != "" {
+		if details != "用户信息更新" {
+			details = fmt.Sprintf("%s, 角色: %s", details, req.Role)
+		} else {
+			details = fmt.Sprintf("角色: %s", req.Role)
+		}
+	}
+
+	if err := db.LogAdminAction(toInt(adminID), adminEmail, "update_user", req.Email, userID, details, ip); err != nil {
+		log.Printf("记录管理操作日志错误: %v", err)
+	}
+
+	log.Printf("Admin %s updated user ID %d", adminEmail, userID)
 	response.SuccessResponse(w, map[string]string{"status": "updated"}, http.StatusOK)
 }
 
@@ -1728,7 +1788,9 @@ func handleAdminResetPassword(w http.ResponseWriter, r *http.Request) {
 	adminID := getUserIDFromContext(r.Context())
 	adminEmail := getEmailFromContext(r.Context())
 	ip := getClientIP(r)
-	_ = db.LogAdminAction(toInt(adminID), adminEmail, "reset_password", targetEmail, userID, "Password reset by admin", ip)
+	if err := db.LogAdminAction(toInt(adminID), adminEmail, "reset_password", targetEmail, userID, "Password reset by admin", ip); err != nil {
+		log.Printf("记录管理操作日志错误: %v", err)
+	}
 
 	log.Printf("Admin %s reset password for user %s (ID: %d)", adminEmail, targetEmail, userID)
 	response.SuccessResponse(w, map[string]string{"status": "password reset"}, http.StatusOK)
@@ -1757,12 +1819,18 @@ func handleAdminLockUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetEmail, _ := db.GetUserEmail(userID)
+	targetEmail, err := db.GetUserEmail(userID)
+	if err != nil {
+		log.Printf("获取用户邮箱错误: %v", err)
+		targetEmail = fmt.Sprintf("ID:%d", userID)
+	}
 	adminID := getUserIDFromContext(r.Context())
 	adminEmail := getEmailFromContext(r.Context())
 	ip := getClientIP(r)
-	_ = db.LogAdminAction(toInt(adminID), adminEmail, "lock_user", targetEmail, userID,
-		fmt.Sprintf("Locked for %d minutes", req.DurationMinutes), ip)
+	if err := db.LogAdminAction(toInt(adminID), adminEmail, "lock_user", targetEmail, userID,
+		fmt.Sprintf("Locked for %d minutes", req.DurationMinutes), ip); err != nil {
+		log.Printf("记录管理操作日志错误: %v", err)
+	}
 
 	response.SuccessResponse(w, map[string]string{"status": "user locked"}, http.StatusOK)
 }
@@ -1781,11 +1849,17 @@ func handleAdminUnlockUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetEmail, _ := db.GetUserEmail(userID)
+	targetEmail, err := db.GetUserEmail(userID)
+	if err != nil {
+		log.Printf("获取用户邮箱错误: %v", err)
+		targetEmail = fmt.Sprintf("ID:%d", userID)
+	}
 	adminID := getUserIDFromContext(r.Context())
 	adminEmail := getEmailFromContext(r.Context())
 	ip := getClientIP(r)
-	_ = db.LogAdminAction(toInt(adminID), adminEmail, "unlock_user", targetEmail, userID, "Account unlocked by admin", ip)
+	if err := db.LogAdminAction(toInt(adminID), adminEmail, "unlock_user", targetEmail, userID, "Account unlocked by admin", ip); err != nil {
+		log.Printf("记录管理操作日志错误: %v", err)
+	}
 
 	response.SuccessResponse(w, map[string]string{"status": "user unlocked"}, http.StatusOK)
 }
@@ -1808,7 +1882,9 @@ func handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	adminID := getUserIDFromContext(r.Context())
 	adminEmail := getEmailFromContext(r.Context())
 	ip := getClientIP(r)
-	_ = db.LogAdminAction(toInt(adminID), adminEmail, "delete_user", targetEmail, userID, "User deleted by admin", ip)
+	if err := db.LogAdminAction(toInt(adminID), adminEmail, "delete_user", targetEmail, userID, "User deleted by admin", ip); err != nil {
+		log.Printf("记录管理操作日志错误: %v", err)
+	}
 
 	log.Printf("Admin %s deleted user %s (ID: %d)", adminEmail, targetEmail, userID)
 	response.SuccessResponse(w, map[string]string{"status": "user deleted"}, http.StatusOK)
@@ -1882,7 +1958,9 @@ func handleAdminSetConfig(w http.ResponseWriter, r *http.Request) {
 
 	adminEmail := getEmailFromContext(r.Context())
 	ip := getClientIP(r)
-	_ = db.LogAdminAction(toInt(adminID), adminEmail, "update_config", "", 0, fmt.Sprintf("Updated config: %s = %s", req.Key, req.Value), ip)
+	if err := db.LogAdminAction(toInt(adminID), adminEmail, "update_config", "", 0, fmt.Sprintf("Updated config: %s = %s", req.Key, req.Value), ip); err != nil {
+		log.Printf("记录管理操作日志错误: %v", err)
+	}
 
 	response.SuccessResponse(w, map[string]string{"status": "config updated"}, http.StatusOK)
 }
@@ -2096,7 +2174,12 @@ func handleClearNotifications(w http.ResponseWriter, r *http.Request) {
 	olderThanDaysStr := r.URL.Query().Get("older_than_days")
 	olderThanDays := 30
 	if olderThanDaysStr != "" {
-		olderThanDays, _ = strconv.Atoi(olderThanDaysStr)
+		var err error
+		olderThanDays, err = strconv.Atoi(olderThanDaysStr)
+		if err != nil {
+			log.Printf("转换older_than_days错误: %v", err)
+			olderThanDays = 30
+		}
 		if olderThanDays < 0 {
 			olderThanDays = 0
 		}

@@ -1,24 +1,209 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout 
+<androidx.coordinatorlayout.widget.CoordinatorLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:gravity="center"
-    android:orientation="vertical"
-    android:padding="24dp">
+    android:layout_height="match_parent">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="添加任务"
-        android:textSize="18sp"
-        android:textStyle="bold" />
+    <com.google.android.material.appbar.AppBarLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="此功能正在开发中..."
-        android:textColor="?attr/colorOnSurfaceVariant" />
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            app:title="添加任务"
+            app:navigationIcon="@drawable/ic_back" />
+    </com.google.android.material.appbar.AppBarLayout>
 
-</LinearLayout>
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- 加载指示器 -->
+            <ProgressBar
+                android:id="@+id/progressBar"
+                style="?attr/circularProgress"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:visibility="gone"
+                android:indeterminate="true" />
+
+            <!-- 标题输入 -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/tilTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="标题 *"
+                android:layout_marginTop="16dp"
+                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                app:errorEnabled="true">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:maxLength="200"
+                    android:inputType="text"
+                    android:textSize="16sp" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- 描述输入 -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/tilDescription"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="描述"
+                android:layout_marginTop="16dp"
+                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                app:errorEnabled="true"
+                app:counterEnabled="true"
+                app:counterMaxLength="2000">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etDescription"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minLines="3"
+                    android:gravity="top"
+                    android:inputType="textMultiLine"
+                    android:textSize="16sp"
+                    android:maxLength="2000" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- 状态选择 -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="状态"
+                android:textStyle="bold"
+                android:layout_marginTop="16dp" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:singleSelection="true"
+                android:layout_marginTop="8dp">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipStatusTodo"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="待办"
+                    android:checked="true" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipStatusInProgress"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="进行中" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipStatusDone"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="已完成" />
+            </com.google.android.material.chip.ChipGroup>
+
+            <!-- 优先级选择 -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="优先级"
+                android:textStyle="bold"
+                android:layout_marginTop="16dp" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupPriority"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:singleSelection="true"
+                android:layout_marginTop="8dp">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPriorityLow"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="低" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPriorityMedium"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="中"
+                    android:checked="true" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPriorityHigh"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="高" />
+            </com.google.android.material.chip.ChipGroup>
+
+            <!-- 截止日期 -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/tilDueDate"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="截止日期 (可选)"
+                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                android:clickable="true"
+                android:focusable="false"
+                android:layout_marginTop="16dp">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etDueDate"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:focusable="false"
+                    android:clickable="true"
+                    android:focusableInTouchMode="false"
+                    android:inputType="none"
+                    android:textSize="16sp"
+                    android:textColor="?android:textColorSecondary"
+                    android:maxLength="10" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- 按钮栏 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="24dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnCancel"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="取消"
+                    style="@style/Widget.MaterialComponents.Button.TextButton" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnCreate"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="创建任务" />
+            </LinearLayout>
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
