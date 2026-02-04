@@ -16,6 +16,8 @@ import (
 	"todoapp/internal/crypto"
 	"todoapp/internal/db"
 	"todoapp/internal/response"
+	"todoapp/internal/types"
+	"todoapp/internal/utils"
 	"todoapp/internal/validator"
 	"todoapp/internal/websocket"
 
@@ -104,6 +106,20 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// Load environment variables
+	environment := os.Getenv("ENVIRONMENT")
+	if environment == "" {
+		environment = "development"
+		log.Println("未设置ENVIRONMENT，默认使用development模式")
+	}
+
+	// WebSocket 加密强制模式配置
+	enforceWSEncryption := environment == "production"
+	if envVal := os.Getenv("ENFORCE_WS_ENCRYPTION"); envVal != "" {
+		enforceWSEncryption = envVal == "true"
+	}
+	log.Printf("环境: %s, WebSocket强制加密: %v", environment, enforceWSEncryption)
+
 	// Initialize database with connection pool
 	if err := db.InitDB("todoapp.db"); err != nil {
 		log.Fatalf("failed to init db: %v", err)
@@ -146,8 +162,13 @@ func main() {
 	protected.HandleFunc("/users/me", handleMe).Methods("GET")
 	protected.HandleFunc("/tasks", handleTasks).Methods("GET", "POST")
 	protected.HandleFunc("/tasks/{id}", handleTaskByID).Methods("GET", "PATCH", "DELETE")
+	protected.HandleFunc("/tasks/batch", func(w http.ResponseWriter, r *http.Request) {
+		handleBatchDeleteTasks(w, r, wsHub)
+	}).Methods("DELETE")
+	protected.HandleFunc("/tasks/{id}/restore", handleRestoreTask).Methods("POST")
 	protected.HandleFunc("/sync", func(w http.ResponseWriter, r *http.Request) { handleSync(w, r, wsHub) }).Methods("POST")
 	protected.HandleFunc("/export", handleExport).Methods("GET")
+	protected.HandleFunc("/import", handleImport).Methods("POST")
 	protected.HandleFunc("/notifications", handleGetNotifications).Methods("GET")
 	protected.HandleFunc("/notifications", handleCreateNotification).Methods("POST")
 	protected.HandleFunc("/notifications/{id}/read", handleMarkAsRead).Methods("PATCH")
@@ -155,6 +176,12 @@ func main() {
 	protected.HandleFunc("/notifications/{id}", handleDeleteNotification).Methods("DELETE")
 	protected.HandleFunc("/notifications/clear", handleClearNotifications).Methods("DELETE")
 	protected.HandleFunc("/notifications/unread-count", handleGetUnreadCount).Methods("GET")
+
+	// Device pairing routes
+	protected.HandleFunc("/devices/pair", handleDevicePairing).Methods("POST")
+	protected.HandleFunc("/devices", handleListDevices).Methods("GET")
+	protected.HandleFunc("/devices/{id}/regenerate", handleRegenerateDeviceKey).Methods("POST")
+	protected.HandleFunc("/devices/{id}", handleRevokeDevice).Methods("DELETE")
 
 	// Admin routes (requires authentication and admin role)
 	admin := router.PathPrefix("/api/v1/admin").Subrouter()
@@ -178,10 +205,12 @@ func main() {
 	admin.HandleFunc("/config", handleAdminGetConfig).Methods("GET")
 	admin.HandleFunc("/config", handleAdminSetConfig).Methods("PUT")
 
-	// WebSocket endpoint (requires authentication, bypasses encryption)
-	router.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+	// WebSocket endpoint (requires authentication, with optional encryption)
+	// 应用WebSocket加密中间件
+	wsMiddleware := webSocketEncryptionMiddleware(enforceWSEncryption)
+	router.Handle("/ws", wsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handleWebSocket(w, r, wsHub)
-	}).Methods("GET")
+	}))).Methods("GET")
 
 	// CORS handling for development
 	corsHandler := handlers.CORS(
@@ -296,6 +325,27 @@ func adminMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// webSocketEncryptionMiddleware 验证WebSocket加密设置
+func webSocketEncryptionMiddleware(enforceEncryption bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			encryptionEnabled := r.URL.Query().Get("encryption") == "true"
+
+			if enforceEncryption && !encryptionEnabled {
+				log.Printf("拒绝非加密WebSocket连接（生产环境强制加密）: %s", r.RemoteAddr)
+				response.ErrorResponse(w, "生产环境必须启用加密WebSocket连接", http.StatusForbidden)
+				return
+			}
+
+			if !encryptionEnabled {
+				log.Printf("警告：WebSocket连接未加密（%s）", r.RemoteAddr)
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func getUserIDFromContext(ctx context.Context) string {
 	if id, ok := ctx.Value("userID").(string); ok {
 		return id
@@ -355,8 +405,12 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		log.Printf("登录失败 %s: %v", req.Email, err)
 
 		// 记录失败的登录尝试
-		_ = db.RecordFailedLogin(req.Email)
-		_ = db.LogLoginAttempt(req.Email, ip, false)
+		if err := db.RecordFailedLogin(req.Email); err != nil {
+			log.Printf("记录失败登录尝试错误: %v", err)
+		}
+		if err := db.LogLoginAttempt(req.Email, ip, false); err != nil {
+			log.Printf("记录登录尝试错误: %v", err)
+		}
 
 		// 检查账户是否被锁定
 		locked, lockedUntil, lockErr := db.IsAccountLocked(req.Email)
@@ -370,8 +424,12 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 重置失败登录尝试
-	_ = db.ResetFailedLogin(req.Email)
-	_ = db.LogLoginAttempt(req.Email, ip, true)
+	if err := db.ResetFailedLogin(req.Email); err != nil {
+		log.Printf("重置失败登录尝试错误: %v", err)
+	}
+	if err := db.LogLoginAttempt(req.Email, ip, true); err != nil {
+		log.Printf("记录登录尝试错误: %v", err)
+	}
 
 	// 生成令牌
 	accessToken, err := auth.GenerateAccessToken(userID, req.Email, accessTokenDuration)
@@ -487,7 +545,9 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 	c, err := r.Cookie("refresh_token")
 	if err == nil {
 		// 在数据库中撤销令牌
-		_ = db.RevokeRefreshToken(userID, c.Value)
+		if err := db.RevokeRefreshToken(userID, c.Value); err != nil {
+			log.Printf("撤销刷新令牌错误: %v", err)
+		}
 	}
 
 	// 清除 cookie
@@ -520,17 +580,24 @@ func handleTasks(w http.ResponseWriter, r *http.Request) {
 		userIDStr := getUserIDFromContext(r.Context())
 		userID := 0
 		if userIDStr != "" {
-			userID, _ = strconv.Atoi(userIDStr)
+			var err error
+			userID, err = strconv.Atoi(userIDStr)
+			if err != nil {
+				log.Printf("转换用户ID错误: %v", err)
+				userID = 0
+			}
 		}
 
 		// 解析分页参数
-		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-		if page < 1 {
+		pageStr := r.URL.Query().Get("page")
+		page, err := strconv.Atoi(pageStr)
+		if err != nil || page < 1 {
 			page = 1
 		}
 
-		pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
-		if pageSize < 1 || pageSize > 100 {
+		pageSizeStr := r.URL.Query().Get("page_size")
+		pageSize, err := strconv.Atoi(pageSizeStr)
+		if err != nil || pageSize < 1 || pageSize > 100 {
 			pageSize = 20
 		}
 
@@ -605,62 +672,273 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 
 	now := time.Now().UTC()
 
+	// ✅ 使用事务保护同步操作
+	tx, err := db.DB.Begin()
+	if err != nil {
+		log.Printf("事务开始失败: %v", err)
+		response.ErrorResponse(w, "事务开始失败", http.StatusInternalServerError)
+		return
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		} else {
+			tx.Commit()
+		}
+	}()
+
 	serverChanges := []map[string]interface{}{}
 	clientChanges := []map[string]interface{}{}
+	conflicts := []map[string]interface{}{}
 	syncFailed := false
 
 	for _, c := range s.Changes {
 		op := strings.ToLower(c.Op)
+
 		switch op {
 		case "insert":
 			title := ""
+			description := ""
+			status := "todo"
+			priority := "medium"
+
 			if v, ok := c.Payload["title"].(string); ok {
 				title = v
 			}
-			res, err := db.DB.Exec("INSERT INTO tasks (user_id, local_id, server_version, title, status, created_at, updated_at, last_modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", userID, c.LocalID, 1, title, "todo", now, now, now)
-			if err == nil {
-				if serverID, err2 := res.LastInsertId(); err2 == nil {
-					serverChanges = append(serverChanges, map[string]interface{}{
-						"id": serverID, "server_version": 1, "title": title, "updated_at": now.Format(time.RFC3339), "is_deleted": false,
-					})
-					clientChanges = append(clientChanges, map[string]interface{}{
-						"local_id": c.LocalID, "server_id": serverID, "op": "insert",
-					})
+			if v, ok := c.Payload["description"].(string); ok {
+				description = v
+			}
+			if v, ok := c.Payload["status"].(string); ok {
+				status = v
+			}
+			if v, ok := c.Payload["priority"].(string); ok {
+				priority = v
+			}
+
+			// ✅ 检查 local_id 是否已存在（冲突检测）
+			existingID, _, checkErr := db.TaskExistsByLocalID(userID, c.LocalID)
+			if checkErr == nil && existingID > 0 {
+				// 冲突：local_id重复，使用生成的新标题插入
+				newTitle := fmt.Sprintf("%s (副本: %d)", title, existingID)
+				res, insertErr := tx.Exec(
+					"INSERT INTO tasks (user_id, local_id, server_version, title, description, status, priority, created_at, updated_at, last_modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+					userID, c.LocalID+"_"+randomString(8), 1, newTitle, description, status, priority, now, now, now,
+				)
+
+				if insertErr == nil {
+					if serverID, err2 := res.LastInsertId(); err2 == nil {
+						serverChanges = append(serverChanges, map[string]interface{}{
+							"id": serverID, "server_version": 1, "title": newTitle, "updated_at": now.Format(time.RFC3339), "is_deleted": false,
+						})
+						clientChanges = append(clientChanges, map[string]interface{}{
+							"local_id": c.LocalID, "server_id": serverID, "op": "insert",
+						})
+
+						// 记录冲突
+						recordConflict(c.LocalID, existingID, "duplicate_insert", userID)
+						conflicts = append(conflicts, map[string]interface{}{
+							"local_id":  c.LocalID,
+							"server_id": existingID,
+							"reason":    "duplicate_insert",
+						})
+					}
+				} else {
+					log.Printf("插入副本失败: %v", insertErr)
+					syncFailed = true
 				}
 			} else {
-				syncFailed = true
+				// 正常插入
+				res, insertErr := tx.Exec(
+					"INSERT INTO tasks (user_id, local_id, server_version, title, description, status, priority, created_at, updated_at, last_modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+					userID, c.LocalID, 1, title, description, status, priority, now, now, now,
+				)
+
+				if insertErr == nil {
+					if serverID, err2 := res.LastInsertId(); err2 == nil {
+						serverChanges = append(serverChanges, map[string]interface{}{
+							"id": serverID, "server_version": 1, "title": title, "updated_at": now.Format(time.RFC3339),
+							"description": description, "status": status, "priority": priority, "is_deleted": false,
+						})
+						clientChanges = append(clientChanges, map[string]interface{}{
+							"local_id": c.LocalID, "server_id": serverID, "op": "insert",
+						})
+					}
+				} else {
+					log.Printf("插入任务失败: %v", insertErr)
+					syncFailed = true
+				}
 			}
+
 		case "update":
 			if idVal, ok := c.Payload["id"].(float64); ok {
 				id := int64(idVal)
-				var oldVer int
-				_ = db.DB.QueryRow("SELECT server_version FROM tasks WHERE id = ?", id).Scan(&oldVer)
-				newVer := oldVer + 1
-				title := ""
-				if v, ok := c.Payload["title"].(string); ok {
-					title = v
+
+				// ✅ 获取服务器当前版本和数据
+				oldVer, serverTitle, serverDesc, serverStatus, _, err := db.GetTaskForSync(id)
+
+				if err != nil {
+					log.Printf("查询任务失败: %v", err)
+					syncFailed = true
+					continue
 				}
-				_, _ = db.DB.Exec("UPDATE tasks SET title = ?, updated_at = ?, server_version = ? WHERE id = ?", title, now, newVer, id)
-				serverChanges = append(serverChanges, map[string]interface{}{
-					"id": id, "server_version": newVer, "title": title, "updated_at": now.Format(time.RFC3339), "is_deleted": false,
-				})
-				clientChanges = append(clientChanges, map[string]interface{}{
-					"local_id": c.LocalID, "server_id": id, "op": "update",
-				})
+
+				newVer := oldVer + 1
+
+				// ✅ 版本检查和冲突检测
+				if c.CV != oldVer {
+					log.Printf("检测到冲突: client_version=%d, server_version=%d", c.CV, oldVer)
+
+					// 获取客户端更新
+					clientTitle := ""
+					clientDesc := ""
+					clientStatus := serverStatus
+
+					if v, ok := c.Payload["title"].(string); ok {
+						clientTitle = v
+					}
+					if v, ok := c.Payload["description"].(string); ok {
+						clientDesc = v
+					}
+					if v, ok := c.Payload["status"].(string); ok {
+						clientStatus = v
+					}
+
+					// ✅ 智能合并
+					mergedTitle, mergedDesc, mergedStatus := intelligentMerge(serverTitle, serverDesc, serverStatus, map[string]interface{}{
+						"title":       clientTitle,
+						"description": clientDesc,
+						"status":      clientStatus,
+					})
+
+					// 应用合并结果
+					priority := "medium"
+					if v, ok := c.Payload["priority"].(string); ok {
+						priority = v
+					}
+
+					updateErr := db.UpdateTaskWithVersion(id, mergedTitle, mergedDesc, mergedStatus, priority, newVer)
+					if updateErr != nil {
+						log.Printf("应用合并结果失败: %v", updateErr)
+						syncFailed = true
+					} else {
+						serverChanges = append(serverChanges, map[string]interface{}{
+							"id": id, "server_version": newVer, "title": mergedTitle, "description": mergedDesc,
+							"status": mergedStatus, "priority": priority, "updated_at": now.Format(time.RFC3339), "is_deleted": false,
+						})
+						clientChanges = append(clientChanges, map[string]interface{}{
+							"local_id": c.LocalID, "server_id": id, "op": "update",
+						})
+
+						// 记录冲突
+						recordConflict(c.LocalID, id, "intelligent_merge", userID)
+						conflicts = append(conflicts, map[string]interface{}{
+							"local_id":   c.LocalID,
+							"server_id":  id,
+							"reason":     "intelligent_merge",
+							"resolution": "智能合并",
+							"merged_data": map[string]interface{}{
+								"title":       mergedTitle,
+								"description": mergedDesc,
+								"status":      mergedStatus,
+							},
+						})
+					}
+				} else {
+					// 正常更新
+					title := serverTitle
+					description := serverDesc
+					status := serverStatus
+					priority := "medium"
+
+					if v, ok := c.Payload["title"].(string); ok {
+						title = v
+					}
+					if v, ok := c.Payload["description"].(string); ok {
+						description = v
+					}
+					if v, ok := c.Payload["status"].(string); ok {
+						status = v
+					}
+					if v, ok := c.Payload["priority"].(string); ok {
+						priority = v
+					}
+
+					updateErr := db.UpdateTaskWithVersion(id, title, description, status, priority, newVer)
+					if updateErr != nil {
+						log.Printf("更新任务失败: %v", updateErr)
+						syncFailed = true
+					} else {
+						serverChanges = append(serverChanges, map[string]interface{}{
+							"id": id, "server_version": newVer, "title": title, "updated_at": now.Format(time.RFC3339),
+							"description": description, "status": status, "priority": priority, "is_deleted": false,
+						})
+						clientChanges = append(clientChanges, map[string]interface{}{
+							"local_id": c.LocalID, "server_id": id, "op": "update",
+						})
+					}
+				}
 			}
+
 		case "delete":
 			if idVal, ok := c.Payload["id"].(float64); ok {
 				id := int64(idVal)
-				var oldVer int
-				_ = db.DB.QueryRow("SELECT server_version FROM tasks WHERE id = ?", id).Scan(&oldVer)
+
+				oldVer, _, _, _, isDeleted, err := db.GetTaskForSync(id)
+
+				if err != nil {
+					log.Printf("查询任务失败: %v", err)
+					syncFailed = true
+					continue
+				}
+
 				newVer := oldVer + 1
-				_, _ = db.DB.Exec("UPDATE tasks SET is_deleted = 1, updated_at = ?, server_version = ? WHERE id = ?", now, newVer, id)
-				serverChanges = append(serverChanges, map[string]interface{}{
-					"id": id, "server_version": newVer, "is_deleted": true, "updated_at": now.Format(time.RFC3339),
-				})
-				clientChanges = append(clientChanges, map[string]interface{}{
-					"local_id": c.LocalID, "server_id": id, "op": "delete",
-				})
+
+				// ✅ 版本检查和冲突检测
+				if c.CV != oldVer {
+					log.Printf("删除冲突检测: client_version=%d, server_version=%d", c.CV, oldVer)
+
+					if isDeleted {
+						// 服务器已删除，忽略客户端删除
+						continue
+					} else {
+						// 冲突：客户端想删除但服务器有更新
+						// 策略：软删除，记录冲突
+						deleteErr := db.SoftDeleteTaskWithVersion(id, newVer)
+						if deleteErr != nil {
+							log.Printf("删除任务失败: %v", deleteErr)
+							syncFailed = true
+						} else {
+							serverChanges = append(serverChanges, map[string]interface{}{
+								"id": id, "server_version": newVer, "is_deleted": true, "updated_at": now.Format(time.RFC3339),
+							})
+							clientChanges = append(clientChanges, map[string]interface{}{
+								"local_id": c.LocalID, "server_id": id, "op": "delete",
+							})
+
+							// 记录冲突：服务器被标记为删除
+							recordConflict(c.LocalID, id, "delete_while_modified", userID)
+							conflicts = append(conflicts, map[string]interface{}{
+								"local_id":  c.LocalID,
+								"server_id": id,
+								"reason":    "delete_while_modified",
+							})
+						}
+					}
+				} else {
+					// 正常删除
+					deleteErr := db.SoftDeleteTaskWithVersion(id, newVer)
+					if deleteErr != nil {
+						log.Printf("删除任务失败: %v", deleteErr)
+						syncFailed = true
+					} else {
+						serverChanges = append(serverChanges, map[string]interface{}{
+							"id": id, "server_version": newVer, "is_deleted": true, "updated_at": now.Format(time.RFC3339),
+						})
+						clientChanges = append(clientChanges, map[string]interface{}{
+							"local_id": c.LocalID, "server_id": id, "op": "delete",
+						})
+					}
+				}
 			}
 		}
 	}
@@ -668,6 +946,8 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 	// 发送同步结果通知
 	if syncFailed {
 		sendNotificationToUser(userID, "sync_failed", "同步失败", "部分任务同步失败，请检查网络连接", "high", wsHub)
+	} else if len(conflicts) > 0 {
+		sendNotificationToUser(userID, "sync_conflict", "同步完成但存在冲突", fmt.Sprintf("成功同步 %d 个任务，但检测到 %d 个冲突", len(clientChanges), len(conflicts)), "high", wsHub)
 	} else if len(clientChanges) > 0 {
 		sendNotificationToUser(userID, "sync_success", "同步完成", fmt.Sprintf("成功同步 %d 个任务", len(clientChanges)), "normal", wsHub)
 	}
@@ -676,10 +956,462 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 		"server_changes": serverChanges,
 		"client_changes": clientChanges,
 		"last_sync_at":   now.Format(time.RFC3339),
-		"conflicts":      []interface{}{},
+		"conflicts":      conflicts, // ✅ 返回实际冲突
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// handleDevicePairing 处理设备配对请求
+func handleDevicePairing(w http.ResponseWriter, r *http.Request) {
+	userIDStr := getUserIDFromContext(r.Context())
+	if userIDStr == "" {
+		response.ErrorResponse(w, "未授权", http.StatusUnauthorized)
+		return
+	}
+
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Key        string `json:"key"`
+		DeviceType string `json:"device_type"`
+		DeviceID   string `json:"device_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.ErrorResponse(w, "无效的请求数据", http.StatusBadRequest)
+		return
+	}
+
+	// 验证必填字段
+	if req.Key == "" || req.DeviceType == "" || req.DeviceID == "" {
+		response.ErrorResponse(w, "配对密钥、设备类型和设备ID为必填项", http.StatusBadRequest)
+		return
+	}
+
+	// 验证密钥格式（64字符hex）
+	if len(req.Key) != 64 {
+		response.ErrorResponse(w, "配对密钥格式无效", http.StatusBadRequest)
+		return
+	}
+
+	// 验证设备类型
+	validDeviceTypes := map[string]bool{"web": true, "android": true, "ios": true}
+	if !validDeviceTypes[req.DeviceType] {
+		response.ErrorResponse(w, "无效的设备类型", http.StatusBadRequest)
+		return
+	}
+
+	// 检查设备是否已配对
+	existing, _ := db.ValidatePairingKey(userID, req.Key)
+	if existing {
+		response.ErrorResponse(w, "该设备已配对", http.StatusConflict)
+		return
+	}
+
+	// 获取服务器URL
+	serverURL := os.Getenv("SERVER_URL")
+	if serverURL == "" {
+		serverURL = "http://localhost:8080"
+	}
+
+	// 注册设备
+	err = db.RegisterDevice(userID, req.DeviceType, req.DeviceID, req.Key, serverURL)
+	if err != nil {
+		log.Printf("设备注册失败: %v", err)
+		response.ErrorResponse(w, "设备注册失败", http.StatusInternalServerError)
+		return
+	}
+
+	// 记录审计日志
+	log.Printf("用户 %d 注册设备: type=%s, id=%s", userID, req.DeviceType, req.DeviceID)
+
+	response.SuccessResponse(w, map[string]interface{}{
+		"status":     "paired",
+		"device_id":  req.DeviceID,
+		"server_url": serverURL,
+	}, http.StatusOK)
+}
+
+// handleListDevices 获取用户的设备列表
+func handleListDevices(w http.ResponseWriter, r *http.Request) {
+	userIDStr := getUserIDFromContext(r.Context())
+	if userIDStr == "" {
+		response.ErrorResponse(w, "未授权", http.StatusUnauthorized)
+		return
+	}
+
+	userID, _ := strconv.Atoi(userIDStr)
+
+	devices, err := db.GetUserDevices(userID)
+	if err != nil {
+		log.Printf("获取设备列表失败: %v", err)
+		response.ErrorResponse(w, "获取设备列表失败", http.StatusInternalServerError)
+		return
+	}
+
+	response.SuccessResponse(w, map[string]interface{}{
+		"devices": devices,
+		"count":   len(devices),
+	}, http.StatusOK)
+}
+
+// handleRegenerateDeviceKey 重新生成设备配对密钥
+func handleRegenerateDeviceKey(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	deviceID := vars["id"]
+
+	if deviceID == "" {
+		response.ErrorResponse(w, "设备ID不能为空", http.StatusBadRequest)
+		return
+	}
+
+	// 验证用户是否有权限操作此设备
+	userID, serverURL, _, isActive, err := db.GetDeviceInfoByDeviceID(deviceID)
+	if err != nil {
+		response.ErrorResponse(w, "设备不存在", http.StatusNotFound)
+		return
+	}
+
+	if !isActive {
+		response.ErrorResponse(w, "设备已撤销", http.StatusBadRequest)
+		return
+	}
+
+	// 检查当前用户是否是设备所有者
+	currentUserIDStr := getUserIDFromContext(r.Context())
+	currentUserID, _ := strconv.Atoi(currentUserIDStr)
+	if currentUserID != userID {
+		response.ErrorResponse(w, "无权操作此设备", http.StatusForbidden)
+		return
+	}
+
+	// 生成新密钥
+	newKey := generateRandomKey()
+
+	// 更新数据库
+	err = db.RegeneratePairingKey(deviceID, newKey)
+	if err != nil {
+		log.Printf("密钥更新失败: %v", err)
+		response.ErrorResponse(w, "密钥更新失败", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("用户 %d 重新生成了设备 %s 的配对密钥", currentUserID, deviceID)
+
+	response.SuccessResponse(w, map[string]interface{}{
+		"status":     "regenerated",
+		"new_key":    newKey,
+		"device_id":  deviceID,
+		"server_url": serverURL,
+	}, http.StatusOK)
+}
+
+// handleRevokeDevice 撤销设备
+func handleRevokeDevice(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	deviceID := vars["id"]
+
+	if deviceID == "" {
+		response.ErrorResponse(w, "设备ID不能为空", http.StatusBadRequest)
+		return
+	}
+
+	// 验证用户是否有权限操作此设备
+	userID, _, _, isActive, err := db.GetDeviceInfoByDeviceID(deviceID)
+	if err != nil {
+		response.ErrorResponse(w, "设备不存在", http.StatusNotFound)
+		return
+	}
+
+	if !isActive {
+		response.ErrorResponse(w, "设备已撤销", http.StatusBadRequest)
+		return
+	}
+
+	// 检查当前用户是否是设备所有者
+	currentUserIDStr := getUserIDFromContext(r.Context())
+	currentUserID, _ := strconv.Atoi(currentUserIDStr)
+	if currentUserID != userID {
+		response.ErrorResponse(w, "无权操作此设备", http.StatusForbidden)
+		return
+	}
+
+	// 撤销设备
+	err = db.RevokeDevice(deviceID)
+	if err != nil {
+		log.Printf("撤销设备失败: %v", err)
+		response.ErrorResponse(w, "撤销设备失败", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("用户 %d 撤销了设备 %s", currentUserID, deviceID)
+
+	response.SuccessResponse(w, map[string]interface{}{
+		"status":    "revoked",
+		"device_id": deviceID,
+	}, http.StatusOK)
+}
+
+// generateRandomKey 生成32字节随机密钥（hex格式，64字符）
+func generateRandomKey() string {
+	const charset = "0123456789abcdef"
+	b := make([]byte, 64)
+	for i := range b {
+		b[i] = charset[time.Now().UnixNano()%16]
+	}
+	return string(b)
+}
+
+// toImportString 安全地转换JSON中的值为字符串（用于导入功能）
+func toImportString(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+
+	switch val := v.(type) {
+	case string:
+		return val
+	case float64:
+		return fmt.Sprintf("%f", val)
+	case int64:
+		return fmt.Sprintf("%d", val)
+	case bool:
+		if val {
+			return "true"
+		}
+		return "false"
+	case int:
+		return fmt.Sprintf("%d", val)
+	default:
+		return ""
+	}
+}
+
+// handleBatchDeleteTasks 批量删除任务
+func handleBatchDeleteTasks(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
+	userIDStr := getUserIDFromContext(r.Context())
+	if userIDStr == "" {
+		response.ErrorResponse(w, "未授权", http.StatusUnauthorized)
+		return
+	}
+
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		TaskIDs []int64 `json:"task_ids"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.ErrorResponse(w, "无效的请�数据", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.TaskIDs) == 0 {
+		response.ErrorResponse(w, "未选择要删除的任务", http.StatusBadRequest)
+		return
+	}
+
+	// 批量软删除任务
+	count, err := db.BatchDeleteTasks(userID, req.TaskIDs)
+	if err != nil {
+		log.Printf("批量删除失败: %v", err)
+		response.ErrorResponse(w, "批量删除失败", http.StatusInternalServerError)
+		return
+	}
+
+	// 发送通知
+	sendNotificationToUser(userID, "tasks_deleted", "任务已删除", fmt.Sprintf("已删除 %d 个任务，30秒内可撤销", count), "normal", wsHub)
+
+	response.SuccessResponse(w, map[string]interface{}{
+		"status":              "deleted",
+		"count":               count,
+		"can_undo":            true,
+		"undo_window_seconds": 30,
+	}, http.StatusOK)
+}
+
+// handleRestoreTask 恢复删除的任务（撤销）
+func handleRestoreTask(w http.ResponseWriter, r *http.Request) {
+	userIDStr := getUserIDFromContext(r.Context())
+	if userIDStr == "" {
+		response.ErrorResponse(w, "未授权", http.StatusUnauthorized)
+		return
+	}
+
+	vars := mux.Vars(r)
+	taskID, err := strconv.ParseInt(vars["id"], 10, 64)
+	if err != nil {
+		response.ErrorResponse(w, "无效的任务ID", http.StatusBadRequest)
+		return
+	}
+
+	userID, _ := strconv.Atoi(userIDStr)
+
+	// 恢复任务
+	err = db.RestoreDeletedTask(taskID, userID)
+	if err != nil {
+		if _, ok := err.(*db.UndoExpiredError); ok {
+			response.ErrorResponse(w, "已超过30秒撤销期限", http.StatusGone)
+		} else {
+			response.ErrorResponse(w, "恢复失败", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	response.SuccessResponse(w, map[string]string{
+		"status": "restored",
+	}, http.StatusOK)
+}
+
+// handleImport 导入任务数据（JSON 或 CSV 格式）
+func handleImport(w http.ResponseWriter, r *http.Request) {
+	userID := getUserIDFromContext(r.Context())
+	if userID == "" {
+		response.ErrorResponse(w, "未授权", http.StatusUnauthorized)
+		return
+	}
+
+	userIDInt, err := strconv.Atoi(userID)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	// 解析 multipart/form-data
+	err = r.ParseMultipartForm(10 << 20)
+	if err != nil {
+		response.ErrorResponse(w, "文件过大或格式错误", http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		response.ErrorResponse(w, "未找到文件", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	if file == nil {
+		response.ErrorResponse(w, "文件不能为空", http.StatusBadRequest)
+		return
+	}
+
+	// 获取格式
+	format := r.FormValue("format")
+	if format == "" {
+		header.Filename = strings.ToLower(header.Filename)
+		if strings.HasSuffix(header.Filename, ".csv") {
+			format = "csv"
+		} else if strings.HasSuffix(header.Filename, ".json") {
+			format = "json"
+		} else {
+			format = "json"
+		}
+	}
+
+	var tasks []map[string]interface{}
+	var importedCount, skippedCount int
+
+	if format == "json" {
+		// 解析JSON
+		var jsonTasks []map[string]interface{}
+		if err := json.NewDecoder(file).Decode(&jsonTasks); err != nil {
+			log.Printf("JSON解析失败: %v", err)
+			response.ErrorResponse(w, "JSON解析失败", http.StatusBadRequest)
+			return
+		}
+
+		for _, jsonTask := range jsonTasks {
+			task := map[string]interface{}{
+				"local_id":    toImportString(jsonTask["local_id"]),
+				"title":       toImportString(jsonTask["title"]),
+				"description": toImportString(jsonTask["description"]),
+				"status":      toImportString(jsonTask["status"]),
+				"priority":    toImportString(jsonTask["priority"]),
+			}
+
+			if task["title"] != "" {
+				tasks = append(tasks, task)
+			} else {
+				skippedCount++
+			}
+		}
+	} else if format == "csv" {
+		// 解析CSV
+		reader := utils.NewCSVReader(file)
+		csvRecords, err := reader.ReadAll()
+		if err != nil {
+			log.Printf("CSV解析失败: %v", err)
+			response.ErrorResponse(w, "CSV解析失败", http.StatusBadRequest)
+			return
+		}
+
+		for _, record := range csvRecords {
+			title := record["title"]
+			if title == "" {
+				skippedCount++
+				continue
+			}
+
+			description := record["description"]
+			status := record["status"]
+			if status == "" {
+				status = "todo"
+			}
+			priority := record["priority"]
+			if priority == "" {
+				priority = "medium"
+			}
+
+			task := map[string]interface{}{
+				"local_id":    fmt.Sprintf("import-%d", time.Now().UnixNano()),
+				"title":       title,
+				"description": description,
+				"status":      status,
+				"priority":    priority,
+			}
+			tasks = append(tasks, task)
+		}
+	} else {
+		response.ErrorResponse(w, "不支持的格式，请使用json或csv", http.StatusBadRequest)
+		return
+	}
+
+	if len(tasks) == 0 {
+		response.ErrorResponse(w, "没有可导入的任务数据", http.StatusBadRequest)
+		return
+	}
+
+	// 批量插入
+	insertedIDs, err := db.BatchInsertTasks(userIDInt, tasks)
+	if err != nil {
+		log.Printf("批量插入失败: %v", err)
+		response.ErrorResponse(w, "导入失败", http.StatusInternalServerError)
+		return
+	}
+
+	importedCount = len(insertedIDs)
+
+	// 记录导入审计日志
+	if err := db.LogExportAction(userIDInt, "import", format, importedCount); err != nil {
+		log.Printf("记录导入审计日志错误: %v", err)
+	}
+
+	response.SuccessResponse(w, map[string]interface{}{
+		"status":       "imported",
+		"imported":     importedCount,
+		"skipped":      skippedCount,
+		"inserted_ids": insertedIDs,
+	}, http.StatusOK)
 }
 
 // handleExport 导出数据（任务）为 JSON 或 CSV 格式
@@ -688,6 +1420,12 @@ func handleExport(w http.ResponseWriter, r *http.Request) {
 	userID := getUserIDFromContext(r.Context())
 	if userID == "" {
 		response.ErrorResponse(w, "未授权", http.StatusUnauthorized)
+		return
+	}
+
+	userIDInt, err := strconv.Atoi(userID)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
 		return
 	}
 
@@ -702,47 +1440,138 @@ func handleExport(w http.ResponseWriter, r *http.Request) {
 		format = "json"
 	}
 
-	// 只获取当前用户的任务
-	tasks, _, err := db.GetTasksPaginated(0, 1, 10000) // 临时解决方案，应该添加用户过滤
-	if err != nil {
-		response.ErrorResponse(w, "导出错误", http.StatusInternalServerError)
-		return
-	}
-
 	if format == "json" {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tasks)
+		w.Header().Set("Content-Disposition", "attachment;filename=tasks.json")
+
+		w.Write([]byte("[\n"))
+		first := true
+		if err := db.GetTasksStreaming(userIDInt, 100, func(batch []map[string]interface{}) error {
+			for _, task := range batch {
+				if !first {
+					w.Write([]byte(",\n"))
+				}
+				first = false
+				if err := json.NewEncoder(w).Encode(task); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			response.ErrorResponse(w, "导出错误", http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte("\n]"))
+
+		log.Printf("用户 %d 流式导出任务到 JSON 格式", userIDInt)
 		return
 	}
 
 	if format == "csv" {
-		w.Header().Set("Content-Type", "text/csv")
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", "attachment;filename=tasks.csv")
 
-		w.Write([]byte("id,local_id,server_version,title,description,status,priority,due_at,created_at,updated_at,completed_at,is_deleted,last_modified\n"))
+		// 写入UTF-8 BOM（Excel兼容）
+		w.Write([]byte{0xEF, 0xBB, 0xBF})
 
-		for _, row := range tasks {
-			line := []string{
-				toString(row["id"]),
-				toString(row["local_id"]),
-				toString(row["server_version"]),
-				toString(row["title"]),
-				toString(row["description"]),
-				toString(row["status"]),
-				toString(row["priority"]),
-				toString(row["due_at"]),
-				toString(row["created_at"]),
-				toString(row["updated_at"]),
-				toString(row["completed_at"]),
-				toString(row["is_deleted"]),
-				toString(row["last_modified"]),
-			}
-			w.Write([]byte(strings.Join(line, ",") + "\n"))
+		// 使用CSVStreamer进行流式写入
+		streamer := utils.NewCSVStreamer(w)
+		defer streamer.Close()
+
+		headers := []string{
+			"id", "local_id", "server_version", "title", "description",
+			"status", "priority", "due_at", "created_at", "updated_at",
+			"completed_at", "is_deleted", "last_modified",
 		}
+		if err := streamer.WriteHeader(headers); err != nil {
+			response.ErrorResponse(w, "导出错误", http.StatusInternalServerError)
+			return
+		}
+
+		totalExported := 0
+		if err := db.GetTasksStreaming(userIDInt, 100, func(batch []map[string]interface{}) error {
+			for _, task := range batch {
+				if task["description"] == nil {
+					task["description"] = ""
+				}
+				if err := streamer.WriteRow(task); err != nil {
+					return err
+				}
+			}
+			totalExported += len(batch)
+			return nil
+		}); err != nil {
+			response.ErrorResponse(w, "导出错误", http.StatusInternalServerError)
+			return
+		}
+
+		// 记录导出审计日志
+		if err := db.LogExportAction(userIDInt, "tasks", format, totalExported); err != nil {
+			log.Printf("记录导出审计日志错误: %v", err)
+		}
+
+		log.Printf("用户 %d 流式导出了 %d 个任务到 CSV 格式（分批: 100条/批）", userIDInt, totalExported)
 		return
 	}
 
 	response.ErrorResponse(w, "未知的格式", http.StatusBadRequest)
+}
+
+// intelligentMerge 策略：字段级冲突智能合并
+func intelligentMerge(serverTitle, serverDesc, serverStatus string, clientProps map[string]interface{}) (string, string, string) {
+	mergedTitle := serverTitle
+	mergedDesc := serverDesc
+	mergedStatus := serverStatus
+
+	// 标题：优先服务器
+	if clientTitle, ok := clientProps["title"].(string); ok && clientTitle != "" {
+		if clientTitle != serverTitle {
+			mergedTitle = serverTitle
+		} else {
+			mergedTitle = clientTitle
+		}
+	}
+
+	// 描述：合并两者的描述
+	if clientDesc, ok := clientProps["description"].(string); ok {
+		if clientDesc != serverDesc && serverDesc != "" && clientDesc != "" {
+			mergedDesc = fmt.Sprintf("[服务器更新] %s\n\n[客户端更新] %s", serverDesc, clientDesc)
+		} else if clientDesc != "" {
+			mergedDesc = clientDesc
+		}
+	}
+
+	// 状态：保留较新的状态
+	if clientStatus, ok := clientProps["status"].(string); ok {
+		if clientStatus != serverStatus {
+			mergedStatus = types.PrioritizeStatus(clientStatus, serverStatus)
+		}
+	}
+
+	return mergedTitle, mergedDesc, mergedStatus
+}
+
+// recordConflict 记录冲突到数据库
+func recordConflict(localID string, serverID int64, reason string, userID int) {
+	options := []types.ConflictResolution{types.ConflictKeepServer, types.ConflictKeepClient, types.ConflictMerge}
+	optionsJSON, err := json.Marshal(options)
+	if err != nil {
+		log.Printf("序列化冲突选项错误: %v", err)
+		optionsJSON = []byte("[]")
+	}
+	if err := db.RecordConflict(localID, serverID, reason, string(optionsJSON)); err != nil {
+		log.Printf("记录冲突错误: %v", err)
+	}
+}
+
+// randomString 生成随机字符串（用于local_id冲突处理）
+func randomString(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+	}
+	return string(b)
 }
 
 func toString(v interface{}) string {
@@ -796,13 +1625,43 @@ type adminConfigRequest struct {
 }
 
 func handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := db.GetAllUsers()
+	// 解析分页参数
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	// 解析过滤参数
+	email := r.URL.Query().Get("email")
+	role := r.URL.Query().Get("role")
+
+	users, total, err := db.GetUsersPaginated(page, pageSize, email, role)
 	if err != nil {
 		log.Printf("Failed to get users: %v", err)
 		response.ErrorResponse(w, "获取用户列表失败", http.StatusInternalServerError)
 		return
 	}
-	response.SuccessResponse(w, users, http.StatusOK)
+
+	totalPages := (total + pageSize - 1) / pageSize
+	hasPrev := page > 1
+	hasNext := page < totalPages
+
+	response.SuccessResponse(w, map[string]interface{}{
+		"users": users,
+		"pagination": map[string]interface{}{
+			"page":      page,
+			"page_size": pageSize,
+			"total":     total,
+			"pages":     totalPages,
+			"has_prev":  hasPrev,
+			"has_next":  hasNext,
+		},
+	}, http.StatusOK)
 }
 
 // handleAdminCreateUserWithNotification 创建用户并发送通知
@@ -836,13 +1695,11 @@ func handleAdminCreateUserWithNotification(w http.ResponseWriter, r *http.Reques
 
 	adminID := getUserIDFromContext(r.Context())
 	ip := getClientIP(r)
-	_ = db.LogAdminAction(toInt(adminID), adminEmail, "create_user", req.Email, userID, fmt.Sprintf("Created user with role: %s", req.Role), ip)
+	if err := db.LogAdminAction(toInt(adminID), adminEmail, "create_user", req.Email, userID,
+		fmt.Sprintf("Created user with role: %s", req.Role), ip); err != nil {
+		log.Printf("记录管理操作日志错误: %v", err)
+	}
 
-	// 发送通知给新用户
-	roleName := map[string]string{"admin": "管理员", "user": "普通用户"}[req.Role]
-	sendNotificationToUser(int(userID), "account_created", "账户已创建", fmt.Sprintf("您已被创建为%s", roleName), "normal", wsHub)
-
-	log.Printf("Admin %s created user %s (ID: %d)", adminEmail, req.Email, userID)
 	response.SuccessResponse(w, map[string]interface{}{"id": userID, "email": req.Email, "role": req.Role}, http.StatusCreated)
 }
 
@@ -872,17 +1729,33 @@ func handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	oldEmail, _ := db.GetUserEmail(userID)
+
 	if err := db.UpdateUser(userID, req.Email, req.Role); err != nil {
-		response.ErrorResponse(w, "更新用户失败", http.StatusInternalServerError)
+		response.ErrorResponse(w, "更新用户失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	adminID := getUserIDFromContext(r.Context())
 	adminEmail := getEmailFromContext(r.Context())
 	ip := getClientIP(r)
-	_ = db.LogAdminAction(toInt(adminID), adminEmail, "update_user", req.Email, userID,
-		fmt.Sprintf("Updated email: %s -> %s, role: %s", oldEmail, req.Email, req.Role), ip)
 
+	details := "用户信息更新"
+	if req.Email != "" && oldEmail != "" && oldEmail != fmt.Sprintf("ID:%d", userID) {
+		details = fmt.Sprintf("邮箱: %s -> %s", oldEmail, req.Email)
+	}
+	if req.Role != "" {
+		if details != "用户信息更新" {
+			details = fmt.Sprintf("%s, 角色: %s", details, req.Role)
+		} else {
+			details = fmt.Sprintf("角色: %s", req.Role)
+		}
+	}
+
+	if err := db.LogAdminAction(toInt(adminID), adminEmail, "update_user", req.Email, userID, details, ip); err != nil {
+		log.Printf("记录管理操作日志错误: %v", err)
+	}
+
+	log.Printf("Admin %s updated user ID %d", adminEmail, userID)
 	response.SuccessResponse(w, map[string]string{"status": "updated"}, http.StatusOK)
 }
 
@@ -915,7 +1788,9 @@ func handleAdminResetPassword(w http.ResponseWriter, r *http.Request) {
 	adminID := getUserIDFromContext(r.Context())
 	adminEmail := getEmailFromContext(r.Context())
 	ip := getClientIP(r)
-	_ = db.LogAdminAction(toInt(adminID), adminEmail, "reset_password", targetEmail, userID, "Password reset by admin", ip)
+	if err := db.LogAdminAction(toInt(adminID), adminEmail, "reset_password", targetEmail, userID, "Password reset by admin", ip); err != nil {
+		log.Printf("记录管理操作日志错误: %v", err)
+	}
 
 	log.Printf("Admin %s reset password for user %s (ID: %d)", adminEmail, targetEmail, userID)
 	response.SuccessResponse(w, map[string]string{"status": "password reset"}, http.StatusOK)
@@ -944,12 +1819,18 @@ func handleAdminLockUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetEmail, _ := db.GetUserEmail(userID)
+	targetEmail, err := db.GetUserEmail(userID)
+	if err != nil {
+		log.Printf("获取用户邮箱错误: %v", err)
+		targetEmail = fmt.Sprintf("ID:%d", userID)
+	}
 	adminID := getUserIDFromContext(r.Context())
 	adminEmail := getEmailFromContext(r.Context())
 	ip := getClientIP(r)
-	_ = db.LogAdminAction(toInt(adminID), adminEmail, "lock_user", targetEmail, userID,
-		fmt.Sprintf("Locked for %d minutes", req.DurationMinutes), ip)
+	if err := db.LogAdminAction(toInt(adminID), adminEmail, "lock_user", targetEmail, userID,
+		fmt.Sprintf("Locked for %d minutes", req.DurationMinutes), ip); err != nil {
+		log.Printf("记录管理操作日志错误: %v", err)
+	}
 
 	response.SuccessResponse(w, map[string]string{"status": "user locked"}, http.StatusOK)
 }
@@ -968,11 +1849,17 @@ func handleAdminUnlockUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetEmail, _ := db.GetUserEmail(userID)
+	targetEmail, err := db.GetUserEmail(userID)
+	if err != nil {
+		log.Printf("获取用户邮箱错误: %v", err)
+		targetEmail = fmt.Sprintf("ID:%d", userID)
+	}
 	adminID := getUserIDFromContext(r.Context())
 	adminEmail := getEmailFromContext(r.Context())
 	ip := getClientIP(r)
-	_ = db.LogAdminAction(toInt(adminID), adminEmail, "unlock_user", targetEmail, userID, "Account unlocked by admin", ip)
+	if err := db.LogAdminAction(toInt(adminID), adminEmail, "unlock_user", targetEmail, userID, "Account unlocked by admin", ip); err != nil {
+		log.Printf("记录管理操作日志错误: %v", err)
+	}
 
 	response.SuccessResponse(w, map[string]string{"status": "user unlocked"}, http.StatusOK)
 }
@@ -995,7 +1882,9 @@ func handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	adminID := getUserIDFromContext(r.Context())
 	adminEmail := getEmailFromContext(r.Context())
 	ip := getClientIP(r)
-	_ = db.LogAdminAction(toInt(adminID), adminEmail, "delete_user", targetEmail, userID, "User deleted by admin", ip)
+	if err := db.LogAdminAction(toInt(adminID), adminEmail, "delete_user", targetEmail, userID, "User deleted by admin", ip); err != nil {
+		log.Printf("记录管理操作日志错误: %v", err)
+	}
 
 	log.Printf("Admin %s deleted user %s (ID: %d)", adminEmail, targetEmail, userID)
 	response.SuccessResponse(w, map[string]string{"status": "user deleted"}, http.StatusOK)
@@ -1069,7 +1958,9 @@ func handleAdminSetConfig(w http.ResponseWriter, r *http.Request) {
 
 	adminEmail := getEmailFromContext(r.Context())
 	ip := getClientIP(r)
-	_ = db.LogAdminAction(toInt(adminID), adminEmail, "update_config", "", 0, fmt.Sprintf("Updated config: %s = %s", req.Key, req.Value), ip)
+	if err := db.LogAdminAction(toInt(adminID), adminEmail, "update_config", "", 0, fmt.Sprintf("Updated config: %s = %s", req.Key, req.Value), ip); err != nil {
+		log.Printf("记录管理操作日志错误: %v", err)
+	}
 
 	response.SuccessResponse(w, map[string]string{"status": "config updated"}, http.StatusOK)
 }
@@ -1283,7 +2174,12 @@ func handleClearNotifications(w http.ResponseWriter, r *http.Request) {
 	olderThanDaysStr := r.URL.Query().Get("older_than_days")
 	olderThanDays := 30
 	if olderThanDaysStr != "" {
-		olderThanDays, _ = strconv.Atoi(olderThanDaysStr)
+		var err error
+		olderThanDays, err = strconv.Atoi(olderThanDaysStr)
+		if err != nil {
+			log.Printf("转换older_than_days错误: %v", err)
+			olderThanDays = 30
+		}
 		if olderThanDays < 0 {
 			olderThanDays = 0
 		}
@@ -1339,11 +2235,15 @@ func startCleanupTasks() {
 		}
 	}()
 
-	// 每天清理一次旧日志
+	// 每天清理一次旧日志和删除记录
 	dailyTicker := time.NewTicker(24 * time.Hour)
 	go func() {
 		for range dailyTicker.C {
 			db.CleanupOldLoginLogs()
+			count, _ := db.CleanupOldDeletedTasks()
+			if count > 0 {
+				log.Printf("Cleaned up %d old deleted_task records", count)
+			}
 		}
 	}()
 }
@@ -1408,18 +2308,31 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, wsHub *websocket.Hu
 	// 从query参数获取加密设置
 	encryptionEnabled := r.URL.Query().Get("encryption") == "true"
 
-	// 从query参数或header获取token
-	token := r.URL.Query().Get("token")
+	// ✅ 优先从 Sec-WebSocket-Protocol subprotocol 获取token（更安全）
+	var token string
+	protocols := strings.Split(r.Header.Get("Sec-WebSocket-Protocol"), ",")
+	for _, protocol := range protocols {
+		trimmed := strings.TrimSpace(protocol)
+		if strings.HasPrefix(trimmed, "todoapp.") {
+			token = strings.TrimPrefix(trimmed, "todoapp.")
+			break
+		}
+	}
+
+	// 降级：从query参数或header获取token（向后兼容）
 	if token == "" {
-		token = r.Header.Get("Authorization")
-		if strings.HasPrefix(token, "Bearer ") {
-			token = token[7:]
+		token = r.URL.Query().Get("token")
+		if token == "" {
+			token = r.Header.Get("Authorization")
+			if strings.HasPrefix(token, "Bearer ") {
+				token = token[7:]
+			}
 		}
 	}
 
 	if token == "" {
 		log.Printf("WebSocket connection rejected: missing token from %s", r.RemoteAddr)
-		http.Error(w, "未授权", http.StatusUnauthorized)
+		response.ErrorResponse(w, "未授权", http.StatusUnauthorized)
 		return
 	}
 
@@ -1427,17 +2340,18 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, wsHub *websocket.Hu
 	claims, err := auth.ValidateToken(token)
 	if err != nil || claims.TokenType != "access" {
 		log.Printf("WebSocket connection rejected: invalid token from %s", r.RemoteAddr)
-		http.Error(w, "无效的令牌", http.StatusUnauthorized)
+		response.ErrorResponse(w, "无效的令牌", http.StatusUnauthorized)
 		return
 	}
 
 	userID, err := strconv.Atoi(claims.UserID)
 	if err != nil {
-		http.Error(w, "无效的用户ID", http.StatusBadRequest)
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
 		return
 	}
 
 	// 升级HTTP连接为WebSocket连接
+	// 如果使用subprotocol，需要传递给Upgrade
 	conn, err := wsclient.Upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade failed for user %s: %v", claims.Email, err)

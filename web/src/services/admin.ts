@@ -23,9 +23,16 @@ class AdminService {
     });
   }
 
-  async getUsers(): Promise<User[]> {
-    const response = await this.client.get('/admin/users');
-    return response.data.data;
+  async getUsers(params?: { page?: number; page_size?: number; email?: string; role?: string }): Promise<{ users: User[]; pagination: Pagination }> {
+    const queryParams = new URLSearchParams()
+    if (params) {
+      if (params.page !== undefined) queryParams.append('page', String(params.page))
+      if (params.page_size !== undefined) queryParams.append('page_size', String(params.page_size))
+      if (params.email) queryParams.append('email', params.email)
+      if (params.role) queryParams.append('role', params.role)
+    }
+    const response = await this.client.get(`/admin/users?${queryParams}`)
+    return response.data
   }
 
   async createUser(data: CreateUserRequest): Promise<{ id: number; email: string; role: string }> {
@@ -92,6 +99,15 @@ class AdminService {
   }
 }
 
+export interface Pagination {
+  page: number;
+  page_size: number;
+  total: number;
+  pages: number;
+  has_prev: boolean;
+  has_next: boolean;
+}
+
 export interface User {
   id: number;
   email: string;
@@ -100,6 +116,7 @@ export interface User {
   locked_until: string | null;
   must_change_password: boolean;
   created_at: string;
+  updated_at: string;
   is_locked: boolean;
 }
 
@@ -107,6 +124,15 @@ export interface CreateUserRequest {
   email: string;
   password: string;
   role: 'admin' | 'user';
+}
+
+export interface Pagination {
+  page: number;
+  page_size: number;
+  total: number;
+  pages: number;
+  has_prev: boolean;
+  has_next: boolean;
 }
 
 export interface UpdateUserRequest {

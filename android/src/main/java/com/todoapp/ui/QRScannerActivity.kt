@@ -22,7 +22,15 @@ import com.google.mlkit.vision.common.InputImage
 import com.todoapp.R
 import com.todoapp.data.crypto.AesGcmManager
 import com.todoapp.data.crypto.KeyStorage
+import com.todoapp.data.remote.PairingRequest
+import com.todoapp.data.remote.PairingResponse
+import com.todoapp.data.remote.RetrofitClient
 import androidx.camera.view.PreviewView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+import retrofit2.Response
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -122,15 +130,67 @@ class QRScannerActivity : AppCompatActivity() {
                     return@runOnUiThread
                 }
 
+                // 验证密钥格式
                 if (!AesGcmManager.isValidKey(pairingData.key)) {
                     showInvalidKeyDialog()
                     return@runOnUiThread
                 }
 
-                KeyStorage.init(this)
-                KeyStorage.saveKey(this, pairingData.key, pairingData.server)
+                // 检查过期时间
+                val currentTime = System.currentTimeMillis()
+                val expiresAt = pairingData.expires * 1000
+                if (currentTime > expiresAt) {
+                    showExpiredDialog()
+                    return@runOnUiThread
+                }
 
-                showSuccessDialog(pairingData.server)
+                // 显示加载中
+                showLoading()
+
+                // 调用服务器验证配对（Token由AuthInterceptor自动添加）
+                GlobalScope.launch(Dispatchers.IO) {
+                    try {
+                        val deviceId = getDeviceID()
+                        val response: Response<PairingResponse> = RetrofitClient.getApiService(this@QRScannerActivity)
+                            .pairDevice(
+                                PairingRequest(
+                                    key = pairingData.key,
+                                    device_type = "android",
+                                    device_id = deviceId
+                                )
+                            )
+
+                        runOnUiThread {
+                            dismissLoading()
+
+                            if (response.isSuccessful && response.body() != null) {
+                                // 服务器验证成功
+                                KeyStorage.init(this@QRScannerActivity)
+                                KeyStorage.saveKey(this@QRScannerActivity, pairingData.key, pairingData.server)
+
+                                // 保存设备信息
+                                val prefs = getSharedPreferences("TodoAppPrefs", MODE_PRIVATE)
+                                prefs.edit()
+                                    .putString("device_id", deviceId)
+                                    .putString("server_url", pairingData.server)
+                                    .apply()
+
+                                Log.d(TAG, "设备配对成功: $deviceId")
+                                showSuccessDialog(pairingData.server)
+                            } else {
+                                val errorMsg = response.errorBody()?.string() ?: "配对验证失败"
+                                Log.e(TAG, "配对失败: $errorMsg")
+                                showErrorDialog(getErrorMessage(errorMsg))
+                            }
+                        }
+                    } catch (e: Exception) {
+                        runOnUiThread {
+                            dismissLoading()
+                            Log.e(TAG, "配对异常", e)
+                            showErrorDialog("配对验证失败: ${e.message}")
+                        }
+                    }
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing QR code", e)
                 showErrorDialog("Error: ${e.message}")
@@ -157,6 +217,59 @@ class QRScannerActivity : AppCompatActivity() {
             Log.e(TAG, "Failed to parse pairing data", e)
             null
         }
+    }
+
+    private fun getDeviceID(): String {
+        val prefs = getSharedPreferences("TodoAppPrefs", MODE_PRIVATE)
+        var deviceId = prefs.getString("device_id", "")
+        if (deviceId.isNullOrEmpty()) {
+            deviceId = android.provider.Settings.Secure.getString(
+                contentResolver,
+                android.provider.Settings.Secure.ANDROID_ID
+            )
+            prefs.edit().putString("device_id", deviceId).apply()
+        }
+        return deviceId
+    }
+
+    private fun getErrorMessage(errorBody: String): String {
+        return try {
+            val json = JSONObject(errorBody)
+            json.optString("error") ?: json.optString("message") ?: "配对失败"
+        } catch (e: Exception) {
+            "配对失败"
+        }
+    }
+
+    private fun showLoading() {
+        // 可以实现一个加载对话框
+    }
+
+    private fun dismissLoading() {
+        // 关闭加载对话框
+    }
+
+    private fun showExpiredDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("二维码已过期")
+            .setMessage("该配对二维码已过期，请刷新后重新扫描")
+            .setPositiveButton("重试") { _, _ ->
+                isScanning = true
+            }
+            .setNegativeButton("取消") { _, _ ->
+                finish()
+            }
+            .show()
+    }
+
+    private fun showNotLoggedInDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("需要登录")
+            .setMessage("请先登录后再进行设备配对")
+            .setPositiveButton("确定") { _, _ ->
+                finish()
+            }
+            .show()
     }
 
     private fun showSuccessDialog(serverUrl: String) {

@@ -130,6 +130,27 @@ func InitDB(dataSourceName string) error {
             options TEXT,
             created_at DATETIME
         );`,
+		`CREATE TABLE IF NOT EXISTS devices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            device_type TEXT,
+            device_id TEXT UNIQUE,
+            pairing_key TEXT,
+            server_url TEXT,
+            paired_at DATETIME,
+            last_seen DATETIME,
+            is_active BOOLEAN DEFAULT 1,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );`,
+		`CREATE TABLE IF NOT EXISTS deleted_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER,
+            user_id INTEGER,
+            task_data TEXT,
+            deleted_at DATETIME,
+            is_restorable BOOLEAN DEFAULT 1,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        );`,
 		// Indexes for performance
 		`CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_tasks_server_version ON tasks(server_version);`,
@@ -176,6 +197,9 @@ func InitDB(dataSourceName string) error {
 		`CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read);`,
 		`CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read);`,
+		`CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_devices_device_id ON devices(device_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_deleted_tasks_user ON deleted_tasks(user_id, is_restorable);`,
 	}
 
 	for _, s := range stmts {
@@ -445,6 +469,81 @@ func GetUserEmail(userID int64) (string, error) {
 	return email, nil
 }
 
+// GetTasksStreaming 流式获取任务（用于大规模导出）
+func GetTasksStreaming(userID int, batchSize int, processFunc func([]map[string]interface{}) error) error {
+	offset := 0
+
+	for {
+		query := `
+			SELECT id, local_id, server_version, title, description, status, priority,
+			       due_at, created_at, updated_at, completed_at, is_deleted, last_modified
+			FROM tasks
+			WHERE user_id = ? AND is_deleted = 0
+			ORDER BY created_at DESC
+			LIMIT ? OFFSET ?
+		`
+		rows, err := DB.Query(query, userID, batchSize, offset)
+		if err != nil {
+			return err
+		}
+
+		var batch []map[string]interface{}
+		for rows.Next() {
+			var id int64
+			var localID sql.NullString
+			var serverVersion sql.NullInt64
+			var title sql.NullString
+			var description sql.NullString
+			var status sql.NullString
+			var priority sql.NullString
+			var dueAt sql.NullString
+			var createdAt sql.NullString
+			var updatedAt sql.NullString
+			var completedAt sql.NullString
+			var isDeleted sql.NullBool
+			var lastModified sql.NullString
+			if err := rows.Scan(&id, &localID, &serverVersion, &title, &description, &status, &priority, &dueAt, &createdAt, &updatedAt, &completedAt, &isDeleted, &lastModified); err != nil {
+				rows.Close()
+				return err
+			}
+			row := map[string]interface{}{
+				"id":       id,
+				"local_id": localID.String,
+				"server_version": func() interface{} {
+					if serverVersion.Valid {
+						return serverVersion.Int64
+					}
+					return 0
+				}(),
+				"title":         title.String,
+				"description":   description.String,
+				"status":        status.String,
+				"priority":      priority.String,
+				"due_at":        dueAt.String,
+				"created_at":    createdAt.String,
+				"updated_at":    updatedAt.String,
+				"completed_at":  completedAt.String,
+				"is_deleted":    isDeleted.Bool,
+				"last_modified": lastModified.String,
+			}
+			batch = append(batch, row)
+		}
+		rows.Close()
+
+		if len(batch) == 0 {
+			break
+		}
+
+		if err := processFunc(batch); err != nil {
+			return err
+		}
+
+		offset += batchSize
+	}
+
+	return nil
+}
+
 // GetTasksPaginated 分页获取任务
 func GetTasksPaginated(userID int, page, pageSize int) ([]map[string]interface{}, int, error) {
 	offset := (page - 1) * pageSize
@@ -621,6 +720,93 @@ func GetAllUsers() ([]map[string]interface{}, error) {
 	return results, nil
 }
 
+// GetUsersPaginated 分页获取用户列表
+func GetUsersPaginated(page, pageSize int, email, role string) ([]map[string]interface{}, int, error) {
+	// 验证分页参数
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	offset := (page - 1) * pageSize
+
+	// 构建查询条件
+	query := "SELECT COUNT(*) FROM users WHERE 1=1"
+	args := []interface{}{}
+
+	if email != "" {
+		query += " AND email LIKE ?"
+		args = append(args, "%"+email+"%")
+	}
+	if role != "" && (role == "admin" || role == "user") {
+		query += " AND role = ?"
+		args = append(args, role)
+	}
+
+	var total int
+	err := DB.QueryRow(query, args...).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// 获取分页数据
+	query = `
+		SELECT id, email, role, failed_attempts, locked_until, must_change_password, created_at, updated_at
+		FROM users WHERE 1=1
+	`
+
+	if email != "" {
+		query += " AND email LIKE ?"
+	}
+	if role != "" && (role == "admin" || role == "user") {
+		query += " AND role = ?"
+	}
+
+	query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+	results := append(args, pageSize, offset)
+
+	rows, err := DB.Query(query, results...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var userResults []map[string]interface{}
+	for rows.Next() {
+		var id int64
+		var emailStr, userRole string
+		var failedAttempts int
+		var lockedUntil sql.NullTime
+		var mustChangePassword bool
+		var createdAt, updatedAt string
+
+		if err := rows.Scan(&id, &emailStr, &userRole, &failedAttempts, &lockedUntil, &mustChangePassword, &createdAt, &updatedAt); err != nil {
+			return nil, 0, err
+		}
+
+		userResults = append(userResults, map[string]interface{}{
+			"id":              id,
+			"email":           emailStr,
+			"role":            userRole,
+			"failed_attempts": failedAttempts,
+			"locked_until": func() interface{} {
+				if lockedUntil.Valid {
+					return lockedUntil.Time.Format(time.RFC3339)
+				}
+				return nil
+			}(),
+			"must_change_password": mustChangePassword,
+			"created_at":           createdAt,
+			"updated_at":           updatedAt,
+			"is_locked":            lockedUntil.Valid && lockedUntil.Time.After(time.Now()),
+		})
+	}
+
+	return userResults, total, nil
+}
+
 // CreateUser 创建新用户
 func CreateUser(email, password, role string) (int64, error) {
 	// 检查邮箱是否已存在
@@ -719,6 +905,15 @@ func LogAdminAction(adminID int, adminEmail, action, targetEmail string, targetU
 	_, err := DB.Exec(
 		"INSERT INTO admin_logs (admin_id, admin_email, action, target_user_id, target_email, details, ip_address, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
 		adminID, adminEmail, action, targetUserID, targetEmail, details, ipAddress, time.Now().UTC(),
+	)
+	return err
+}
+
+// LogExportAction 记录导出操作审计日志
+func LogExportAction(userID int, exportType, format string, count int) error {
+	_, err := DB.Exec(
+		"INSERT INTO admin_logs (admin_id, admin_email, action, target_user_id, target_email, details, ip_address, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		userID, "", "export_"+exportType, 0, "", fmt.Sprintf("格式: %s, 导出条数: %d", format, count), "", time.Now().UTC(),
 	)
 	return err
 }

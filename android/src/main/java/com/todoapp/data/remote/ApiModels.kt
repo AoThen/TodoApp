@@ -38,6 +38,15 @@ interface ApiService {
         @Query("type") type: String,
         @Query("format") format: String
     ): Response<ResponseBody>
+
+    // Device pairing methods
+    @POST("devices/pair")
+    suspend fun pairDevice(
+        @Body request: PairingRequest
+    ): Response<PairingResponse>
+
+    @GET("devices")
+    suspend fun getDevices(): Response<DevicesResponse>
 }
 
 data class LoginRequest(
@@ -121,4 +130,32 @@ data class Conflict(
     @SerializedName("server_id") val serverId: Long,
     @SerializedName("reason") val reason: String,
     @SerializedName("options") val options: List<String>
+)
+
+// Device pairing data classes
+data class PairingRequest(
+    @SerializedName("key") val key: String,
+    @SerializedName("device_type") val deviceType: String,
+    @SerializedName("device_id") val deviceId: String
+)
+
+data class PairingResponse(
+    @SerializedName("status") val status: String,
+    @SerializedName("device_id") val deviceId: String?,
+    @SerializedName("server_url") val serverUrl: String?
+)
+
+data class Device(
+    @SerializedName("id") val id: Long,
+    @SerializedName("device_type") val deviceType: String,
+    @SerializedName("device_id") val deviceId: String,
+    @SerializedName("server_url") val serverUrl: String,
+    @SerializedName("paired_at") val pairedAt: String,
+    @SerializedName("last_seen") val lastSeen: String,
+    @SerializedName("is_active") val isActive: Boolean
+)
+
+data class DevicesResponse(
+    @SerializedName("devices") val devices: List<Device>,
+    @SerializedName("count") val count: Int
 )

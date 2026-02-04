@@ -213,6 +213,14 @@ class ApiService {
     await this.client.post('/import', data);
   }
 
+  async batchDeleteTasks(taskIds: number[]) {
+    return this.client.delete('/tasks/batch', { data: { task_ids: taskIds } });
+  }
+
+  async restoreTask(taskId: number) {
+    return this.client.post(`/tasks/${taskId}/restore`);
+  }
+
   // User operations
   async getCurrentUser(): Promise<{ id: string; email: string }> {
     const response = await this.client.get('/users/me');
