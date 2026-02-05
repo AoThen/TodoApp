@@ -18,8 +18,10 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.todoapp.R
 import com.todoapp.databinding.FragmentPairingBinding
 import com.todoapp.ui.QRScannerActivity
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
+@AndroidEntryPoint
 class PairingFragment : Fragment() {
 
     private var _binding: FragmentPairingBinding? = null
@@ -121,7 +123,7 @@ class PairingFragment : Fragment() {
         if (result.resultCode == android.app.Activity.RESULT_OK) {
             val qrData = result.data?.getStringExtra(QRScannerActivity.EXTRA_QR_RESULT)
             if (!qrData.isNullOrEmpty()) {
-                viewModel.pairDevice(qrData)
+                viewModel.pairDevice(qrData, requireContext())
             } else {
                 Toast.makeText(requireContext(), R.string.pairing_invalid_qr, Toast.LENGTH_SHORT).show()
             }
@@ -149,7 +151,7 @@ class PairingFragment : Fragment() {
             .setPositiveButton(R.string.ok) { _, _ ->
                 val pairingCode = editText.text.toString().trim()
                 if (pairingCode.isNotEmpty()) {
-                    viewModel.pairDevice(pairingCode)
+                    viewModel.pairDevice(pairingCode, requireContext())
                 } else {
                     Toast.makeText(requireContext(), R.string.pairing_invalid_qr, Toast.LENGTH_SHORT).show()
                 }

@@ -82,7 +82,7 @@ const ImportDialog: React.FC<ImportDialogProps> = ({ isOpen, onClose, onImportSu
     try {
       const response = await apiService.importTasks(formData);
       
-      alert(`导入成功！\n已导入: ${response.data.imported}\n跳过: ${response.data.skipped}`);
+      alert(`导入成功！\n已导入: ${response.imported}\n跳过: ${response.skipped}`);
       onImportSuccess();
       onClose();
     } catch (error: any) {

@@ -41,7 +41,9 @@ const UndoToast: React.FC<UndoToastProps> = ({ taskIds, onClose, onUndoComplete 
     }
   };
 
-  return countdown > 0 && (
+  if (countdown <= 0) return null;
+
+  return (
     <div className="undo-toast">
       <span className="undo-message">
         已删除 <strong>{taskIds.length}</strong> 个任务

@@ -24,7 +24,20 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideOkHttpClient(@ApplicationContext context: Context): OkHttpClient {
-        return RetrofitClient.createOkHttpClient(context)
+        return OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val originalRequest = chain.request()
+                val requestWithAuth = originalRequest.newBuilder().apply {
+                    addHeader("Accept", "application/json")
+                    addHeader("Content-Type", "application/json")
+                }.build()
+                chain.proceed(requestWithAuth)
+            }
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .build()
     }
 
     @Provides
