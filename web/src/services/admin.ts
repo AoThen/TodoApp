@@ -126,15 +126,6 @@ export interface CreateUserRequest {
   role: 'admin' | 'user';
 }
 
-export interface Pagination {
-  page: number;
-  page_size: number;
-  total: number;
-  pages: number;
-  has_prev: boolean;
-  has_next: boolean;
-}
-
 export interface UpdateUserRequest {
   email?: string;
   role?: 'admin' | 'user';

@@ -84,6 +84,10 @@ class ApiService {
     sessionStorage.clear();
   }
 
+  getClient(): AxiosInstance {
+    return this.client;
+  }
+
   async login(email: string, password: string): Promise<{
     access_token: string;
     refresh_token: string;
@@ -217,8 +221,9 @@ class ApiService {
     return response.data;
   }
 
-  async importTasks(data: unknown): Promise<void> {
-    await this.client.post('/import', data);
+  async importTasks(data: unknown): Promise<{ imported: number; skipped: number; inserted_ids: number[] }> {
+    const response = await this.client.post('/import', data);
+    return response.data;
   }
 
   async batchDeleteTasks(taskIds: number[]) {
@@ -244,7 +249,7 @@ class ApiService {
     paired_at: string;
     last_seen: string;
     is_active: boolean;
-  }> }> {
+  }> } }> {
     const response = await this.client.get('/devices');
     return response.data;
   }

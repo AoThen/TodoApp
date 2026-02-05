@@ -47,7 +47,12 @@ const ImportDialog: React.FC<ImportDialogProps> = ({ isOpen, onClose, onImportSu
       const reader = new FileReader();
       reader.onload = (e: ProgressEvent<FileReader>) => {
         try {
-          const data = JSON.parse(e.target.result as string);
+          const result = e.target?.result;
+          if (!result) {
+            setError("无法读取文件内容");
+            return;
+          }
+          const data = JSON.parse(result as string);
           if (Array.isArray(data)) {
             setPreviewData(data);
           } else {
@@ -122,7 +127,9 @@ const ImportDialog: React.FC<ImportDialogProps> = ({ isOpen, onClose, onImportSu
     URL.revokeObjectURL(url);
   };
 
-  return isOpen && (
+  if (!isOpen) return null;
+
+  return (
     <div className="modal-overlay">
       <div className="modal-content">
         <div className="modal-header">

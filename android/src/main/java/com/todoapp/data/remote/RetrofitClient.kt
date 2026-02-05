@@ -13,15 +13,12 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 
- object RetrofitClient {
-    // Default Base URL - can be changed via setBaseUrl
+object RetrofitClient {
     private var BASE_URL = "http://10.0.2.2:8080/api/v1/"
     private const val PREFS_NAME = "todoapp_prefs"
     private const val ACCESS_TOKEN_KEY = "access_token"
     private const val REFRESH_TOKEN_KEY = "refresh_token"
-    private const val BASE_URL_KEY = "base_url"
 
-    // Timeout configurations
     private const val CONNECT_TIMEOUT = 30L
     private const val READ_TIMEOUT = 30L
     private const val WRITE_TIMEOUT = 30L
@@ -32,7 +29,6 @@ import java.util.concurrent.TimeUnit
     @Volatile
     private var apiService: ApiService? = null
 
-    // Token refresh lock to prevent concurrent refresh attempts
     private val refreshLock = Any()
 
     fun getApiService(context: Context): ApiService {
@@ -82,15 +78,12 @@ import java.util.concurrent.TimeUnit
 
             val response = chain.proceed(requestWithAuth)
 
-            // Handle 401 - attempt token refresh
             if (response.code == 401) {
                 response.close()
 
                 synchronized(refreshLock) {
-                    // Double-check after acquiring lock
                     val currentToken = prefs.getString(ACCESS_TOKEN_KEY, null)
                     if (currentToken == token && tryRefreshToken(context)) {
-                        // Token refreshed successfully, retry with new token
                         val newToken = prefs.getString(ACCESS_TOKEN_KEY, null)
                         val retryRequest = originalRequest.newBuilder().apply {
                             addHeader("Accept", "application/json")
@@ -104,8 +97,6 @@ import java.util.concurrent.TimeUnit
                     }
                 }
 
-                // Refresh failed or token already changed, notify user to re-login
-                // In production, this should trigger a broadcast or event
                 android.util.Log.e("RetrofitClient", "Token refresh failed, user needs to re-login")
             }
 
@@ -122,7 +113,6 @@ import java.util.concurrent.TimeUnit
                 return false
             }
 
-            // Create a temporary OkHttpClient without auth interceptor for refresh request
             val tempClient = OkHttpClient.Builder()
                 .addInterceptor(createLoggingInterceptor())
                 .connectTimeout(10, TimeUnit.SECONDS)
@@ -203,11 +193,6 @@ import java.util.concurrent.TimeUnit
         }
     }
 
-    fun saveTokens(context: Context, accessToken: String, refreshToken: String) {
-        saveAccessToken(context, accessToken)
-        saveRefreshToken(context, refreshToken)
-    }
-
     fun clearToken(context: Context) {
         try {
             val prefs = getEncryptedPrefs(context)
@@ -229,28 +214,10 @@ import java.util.concurrent.TimeUnit
         }
     }
 
-    fun hasRefreshToken(context: Context): Boolean {
-        return try {
-            val prefs = getEncryptedPrefs(context)
-            !prefs.getString(REFRESH_TOKEN_KEY, null).isNullOrEmpty()
-        } catch (e: Exception) {
-            false
-        }
-    }
-
     fun getAccessToken(context: Context): String {
         return try {
             val prefs = getEncryptedPrefs(context)
             prefs.getString(ACCESS_TOKEN_KEY, "") ?: ""
-        } catch (e: Exception) {
-            ""
-        }
-    }
-
-    fun getRefreshToken(context: Context): String {
-        return try {
-            val prefs = getEncryptedPrefs(context)
-            prefs.getString(REFRESH_TOKEN_KEY, "") ?: ""
         } catch (e: Exception) {
             ""
         }
@@ -267,150 +234,6 @@ import java.util.concurrent.TimeUnit
             baseUrl + "/api/v1/"
         }
 
-        retrofit = null
-        apiService = null
-    }
-
-    fun getBaseUrl(): String {
-        return BASE_URL
-    }
-}
-        }
-    }
-
-    private fun getRetrofit(context: Context): Retrofit {
-        return retrofit ?: synchronized(this) {
-            retrofit ?: Retrofit.Builder()
-                .baseUrl(BASE_URL)
-                .client(createOkHttpClient(context))
-                .addConverterFactory(GsonConverterFactory.create())
-                .build()
-                .also { retrofit = it }
-        }
-    }
-
-    private fun createOkHttpClient(context: Context): OkHttpClient {
-        return OkHttpClient.Builder()
-            .addInterceptor(createAuthInterceptor(context))
-            .addInterceptor(createLoggingInterceptor())
-            .connectTimeout(CONNECT_TIMEOUT, TimeUnit.SECONDS)
-            .readTimeout(READ_TIMEOUT, TimeUnit.SECONDS)
-            .writeTimeout(WRITE_TIMEOUT, TimeUnit.SECONDS)
-            .retryOnConnectionFailure(true) // Auto-retry on connection failures
-            .build()
-    }
-
-    private fun createAuthInterceptor(context: Context): Interceptor {
-        return Interceptor { chain ->
-            val request = try {
-                val prefs = getEncryptedPrefs(context)
-                val token = prefs.getString(ACCESS_TOKEN_KEY, null)
-
-                chain.request().newBuilder().apply {
-                    addHeader("Accept", "application/json")
-                    addHeader("Content-Type", "application/json")
-                    token?.let {
-                        addHeader("Authorization", "Bearer $it")
-                    }
-                }.build()
-            } catch (e: Exception) {
-                // If encrypted prefs fail, try without auth
-                chain.request().newBuilder()
-                    .addHeader("Accept", "application/json")
-                    .addHeader("Content-Type", "application/json")
-                    .build()
-            }
-
-            val response = chain.proceed(request)
-
-            // Handle 401 - attempt token refresh
-            if (response.code == 401) {
-                response.close()
-                // In production, implement token refresh logic here
-            }
-
-            response
-        }
-    }
-
-    private fun createLoggingInterceptor(): HttpLoggingInterceptor {
-        return HttpLoggingInterceptor().apply {
-            level = if (com.todoapp.BuildConfig.DEBUG) {
-                HttpLoggingInterceptor.Level.BODY
-            } else {
-                HttpLoggingInterceptor.Level.NONE
-            }
-        }
-    }
-
-    private fun getEncryptedPrefs(context: Context): SharedPreferences {
-        return try {
-            val masterKey = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-
-            EncryptedSharedPreferences.create(
-                context,
-                PREFS_NAME,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-        } catch (e: Exception) {
-            // Fallback to regular shared preferences if encryption fails
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        }
-    }
-
-    fun saveAccessToken(context: Context, token: String) {
-        try {
-            val prefs = getEncryptedPrefs(context)
-            prefs.edit().putString(ACCESS_TOKEN_KEY, token).apply()
-        } catch (e: Exception) {
-            // Log error in production
-        }
-    }
-
-    fun clearToken(context: Context) {
-        try {
-            val prefs = getEncryptedPrefs(context)
-            prefs.edit().remove(ACCESS_TOKEN_KEY).apply()
-        } catch (e: Exception) {
-            // Log error in production
-        }
-    }
-
-    fun hasToken(context: Context): Boolean {
-        return try {
-            val prefs = getEncryptedPrefs(context)
-            !prefs.getString(ACCESS_TOKEN_KEY, null).isNullOrEmpty()
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    fun getAccessToken(context: Context): String {
-        return try {
-            val prefs = getEncryptedPrefs(context)
-            prefs.getString(ACCESS_TOKEN_KEY, "") ?: ""
-        } catch (e: Exception) {
-            ""
-        }
-    }
-
-    fun setBaseUrl(baseUrl: String) {
-        // Ensure the base URL ends with /
-        BASE_URL = if (baseUrl.endsWith("/")) {
-            if (!baseUrl.endsWith("/api/v1/")) {
-                baseUrl + "api/v1/"
-            } else {
-                baseUrl
-            }
-        } else {
-            baseUrl + "/api/v1/"
-        }
-        
-        // Reset retrofit to use new base URL
         retrofit = null
         apiService = null
     }

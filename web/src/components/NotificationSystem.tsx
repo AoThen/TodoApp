@@ -4,6 +4,7 @@ import NotificationCenter from './notifications/NotificationCenter';
 import { NotificationService } from '../services/notification';
 import { websocketService } from '../services/websocket';
 import { WSMessage } from '../services/websocket';
+import { apiService } from '../services/api';
 
 interface NotificationSystemProps {
   token: string;
@@ -14,9 +15,7 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({ token }) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  const notificationService = new NotificationService(
-    (window as any).apiService.client
-  );
+  const notificationService = new NotificationService(apiService.getClient());
 
   const fetchUnreadCount = async () => {
     try {

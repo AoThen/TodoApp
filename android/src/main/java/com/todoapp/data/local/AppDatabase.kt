@@ -1,9 +1,9 @@
 package com.todoapp.data.local
 
 import android.content.Context
+import androidx.annotation.VisibleForTesting
 import androidx.room.*
 import androidx.sqlite.db.SupportSQLiteDatabase
-import androidx.sqlite.db.SupportSQLiteOpenHelper
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "tasks")
