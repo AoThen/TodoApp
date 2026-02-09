@@ -7,7 +7,10 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
-@Entity(tableName = "tasks")
+@Entity(tableName = "tasks", indices = [
+    Index(value = ["userId"]),
+    Index(value = ["status"])
+])
 data class Task(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
@@ -24,6 +27,8 @@ data class Task(
     val updatedAt: String,
     val completedAt: String? = null,
     val isDeleted: Boolean = false,
+    val isArchived: Boolean = false,
+    val archivedAt: String? = null,
     val lastModified: String
 )
 

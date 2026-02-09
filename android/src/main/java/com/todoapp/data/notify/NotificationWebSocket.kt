@@ -172,6 +172,7 @@ class NotificationWebSocket(
 
     fun disconnect() {
         reconnectJob?.cancel()
+        scope.cancel()
         webSocket?.close(1000, "User disconnect")
         webSocket = null
         ready = false

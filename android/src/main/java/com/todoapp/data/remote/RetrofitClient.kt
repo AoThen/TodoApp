@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
-import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
@@ -128,9 +127,7 @@ object RetrofitClient {
 
             val tempApiService = tempRetrofit.create(ApiService::class.java)
 
-            val response = runBlocking {
-                tempApiService.refreshToken()
-            }
+            val response = tempApiService.refreshToken()
 
             if (response.isSuccessful && response.body() != null) {
                 val refreshResponse = response.body()!!
@@ -171,6 +168,7 @@ object RetrofitClient {
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
         } catch (e: Exception) {
+            android.util.Log.e("RetrofitClient", "Failed to create EncryptedSharedPreferences, falling back to plain text", e)
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         }
     }

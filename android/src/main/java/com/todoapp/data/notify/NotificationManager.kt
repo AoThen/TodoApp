@@ -12,11 +12,11 @@ import java.util.*
 
 class NotificationManager(
     private val context: Context,
-    private val userId: Int
+    private val userId: Int,
+    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 ) {
     private val database = AppDatabase.getInstance(context)
     private val notificationManager = NotificationManagerCompat.from(context)
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private object Config {
         val CHANNEL_ID = "todoapp_notifications"

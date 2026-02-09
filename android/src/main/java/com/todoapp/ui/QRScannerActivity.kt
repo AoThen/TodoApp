@@ -26,8 +26,7 @@ import com.todoapp.data.remote.PairingRequest
 import com.todoapp.data.remote.PairingResponse
 import com.todoapp.data.remote.RetrofitClient
 import androidx.camera.view.PreviewView
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import retrofit2.Response
@@ -148,15 +147,22 @@ class QRScannerActivity : AppCompatActivity() {
                 showLoading()
 
                 // 调用服务器验证配对（Token由AuthInterceptor自动添加）
-                GlobalScope.launch(Dispatchers.IO) {
+                lifecycleScope.launch(Dispatchers.IO) {
                     try {
                         val deviceId = getDeviceID()
+                        if (deviceId.isEmpty()) {
+                            runOnUiThread {
+                                dismissLoading()
+                                showErrorDialog("无法获取设备ID，请检查设备设置")
+                            }
+                            return@launch
+                        }
                         val response: Response<PairingResponse> = RetrofitClient.getApiService(this@QRScannerActivity)
                             .pairDevice(
                                 PairingRequest(
                                     key = pairingData.key,
                                     deviceType = "android",
-                                    deviceId = deviceId!!
+                                    deviceId = deviceId
                                 )
                             )
 

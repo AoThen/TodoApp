@@ -17,6 +17,13 @@
 # 保留 WorkManager
 -keep class androidx.work.** { *; }
 
+# ViewBinding
+-keep public class * extends androidx.viewbinding.ViewBinding {
+    public static *** inflate(android.view.LayoutInflater);
+    public static *** inflate(android.view.LayoutInflater, android.view.ViewGroup, boolean);
+    public static *** bind(android.view.View);
+}
+
 # 移除日志（仅限发布版本）
 -assumenosideeffects class android.util.Log {
     public static boolean isLoggable(java.lang.String, int);

@@ -42,11 +42,16 @@ class NotificationFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         userId = arguments?.getInt(Config.ARG_USER_ID) ?: 0
-        notificationManager = NotificationManager(requireContext(), userId)
+        notificationManager = NotificationManager(requireContext(), userId, lifecycleScope)
 
         setupRecyclerView(view)
         setupButtons(view)
         loadNotifications()
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        notificationManager.cleanup()
     }
 
     private fun setupRecyclerView(view: View) {

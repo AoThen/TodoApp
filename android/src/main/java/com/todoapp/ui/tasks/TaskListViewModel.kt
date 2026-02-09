@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.Constraints
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.todoapp.R
 import com.todoapp.data.repository.TaskRepository
@@ -129,8 +130,17 @@ class TaskListViewModel @Inject constructor(
 
                 WorkManager.getInstance(context).enqueue(workRequest)
 
-                kotlinx.coroutines.delay(2000)
-                _syncState.value = SyncState.Success
+                WorkManager.getInstance(context)
+                    .getWorkInfoByIdLiveData(workRequest.id)
+                    .observeForever { workInfo ->
+                        if (workInfo != null && workInfo.state.isFinished) {
+                            if (workInfo.state == WorkInfo.State.SUCCEEDED) {
+                                _syncState.value = SyncState.Success
+                            } else {
+                                _syncState.value = SyncState.Error("同步失败，请重试")
+                            }
+                        }
+                    }
 
             } catch (e: Exception) {
                 _syncState.value = SyncState.Error(

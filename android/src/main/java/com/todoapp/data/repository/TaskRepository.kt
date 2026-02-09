@@ -1,11 +1,13 @@
 package com.todoapp.data.repository
 
+import android.content.Context
 import com.todoapp.data.local.DeltaChange
 import com.todoapp.data.local.DeltaQueueDao
 import com.todoapp.data.local.SyncMeta
 import com.todoapp.data.local.SyncMetaDao
 import com.todoapp.data.local.Task
 import com.todoapp.data.local.TaskDao
+import com.todoapp.data.remote.RetrofitClient
 import com.todoapp.utils.DateTimeUtils
 import com.todoapp.utils.Result
 import com.google.gson.Gson
@@ -15,9 +17,39 @@ import java.util.UUID
 class TaskRepository(
     private val taskDao: TaskDao,
     private val deltaQueueDao: DeltaQueueDao,
-    private val syncMetaDao: SyncMetaDao
+    private val syncMetaDao: SyncMetaDao,
+    private val context: Context
 ) {
     val allTasks: Flow<List<Task>> = taskDao.getAllTasks()
+
+    private fun getCurrentUserId(): String {
+        return try {
+            val token = RetrofitClient.getAccessToken(context)
+            if (token.isNotEmpty()) {
+                parseUserIdFromToken(token)
+            } else {
+                "unknown-user"
+            }
+        } catch (e: Exception) {
+            "unknown-user"
+        }
+    }
+
+    private fun parseUserIdFromToken(token: String): String {
+        return try {
+            val parts = token.split(".")
+            if (parts.size == 3) {
+                val payload = android.util.Base64.decode(parts[1], android.util.Base64.DEFAULT)
+                    .toString(Charsets.UTF_8)
+                val json = org.json.JSONObject(payload)
+                json.optString("user_id", json.optString("sub", "unknown-user"))
+            } else {
+                "unknown-user"
+            }
+        } catch (e: Exception) {
+            "unknown-user"
+        }
+    }
 
     suspend fun getTaskById(id: Long): Result<Task> {
         return Result.runCatching {
@@ -82,7 +114,7 @@ class TaskRepository(
         return Result.runCatching {
             val timestamp = DateTimeUtils.getCurrentTimestamp()
             val localId = UUID.randomUUID().toString()
-            val userId = "current-user"
+            val userId = getCurrentUserId()
 
             val task = Task(
                 localId = localId,
