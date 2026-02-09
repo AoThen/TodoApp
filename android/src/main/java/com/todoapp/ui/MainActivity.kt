@@ -24,14 +24,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupNavigation() {
         val navHostFragment = supportFragmentManager
-            .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
+            .findFragmentById(R.id.nav_host_fragment)
+        if (navHostFragment !is NavHostFragment) return
         val navController = navHostFragment.navController
 
-        // Setup bottom navigation
         val bottomNav = findViewById<BottomNavigationView>(R.id.bottom_navigation)
         bottomNav?.setupWithNavController(navController)
 
-        // Setup toolbar with navigation
         val appBarConfiguration = AppBarConfiguration(
             setOf(
                 R.id.taskListFragment,
@@ -45,20 +44,18 @@ class MainActivity : AppCompatActivity() {
     private fun checkInitialNavigation() {
         val app = application as TodoApp
         val navHostFragment = supportFragmentManager
-            .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
+            .findFragmentById(R.id.nav_host_fragment)
+        if (navHostFragment !is NavHostFragment) return
         val navController = navHostFragment.navController
 
         when {
             !app.isUserPaired() -> {
-                // Navigate to pairing if not paired
                 navController.navigate(R.id.pairingFragment)
             }
             !app.isUserLoggedIn() -> {
-                // Navigate to login if paired but not logged in
                 navController.navigate(R.id.loginFragment)
             }
             else -> {
-                // User is paired and logged in, go to main app
                 navController.navigate(R.id.taskListFragment)
             }
         }
@@ -66,7 +63,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onSupportNavigateUp(): Boolean {
         val navHostFragment = supportFragmentManager
-            .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
-        return navHostFragment.navController.navigateUp() || super.onSupportNavigateUp()
+            .findFragmentById(R.id.nav_host_fragment)
+        if (navHostFragment is NavHostFragment) {
+            return navHostFragment.navController.navigateUp() || super.onSupportNavigateUp()
+        }
+        return super.onSupportNavigateUp()
     }
 }

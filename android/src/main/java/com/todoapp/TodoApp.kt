@@ -14,6 +14,7 @@ class TodoApp : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
 
+        KeyStorage.init(this)
         AppConfig.initialize(this)
 
         WorkManager.initialize(this, workManagerConfiguration)
