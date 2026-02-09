@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
@@ -127,7 +129,11 @@ object RetrofitClient {
 
             val tempApiService = tempRetrofit.create(ApiService::class.java)
 
-            val response = tempApiService.refreshToken()
+            val response = runBlocking {
+                withTimeout(5000L) {
+                    tempApiService.refreshToken()
+                }
+            }
 
             if (response.isSuccessful && response.body() != null) {
                 val refreshResponse = response.body()!!
@@ -161,9 +167,9 @@ object RetrofitClient {
                 .build()
 
             EncryptedSharedPreferences.create(
-                context,
                 PREFS_NAME,
                 masterKey,
+                context,
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
