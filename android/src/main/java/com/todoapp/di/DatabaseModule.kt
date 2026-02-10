@@ -1,12 +1,11 @@
 package com.todoapp.di
 
 import android.content.Context
-import androidx.room.Room
-import com.todoapp.data.database.AppDatabase
-import com.todoapp.data.dao.DeltaQueueDao
-import com.todoapp.data.dao.NotificationDao
-import com.todoapp.data.dao.SyncMetaDao
-import com.todoapp.data.dao.TaskDao
+import com.todoapp.data.local.AppDatabase
+import com.todoapp.data.local.DeltaQueueDao
+import com.todoapp.data.local.NotificationDao
+import com.todoapp.data.local.SyncMetaDao
+import com.todoapp.data.local.TaskDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -21,13 +20,7 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase {
-        return Room.databaseBuilder(
-            context.applicationContext,
-            AppDatabase::class.java,
-            "todoapp_database"
-        )
-        .fallbackToDestructiveMigration()
-        .build()
+        return AppDatabase.getInstance(context)
     }
 
     @Provides

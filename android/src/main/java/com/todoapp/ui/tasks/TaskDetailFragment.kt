@@ -24,6 +24,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Locale
 
 @AndroidEntryPoint
 class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
