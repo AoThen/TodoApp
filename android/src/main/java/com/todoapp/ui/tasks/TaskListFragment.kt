@@ -15,8 +15,10 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.todoapp.R
 import com.todoapp.data.local.Task
 import com.todoapp.databinding.FragmentTaskListBinding
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
+@AndroidEntryPoint
 class TaskListFragment : Fragment() {
 
     private var _binding: FragmentTaskListBinding? = null

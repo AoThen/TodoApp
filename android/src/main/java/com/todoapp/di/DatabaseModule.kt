@@ -1,12 +1,12 @@
 package com.todoapp.di
 
 import android.content.Context
-import com.todoapp.data.local.AppDatabase
-import com.todoapp.data.local.ConflictDao
-import com.todoapp.data.local.DeltaQueueDao
-import com.todoapp.data.local.NotificationDao
-import com.todoapp.data.local.SyncMetaDao
-import com.todoapp.data.local.TaskDao
+import androidx.room.Room
+import com.todoapp.data.database.AppDatabase
+import com.todoapp.data.dao.DeltaQueueDao
+import com.todoapp.data.dao.NotificationDao
+import com.todoapp.data.dao.SyncMetaDao
+import com.todoapp.data.dao.TaskDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -21,7 +21,13 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase {
-        return AppDatabase.getInstance(context)
+        return Room.databaseBuilder(
+            context.applicationContext,
+            AppDatabase::class.java,
+            "todoapp_database"
+        )
+        .fallbackToDestructiveMigration()
+        .build()
     }
 
     @Provides
@@ -42,11 +48,7 @@ object DatabaseModule {
         return database.syncMetaDao()
     }
 
-    @Provides
-    @Singleton
-    fun provideConflictDao(database: AppDatabase): ConflictDao {
-        return database.conflictDao()
-    }
+    
 
     @Provides
     @Singleton

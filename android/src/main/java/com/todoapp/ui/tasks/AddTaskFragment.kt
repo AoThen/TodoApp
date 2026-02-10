@@ -18,10 +18,12 @@ import androidx.navigation.fragment.findNavController
 import com.todoapp.R
 import com.todoapp.databinding.FragmentAddTaskBinding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.Locale
 
+@AndroidEntryPoint
 class AddTaskFragment : Fragment(), DatePickerDialog.OnDateSetListener {
 
     private var _binding: FragmentAddTaskBinding? = null

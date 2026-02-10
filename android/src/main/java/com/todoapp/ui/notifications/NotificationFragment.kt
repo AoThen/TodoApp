@@ -14,8 +14,10 @@ import androidx.recyclerview.widget.RecyclerView
 import com.todoapp.R
 import com.todoapp.data.notify.NotificationManager
 import com.todoapp.data.local.Notification as NotificationEntity
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 
+@AndroidEntryPoint
 class NotificationFragment : Fragment() {
     private lateinit var recyclerView: RecyclerView
     private lateinit var adapter: NotificationAdapter
