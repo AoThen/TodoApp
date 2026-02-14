@@ -35,7 +35,12 @@ class WebSocketService {
     this.reconnectAttempts = 0;
 
     const protocol = enableEncryption ? 'todoapp.encryption' : 'todoapp';
-    const wsUrl = `ws://localhost:8080/ws`;
+    
+    // Determine WebSocket protocol based on current page protocol
+    const isSecure = window.location.protocol === 'https:';
+    const wsProtocol = isSecure ? 'wss://' : 'ws://';
+    const serverHost = process.env.REACT_APP_WS_HOST || window.location.host;
+    const wsUrl = `${wsProtocol}${serverHost}/ws`;
 
     try {
       this.ws = new WebSocket(wsUrl, [`${protocol}.${token}`]);

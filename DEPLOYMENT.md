@@ -197,6 +197,7 @@ export SERVER_PORT=3000
 - `ENVIRONMENT`: development 或 production
 - `MAX_LOGIN_ATTEMPTS`: 最大登录尝试次数（默认 5）
 - `LOGIN_ATTEMPT_WINDOW`: 尝试窗口期（默认 15m）
+- `RATE_LIMIT_PER_MINUTE`: 每IP每分钟请求限流（默认 600）
 
 ### 前端配置
 

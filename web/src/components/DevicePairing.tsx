@@ -8,7 +8,7 @@ interface PairingData {
   type: string;
   key: string;
   server: string;
-  expires: number;
+  expires: string;
 }
 
 interface Device {
@@ -27,6 +27,7 @@ interface DevicePairingProps {
 
 const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
   const [key, setKey] = useState<string>('');
+  const [deviceId, setDeviceId] = useState<string>('');
   const [serverUrl, setServerUrl] = useState<string>('');
   const [qrData, setQrData] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
@@ -42,26 +43,43 @@ const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
     const baseUrl = apiUrl.replace('/api/v1', '');
     setServerUrl(baseUrl);
 
-    const newKey = generateKey();
-    setKey(newKey);
+    initPairingFlow(baseUrl);
 
-    const expiresIn = 300;
-    const pairingData: PairingData = {
-      v: 1,
-      type: 'todoapp-pairing',
-      key: newKey,
-      server: baseUrl,
-      expires: expiresIn
-    };
-
-    setQrData(JSON.stringify(pairingData));
-
-    // 加载设备列表
     loadDevices();
-
-    // 自动与服务器注册
-    registerWithServer(newKey, baseUrl);
   }, []);
+
+  const initPairingFlow = async (baseUrl: string) => {
+    try {
+      const pairingInfo = await apiService.initPairing('web');
+      
+      setKey(pairingInfo.key);
+      setDeviceId(pairingInfo.device_id);
+
+      const pairingData: PairingData = {
+        v: 1,
+        type: 'todoapp-pairing',
+        key: pairingInfo.key,
+        server: pairingInfo.server_url,
+        expires: pairingInfo.expires_at
+      };
+
+      setQrData(JSON.stringify(pairingData));
+
+      await apiService.pairDevice({
+        key: pairingInfo.key,
+        device_type: 'web',
+        device_id: pairingInfo.device_id
+      });
+      
+      setPaired(true);
+      setSuccess('设备配对成功！');
+    } catch (err: any) {
+      console.error('初始化配对失败:', err);
+      if (err.response?.status === 409) {
+        setPaired(true);
+      }
+    }
+  };
 
   const loadDevices = async () => {
     try {
@@ -114,21 +132,28 @@ const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
 
     try {
       setLoading(true);
-      const newKey = generateKey();
-      const expiresIn = 300;
+      
+      const pairingInfo = await apiService.initPairing('web');
+      
+      setKey(pairingInfo.key);
+      setDeviceId(pairingInfo.device_id);
+
       const pairingData: PairingData = {
         v: 1,
         type: 'todoapp-pairing',
-        key: newKey,
-        server: serverUrl,
-        expires: expiresIn
+        key: pairingInfo.key,
+        server: pairingInfo.server_url,
+        expires: pairingInfo.expires_at
       };
 
       setQrData(JSON.stringify(pairingData));
-      setKey(newKey);
 
-      // 重新与服务器注册
-      await registerWithServer(newKey, serverUrl);
+      await apiService.pairDevice({
+        key: pairingInfo.key,
+        device_type: 'web',
+        device_id: pairingInfo.device_id
+      });
+      
       setSuccess('密钥已重新生成并配对');
       setTimeout(() => setSuccess(''), 3000);
 

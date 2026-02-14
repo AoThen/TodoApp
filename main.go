@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -85,6 +87,96 @@ func checkRateLimit(ip string) bool {
 	return true
 }
 
+// Global rate limiting structures
+var (
+	ipRequests      = make(map[string][]time.Time)
+	ipMutex         sync.RWMutex
+	globalRateLimit = getRateLimitFromEnv()
+	rateLimitWindow = time.Minute
+)
+
+func getRateLimitFromEnv() int {
+	defaultLimit := 600
+	envLimit := os.Getenv("RATE_LIMIT_PER_MINUTE")
+	if envLimit != "" {
+		limit, err := strconv.Atoi(envLimit)
+		if err != nil || limit <= 0 {
+			log.Printf("RATE_LIMIT_PER_MINUTE 环境变量无效，使用默认值: %d", defaultLimit)
+			return defaultLimit
+		}
+		log.Printf("全局限流已启用: 每分钟 %d 次请求", limit)
+		return limit
+	}
+	log.Printf("全局限流已启用: 每分钟 %d 次请求 (默认)", defaultLimit)
+	return defaultLimit
+}
+
+func init() {
+	go cleanupIPRequests()
+}
+
+func cleanupIPRequests() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		ipMutex.Lock()
+		now := time.Now()
+		activeCount := 0
+
+		for ip, times := range ipRequests {
+			hasActive := false
+			for _, t := range times {
+				if now.Sub(t) < rateLimitWindow {
+					hasActive = true
+					break
+				}
+			}
+			if hasActive {
+				activeCount++
+			} else {
+				delete(ipRequests, ip)
+			}
+		}
+		ipMutex.Unlock()
+
+		log.Printf("IP限流清理完成，活跃IP数: %d", activeCount)
+	}
+}
+
+// globalRateLimitMiddleware 全局请求限流中间件
+func globalRateLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip := getClientIP(r)
+
+		ipMutex.Lock()
+		defer ipMutex.Unlock()
+
+		now := time.Now()
+
+		// 清理过期请求记录
+		var validRequests []time.Time
+		for _, t := range ipRequests[ip] {
+			if now.Sub(t) < rateLimitWindow {
+				validRequests = append(validRequests, t)
+			}
+		}
+
+		if len(validRequests) >= globalRateLimit {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Retry-After", "60")
+			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": "请求过于频繁，请稍后再试",
+			})
+			return
+		}
+
+		ipRequests[ip] = append(validRequests, now)
+		next.ServeHTTP(w, r)
+	})
+}
+
 // getClientIP 获取客户端 IP 地址
 func getClientIP(r *http.Request) string {
 	forwarded := r.Header.Get("X-Forwarded-For")
@@ -141,6 +233,7 @@ func main() {
 	// Apply security middleware
 	router.Use(securityMiddleware)
 	router.Use(headersMiddleware)
+	router.Use(globalRateLimitMiddleware)
 
 	// Health check endpoint (public)
 	router.HandleFunc("/api/v1/health", handleHealth).Methods("GET")
@@ -178,6 +271,7 @@ func main() {
 	protected.HandleFunc("/notifications/unread-count", handleGetUnreadCount).Methods("GET")
 
 	// Device pairing routes
+	protected.HandleFunc("/devices/pair/init", handleInitPairing).Methods("POST")
 	protected.HandleFunc("/devices/pair", handleDevicePairing).Methods("POST")
 	protected.HandleFunc("/devices", handleListDevices).Methods("GET")
 	protected.HandleFunc("/devices/{id}/regenerate", handleRegenerateDeviceKey).Methods("POST")
@@ -565,7 +659,23 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleMe(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"id": "demo_user_id", "email": "test@example.com"})
+	userID := getUserIDFromContext(r.Context())
+	if userID == "" {
+		response.ErrorResponse(w, "未授权", http.StatusUnauthorized)
+		return
+	}
+
+	user, err := db.GetUserByID(userID)
+	if err != nil {
+		if strings.Contains(err.Error(), "用户不存在") {
+			response.ErrorResponse(w, "用户不存在", http.StatusNotFound)
+			return
+		}
+		response.ErrorResponse(w, "获取用户信息失败", http.StatusInternalServerError)
+		return
+	}
+
+	response.SuccessResponse(w, user, http.StatusOK)
 }
 
 type task struct {
@@ -619,25 +729,133 @@ func handleTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// POST: 创建任务（临时实现）
-	var t task
-	json.NewDecoder(r.Body).Decode(&t)
-	t.ID = 1
-	response.SuccessResponse(w, t, http.StatusCreated)
+	// POST: 创建任务
+	if r.Method == http.MethodPost {
+		var t task
+		if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
+			response.ErrorResponse(w, "无效的请求体", http.StatusBadRequest)
+			return
+		}
+
+		if t.Title == "" {
+			response.ErrorResponse(w, "标题不能为空", http.StatusBadRequest)
+			return
+		}
+
+		userIDStr := getUserIDFromContext(r.Context())
+		userID := 0
+		if userIDStr != "" {
+			var err error
+			userID, err = strconv.Atoi(userIDStr)
+			if err != nil {
+				response.ErrorResponse(w, "用户ID无效", http.StatusBadRequest)
+				return
+			}
+		}
+
+		if userID == 0 {
+			response.ErrorResponse(w, "未授权", http.StatusUnauthorized)
+			return
+		}
+
+		taskID, err := db.CreateTask(userID, "", t.Title)
+		if err != nil {
+			log.Printf("创建任务失败: %v", err)
+			response.ErrorResponse(w, "创建任务失败", http.StatusInternalServerError)
+			return
+		}
+
+		t.ID = int(taskID)
+		response.SuccessResponse(w, t, http.StatusCreated)
+		return
+	}
+
+	response.ErrorResponse(w, "方法不允许", http.StatusMethodNotAllowed)
 }
 
 func handleTaskByID(w http.ResponseWriter, r *http.Request) {
-	// path: /api/v1/tasks/{id}
-	idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/tasks/")
-	if idStr == "" {
-		http.NotFound(w, r)
+	vars := mux.Vars(r)
+	idStr := vars["id"]
+
+	taskID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		response.ErrorResponse(w, "无效的任务ID", http.StatusBadRequest)
 		return
 	}
-	if _, err := strconv.Atoi(idStr); err != nil {
-		http.NotFound(w, r)
+
+	userIDStr := getUserIDFromContext(r.Context())
+	userID := 0
+	if userIDStr != "" {
+		userID, err = strconv.Atoi(userIDStr)
+		if err != nil {
+			response.ErrorResponse(w, "用户ID无效", http.StatusBadRequest)
+			return
+		}
+	}
+
+	if userID == 0 {
+		response.ErrorResponse(w, "未授权", http.StatusUnauthorized)
 		return
 	}
-	w.WriteHeader(http.StatusNotFound)
+
+	switch r.Method {
+	case http.MethodGet:
+		task, err := db.GetTaskByID(taskID, userID)
+		if err != nil {
+			if strings.Contains(err.Error(), "任务不存在") {
+				response.ErrorResponse(w, "任务不存在", http.StatusNotFound)
+				return
+			}
+			response.ErrorResponse(w, "获取任务失败", http.StatusInternalServerError)
+			return
+		}
+		response.SuccessResponse(w, task, http.StatusOK)
+
+	case http.MethodPatch:
+		var updateData map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&updateData); err != nil {
+			response.ErrorResponse(w, "无效的请求体", http.StatusBadRequest)
+			return
+		}
+
+		title, _ := updateData["title"].(string)
+		status, _ := updateData["status"].(string)
+		description, _ := updateData["description"].(string)
+		priority, _ := updateData["priority"].(string)
+
+		if title == "" && status == "" && description == "" && priority == "" {
+			response.ErrorResponse(w, "没有要更新的字段", http.StatusBadRequest)
+			return
+		}
+
+		err := db.UpdateTaskFull(taskID, title, description, status, priority)
+		if err != nil {
+			if strings.Contains(err.Error(), "任务不存在") {
+				response.ErrorResponse(w, "任务不存在", http.StatusNotFound)
+				return
+			}
+			response.ErrorResponse(w, "更新任务失败", http.StatusInternalServerError)
+			return
+		}
+
+		task, _ := db.GetTaskByID(taskID, userID)
+		response.SuccessResponse(w, task, http.StatusOK)
+
+	case http.MethodDelete:
+		err := db.DeleteTask(taskID)
+		if err != nil {
+			if strings.Contains(err.Error(), "任务不存在") {
+				response.ErrorResponse(w, "任务不存在", http.StatusNotFound)
+				return
+			}
+			response.ErrorResponse(w, "删除任务失败", http.StatusInternalServerError)
+			return
+		}
+		response.SuccessResponse(w, map[string]string{"status": "deleted"}, http.StatusOK)
+
+	default:
+		response.ErrorResponse(w, "方法不允许", http.StatusMethodNotAllowed)
+	}
 }
 
 type syncReq struct {
@@ -962,6 +1180,63 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// handleInitPairing 初始化配对，请求服务器生成配对密钥
+func handleInitPairing(w http.ResponseWriter, r *http.Request) {
+	userIDStr := getUserIDFromContext(r.Context())
+	if userIDStr == "" {
+		response.ErrorResponse(w, "未授权", http.StatusUnauthorized)
+		return
+	}
+
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		response.ErrorResponse(w, "无效的用户ID", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		DeviceType string `json:"device_type"`
+		DeviceID   string `json:"device_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.ErrorResponse(w, "无效的请求数据", http.StatusBadRequest)
+		return
+	}
+
+	if req.DeviceType == "" {
+		req.DeviceType = "web"
+	}
+	if req.DeviceID == "" {
+		req.DeviceID = generateDeviceID(req.DeviceType)
+	}
+
+	serverURL := os.Getenv("SERVER_URL")
+	if serverURL == "" {
+		serverURL = "http://localhost:8080"
+	}
+
+	key, expiresAt, err := db.CreatePendingPairing(userID, req.DeviceType)
+	if err != nil {
+		log.Printf("创建配对密钥失败: %v", err)
+		response.ErrorResponse(w, "创建配对密钥失败", http.StatusInternalServerError)
+		return
+	}
+
+	response.SuccessResponse(w, map[string]interface{}{
+		"key":        key,
+		"device_id":  req.DeviceID,
+		"server_url": serverURL,
+		"expires_at": expiresAt,
+	}, http.StatusOK)
+}
+
+func generateDeviceID(deviceType string) string {
+	bytes := make([]byte, 8)
+	rand.Read(bytes)
+	return fmt.Sprintf("%s-%s", deviceType, hex.EncodeToString(bytes))
+}
+
 // handleDevicePairing 处理设备配对请求
 func handleDevicePairing(w http.ResponseWriter, r *http.Request) {
 	userIDStr := getUserIDFromContext(r.Context())
@@ -1159,12 +1434,11 @@ func handleRevokeDevice(w http.ResponseWriter, r *http.Request) {
 
 // generateRandomKey 生成32字节随机密钥（hex格式，64字符）
 func generateRandomKey() string {
-	const charset = "0123456789abcdef"
-	b := make([]byte, 64)
-	for i := range b {
-		b[i] = charset[time.Now().UnixNano()%16]
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		log.Fatalf("生成随机密钥失败: %v", err)
 	}
-	return string(b)
+	return hex.EncodeToString(bytes)
 }
 
 // toImportString 安全地转换JSON中的值为字符串（用于导入功能）

@@ -33,10 +33,17 @@ class ApiService {
     this.client.interceptors.response.use(
       (response) => response,
       async (error: AxiosError) => {
-        const originalRequest = error.config as unknown as { _retry?: boolean } & Record<string, unknown>;
+        const originalRequest = error.config as unknown as { _retry?: boolean; _retryCount?: number } & Record<string, unknown>;
 
         if (error.response?.status === 401 && !originalRequest._retry) {
           originalRequest._retry = true;
+          originalRequest._retryCount = (originalRequest._retryCount || 0) + 1;
+
+          if (originalRequest._retryCount > 3) {
+            this.clearTokens();
+            window.location.href = '/login';
+            throw new Error('Token refresh failed after multiple attempts');
+          }
 
           try {
             if (!this.refreshPromise) {
@@ -45,6 +52,14 @@ class ApiService {
 
             await this.refreshPromise;
             this.refreshPromise = null;
+
+            const newToken = localStorage.getItem('access_token');
+            if (newToken) {
+              originalRequest.headers = {
+                ...(originalRequest.headers as Record<string, string>),
+                'Authorization': `Bearer ${newToken}`
+              };
+            }
 
             return this.client(originalRequest as AxiosRequestConfig);
           } catch (refreshError) {
@@ -251,6 +266,19 @@ class ApiService {
     is_active: boolean;
   }> } }> {
     const response = await this.client.get('/devices');
+    return response.data;
+  }
+
+  async initPairing(deviceType: string = 'web', deviceId?: string): Promise<{
+    key: string;
+    device_id: string;
+    server_url: string;
+    expires_at: string;
+  }> {
+    const response = await this.client.post('/devices/pair/init', {
+      device_type: deviceType,
+      device_id: deviceId,
+    });
     return response.data;
   }
 

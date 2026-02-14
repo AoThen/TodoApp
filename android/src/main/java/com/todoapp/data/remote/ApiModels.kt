@@ -40,6 +40,11 @@ interface ApiService {
     ): Response<ResponseBody>
 
     // Device pairing methods
+    @POST("devices/pair/init")
+    suspend fun initPairing(
+        @Body request: InitPairingRequest
+    ): Response<InitPairingResponse>
+
     @POST("devices/pair")
     suspend fun pairDevice(
         @Body request: PairingRequest
@@ -144,6 +149,18 @@ data class PairingResponse(
     @SerializedName("status") val status: String,
     @SerializedName("device_id") val deviceId: String?,
     @SerializedName("server_url") val serverUrl: String?
+)
+
+data class InitPairingRequest(
+    @SerializedName("device_type") val deviceType: String,
+    @SerializedName("device_id") val deviceId: String?
+)
+
+data class InitPairingResponse(
+    @SerializedName("key") val key: String,
+    @SerializedName("device_id") val deviceId: String,
+    @SerializedName("server_url") val serverUrl: String,
+    @SerializedName("expires_at") val expiresAt: String
 )
 
 data class Device(

@@ -1,6 +1,8 @@
 package db
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"time"
 )
 
@@ -117,4 +119,53 @@ func GetDeviceCount(userID int) (int, error) {
 		userID,
 	).Scan(&count)
 	return count, err
+}
+
+// GeneratePairingKey 生成64字符随机配对密钥
+func GeneratePairingKey() (string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+// CreatePendingPairing 创建待确认的配对密钥
+func CreatePendingPairing(userID int, deviceType string) (string, string, error) {
+	key, err := GeneratePairingKey()
+	if err != nil {
+		return "", "", err
+	}
+
+	expiresAt := time.Now().Add(5 * time.Minute).UTC()
+
+	_, err = DB.Exec(
+		"INSERT INTO devices (user_id, device_type, pairing_key, server_url, paired_at, last_seen, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		userID, deviceType, key, "", time.Now().UTC(), time.Now().UTC(), false,
+	)
+	if err != nil {
+		return "", "", err
+	}
+
+	return key, expiresAt.Format(time.RFC3339), nil
+}
+
+// ConfirmPairing 确认配对
+func ConfirmPairing(userID int, key string, deviceID, serverURL string) error {
+	now := time.Now().UTC()
+	_, err := DB.Exec(
+		"UPDATE devices SET device_id = ?, server_url = ?, paired_at = ?, last_seen = ?, is_active = 1 WHERE user_id = ? AND pairing_key = ? AND is_active = 0",
+		deviceID, serverURL, now, now, userID, key,
+	)
+	return err
+}
+
+// GetPendingPairing 获取待确认的配对信息
+func GetPendingPairing(userID int, key string) (bool, error) {
+	var count int
+	err := DB.QueryRow(
+		"SELECT COUNT(*) FROM devices WHERE user_id = ? AND pairing_key = ? AND is_active = 0",
+		userID, key,
+	).Scan(&count)
+	return count > 0, err
 }

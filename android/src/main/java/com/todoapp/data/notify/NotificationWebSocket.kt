@@ -11,7 +11,8 @@ import kotlin.math.pow
 class NotificationWebSocket(
     private val context: Context,
     private val token: String,
-    private val encryptionEnabled: Boolean = true
+    private val encryptionEnabled: Boolean = true,
+    externalScope: CoroutineScope? = null
 ) {
     private val okHttpClient = OkHttpClient.Builder()
         .pingInterval(30, TimeUnit.SECONDS)
@@ -24,7 +25,10 @@ class NotificationWebSocket(
     private var reconnectAttempts: Int = 0
     private val maxReconnectAttempts: Int = 5
     private var reconnectJob: Job? = null
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    // Store external scope reference to check if we should manage its lifecycle
+    private val managedScope: Boolean = externalScope == null
+    // Use external scope if provided, otherwise create a managed scope
+    private val scope: CoroutineScope = externalScope ?: CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private object Config {
         val TAG = "NotificationWebSocket"
@@ -172,7 +176,10 @@ class NotificationWebSocket(
 
     fun disconnect() {
         reconnectJob?.cancel()
-        scope.cancel()
+        // Only cancel the scope if it was created internally
+        if (managedScope) {
+            scope.cancel()
+        }
         webSocket?.close(1000, "User disconnect")
         webSocket = null
         ready = false

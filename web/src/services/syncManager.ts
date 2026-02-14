@@ -1,9 +1,24 @@
-import { indexedDBService, Task, DeltaChange } from './indexedDB';
+import { indexedDBService, Task, DeltaChange, Conflict } from './indexedDB';
 import { apiService } from './api';
+
+type ConflictCallback = (conflicts: Conflict[]) => void;
 
 class SyncManager {
   private syncInProgress = false;
   private syncIntervalId: number | null = null;
+  private conflictListeners: ConflictCallback[] = [];
+
+  onConflicts(callback: ConflictCallback): void {
+    this.conflictListeners.push(callback);
+  }
+
+  removeConflictListener(callback: ConflictCallback): void {
+    this.conflictListeners = this.conflictListeners.filter(cb => cb !== callback);
+  }
+
+  private notifyConflicts(conflicts: Conflict[]): void {
+    this.conflictListeners.forEach(callback => callback(conflicts));
+  }
 
   async sync(): Promise<void> {
     if (this.syncInProgress) {
@@ -50,6 +65,7 @@ class SyncManager {
       }
 
       // 处理冲突
+      const conflicts: Conflict[] = [];
       for (const conflict of response.conflicts) {
         await indexedDBService.addConflict({
           local_id: conflict.local_id,
@@ -58,6 +74,18 @@ class SyncManager {
           options: conflict.options,
           created_at: new Date().toISOString(),
         });
+        conflicts.push({
+          local_id: conflict.local_id,
+          server_id: conflict.server_id,
+          reason: conflict.reason,
+          options: conflict.options,
+          created_at: new Date().toISOString(),
+        } as Conflict);
+      }
+
+      // 通知冲突
+      if (conflicts.length > 0) {
+        this.notifyConflicts(conflicts);
       }
 
       // 更新同步元数据

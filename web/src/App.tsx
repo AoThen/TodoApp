@@ -1,13 +1,17 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { indexedDBService, Task } from './services/indexedDB';
 import { apiService } from './services/api';
 import { syncManager } from './services/syncManager';
+import { websocketService } from './services/websocket';
 import AdminPanel from './components/admin/AdminPanel';
 import DevicePairing from './components/DevicePairing';
 import BatchDeleteDialog from './components/BatchDeleteDialog';
 import UndoToast from './components/UndoToast';
 import ImportDialog from './components/ImportDialog';
 import ErrorBoundary from './components/common/ErrorBoundary';
+import Header from './components/layout/Header';
+import TaskList from './components/tasks/TaskList';
+import TaskForm from './components/tasks/TaskForm';
 import { toast } from 'react-toastify';
 import './App.css';
 
@@ -16,6 +20,7 @@ const AppContent: React.FC = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showConflicts, setShowConflicts] = useState(false);
+  const [conflicts, setConflicts] = useState<any[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -27,6 +32,20 @@ const AppContent: React.FC = () => {
   const [undoTaskIds, setUndoTaskIds] = useState<number[]>([]);
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
+
+  // Listen for conflicts from sync
+  useEffect(() => {
+    const handleConflicts = (newConflicts: any[]) => {
+      setConflicts(prev => [...prev, ...newConflicts]);
+      setShowConflicts(true);
+      toast.warning(`检测到 ${newConflicts.length} 个冲突需要解决`);
+    };
+    
+    syncManager.onConflicts(handleConflicts);
+    return () => {
+      syncManager.removeConflictListener(handleConflicts);
+    };
+  }, []);
 
   // Initialize IndexedDB and load data
   useEffect(() => {
@@ -102,6 +121,37 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const handleAddTaskFromForm = useCallback(async (title: string) => {
+    if (!title.trim()) return;
+
+    const now = new Date().toISOString();
+    const tempId = `local-${Date.now()}`;
+    
+    const localTask = {
+      local_id: tempId,
+      user_id: 'current-user',
+      server_version: 0,
+      title: title,
+      description: '',
+      status: 'todo' as const,
+      priority: 'medium' as const,
+      is_deleted: false,
+      last_modified: now,
+    };
+
+    await indexedDBService.addTask(localTask);
+    setTasks(prev => [...prev, localTask as Task]);
+
+    if (authToken) {
+      await syncManager.enqueueLocalChange('insert', {
+        local_id: tempId,
+        title: title,
+        status: 'todo',
+        priority: 'medium',
+      }, 1);
+    }
+  }, [authToken]);
+
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
@@ -162,6 +212,11 @@ const AppContent: React.FC = () => {
   };
 
   const handleDeleteTask = async (task: Task) => {
+    const confirmed = window.confirm(`确定要删除任务"${task.title}"吗？`);
+    if (!confirmed) {
+      return;
+    }
+    
     await indexedDBService.deleteTask(task.local_id);
     setTasks(prev => prev.filter(t => t.local_id !== task.local_id));
 
@@ -232,6 +287,33 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const resolveConflict = async (index: number, resolution: 'local' | 'server') => {
+    const conflict = conflicts[index];
+    if (!conflict) return;
+
+    try {
+      if (resolution === 'local') {
+        await syncManager.enqueueLocalChange('update', {
+          id: conflict.server_id,
+          force: true,
+        }, 1);
+        toast.success('已保留本地版本');
+      } else {
+        await indexedDBService.deleteConflict(conflict.local_id);
+        toast.success('已使用服务器版本');
+      }
+
+      setConflicts(prev => prev.filter((_, i) => i !== index));
+      
+      if (conflicts.length <= 1) {
+        setShowConflicts(false);
+      }
+    } catch (error) {
+      console.error('Resolve conflict failed:', error);
+      toast.error('解决冲突失败');
+    }
+  };
+
   const handleUndo = async () => {
     try {
       setIsLoading(true);
@@ -291,6 +373,7 @@ const AppContent: React.FC = () => {
   };
 
   const handleLogout = async () => {
+    websocketService.disconnect();
     await apiService.logout();
     setAuthToken(null);
     setTasks([]);
@@ -321,37 +404,18 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="app">
-      <header className="app-header">
-        <h1>TodoApp</h1>
-        <div className="status-bar">
-          <span className={`status ${isOnline ? 'online' : 'offline'}`}>
-            {isOnline ? 'Online' : 'Offline'}
-          </span>
-          {isSyncing && <span className="syncing">Syncing...</span>}
-          <button onClick={handleManualSync} disabled={isSyncing || !isOnline}>
-            Sync Now
-          </button>
-          <button onClick={() => handleExport('json')}>Export JSON</button>
-          <button onClick={() => handleExport('csv')}>Export CSV</button>
-          <button onClick={() => setShowImport(true)}>Import</button>
-          {isAdmin && (
-            <button onClick={() => setShowAdminPanel(true)}>Admin Panel</button>
-          )}
-          <button onClick={() => setShowPairing(true)}>Device Pairing</button>
-          <button onClick={handleLogout}>Logout</button>
-        </div>
-      </header>
+      <Header
+        isOnline={isOnline}
+        isSyncing={isSyncing}
+        onLogout={handleLogout}
+        onOpenAdmin={() => setShowAdminPanel(true)}
+        onOpenPairing={() => setShowPairing(true)}
+        onOpenImport={() => setShowImport(true)}
+        isAdmin={isAdmin}
+      />
 
       <main className="app-main">
-         <form onSubmit={handleAddTask} className="add-task-form">
-           <input
-             type="text"
-             value={newTaskTitle}
-             onChange={(e) => setNewTaskTitle(e.target.value)}
-             placeholder="Add a new task..."
-           />
-           <button type="submit">Add Task</button>
-         </form>
+        <TaskForm onAddTask={handleAddTaskFromForm} />
 
          {/* 批量操作工具栏 */}
          <div className="batch-actions-bar">
@@ -378,40 +442,38 @@ const AppContent: React.FC = () => {
                </button>
              </>
            )}
-         </div>
+          </div>
 
-         <ul className="task-list">
-           {tasks.map(task => (
-             <li key={task.local_id} className={`task-item ${task.status}`}>
-               <input
-                 type="checkbox"
-                 className="task-select-checkbox"
-                 checked={selectedTasks.has(task.local_id)}
-                 onChange={(e) => toggleTaskSelection(task.local_id, e.target.checked)}
-               />
-               <input
-                 type="checkbox"
-                 checked={task.status === 'done'}
-                 onChange={() => handleToggleStatus(task)}
-               />
-               <span className="task-title">{task.title}</span>
-               <div className="task-actions">
-                 <span className={`priority ${task.priority}`}>{task.priority}</span>
-                 <button onClick={() => handleDeleteTask(task)}>Delete</button>
-               </div>
-             </li>
-           ))}
-           {tasks.length === 0 && (
-             <li className="no-tasks">No tasks yet. Add one above!</li>
-           )}
-         </ul>
-       </main>
+          <TaskList
+            tasks={tasks}
+            onDeleteTask={handleDeleteTask}
+            onToggleSelect={toggleTaskSelection}
+            selectedTasks={selectedTasks}
+          />
+        </main>
 
       {showConflicts && (
         <div className="conflicts-modal">
-          <h2>Conflicts</h2>
-          <p>Conflict resolution UI would go here</p>
-          <button onClick={() => setShowConflicts(false)}>Close</button>
+          <div className="conflicts-content">
+            <h2>冲突解决</h2>
+            {conflicts.length === 0 ? (
+              <p>没有待解决的冲突</p>
+            ) : (
+              <div className="conflicts-list">
+                {conflicts.map((conflict, index) => (
+                  <div key={index} className="conflict-item">
+                    <p><strong>冲突 #{index + 1}</strong></p>
+                    <p>原因: {conflict.reason}</p>
+                    <div className="conflict-options">
+                      <button onClick={() => resolveConflict(index, 'local')}>保留本地</button>
+                      <button onClick={() => resolveConflict(index, 'server')}>使用服务器</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button onClick={() => { setShowConflicts(false); setConflicts([]); }}>关闭</button>
+          </div>
         </div>
       )}
 

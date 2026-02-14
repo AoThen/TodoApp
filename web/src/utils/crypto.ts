@@ -1,4 +1,41 @@
-const ENCRYPTION_KEY = process.env.REACT_APP_ENCRYPTION_KEY || '';
+const STORAGE_KEY = 'todoapp_device_key';
+
+function getStoredKey(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setDeviceKey(key: string): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, key);
+  } catch (e) {
+    console.error('Failed to store device key:', e);
+  }
+}
+
+export function clearDeviceKey(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (e) {
+    console.error('Failed to clear device key:', e);
+  }
+}
+
+function getKeyFromStorageOrEnv(): string {
+  const storedKey = getStoredKey();
+  if (storedKey) {
+    return storedKey;
+  }
+  const envKey = process.env.REACT_APP_DEVICE_KEY;
+  if (envKey) {
+    setDeviceKey(envKey);
+    return envKey;
+  }
+  return '';
+}
 
 interface EncryptedData {
   iv: string;
@@ -23,7 +60,7 @@ async function getKeyFromHex(hexKey: string): Promise<CryptoKey> {
 }
 
 export async function encrypt(plaintext: string, keyHex?: string): Promise<string> {
-  const key = keyHex || ENCRYPTION_KEY;
+  const key = keyHex || getKeyFromStorageOrEnv();
   if (!key) {
     throw new Error('Encryption key not configured');
   }
@@ -48,7 +85,7 @@ export async function encrypt(plaintext: string, keyHex?: string): Promise<strin
 }
 
 export async function decrypt(encryptedBase64: string, keyHex?: string): Promise<string> {
-  const key = keyHex || ENCRYPTION_KEY;
+  const key = keyHex || getKeyFromStorageOrEnv();
   if (!key) {
     throw new Error('Encryption key not configured');
   }
@@ -78,5 +115,5 @@ export function generateKey(): string {
 }
 
 export function isEncryptionConfigured(): boolean {
-  return !!ENCRYPTION_KEY;
+  return !!getKeyFromStorageOrEnv();
 }

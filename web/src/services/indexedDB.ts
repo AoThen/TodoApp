@@ -194,6 +194,14 @@ class IndexedDBService {
     return this.db!.getAll('conflicts');
   }
 
+  async deleteConflict(localId: string): Promise<void> {
+    const conflicts = await this.getConflicts();
+    const conflict = conflicts.find(c => c.local_id === localId);
+    if (conflict && conflict.id) {
+      await this.db!.delete('conflicts', conflict.id);
+    }
+  }
+
   async clearConflict(id: number): Promise<void> {
     await this.db!.delete('conflicts', id);
   }

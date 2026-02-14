@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.UUID
 import javax.inject.Inject
 
 sealed class SyncState {
@@ -115,38 +116,27 @@ class TaskListViewModel @Inject constructor(
         }
     }
 
-    fun triggerManualSync() {
-        viewModelScope.launch {
-            _syncState.value = SyncState.Syncing
+    fun triggerManualSync(): UUID? {
+        _syncState.value = SyncState.Syncing
 
-            try {
-                val workRequest = OneTimeWorkRequestBuilder<DeltaSyncWorker>()
-                    .setConstraints(
-                        Constraints.Builder()
-                            .setRequiredNetworkType(NetworkType.CONNECTED)
-                            .build()
-                    )
-                    .build()
-
-                WorkManager.getInstance(context).enqueue(workRequest)
-
-                WorkManager.getInstance(context)
-                    .getWorkInfoByIdLiveData(workRequest.id)
-                    .observeForever { workInfo ->
-                        if (workInfo != null && workInfo.state.isFinished) {
-                            if (workInfo.state == WorkInfo.State.SUCCEEDED) {
-                                _syncState.value = SyncState.Success
-                            } else {
-                                _syncState.value = SyncState.Error("同步失败，请重试")
-                            }
-                        }
-                    }
-
-            } catch (e: Exception) {
-                _syncState.value = SyncState.Error(
-                    context.getString(R.string.sync_failed, e.message)
+        return try {
+            val workRequest = OneTimeWorkRequestBuilder<DeltaSyncWorker>()
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build()
                 )
-            }
+                .build()
+
+            WorkManager.getInstance(context).enqueue(workRequest)
+            workRequest.id
+        } catch (e: Exception) {
+            _syncState.value = SyncState.Error(
+                context.getString(R.string.sync_failed, e.message)
+            )
+            null
+        }
+    }
         }
     }
 

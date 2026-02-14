@@ -194,6 +194,7 @@ Dockerfile 使用多阶段构建来最小化最终镜像体积：
 | `LOGIN_ATTEMPT_WINDOW` | 尝试窗口期 | `15m` |
 | `ACCESS_TOKEN_DURATION` | 访问令牌有效期 | `15m` |
 | `REFRESH_TOKEN_DURATION` | 刷新令牌有效期 | `168h` |
+| `RATE_LIMIT_PER_MINUTE` | 每IP每分钟请求限流 | `600` |
 
 ---
 

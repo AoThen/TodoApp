@@ -611,6 +611,53 @@ func GetTasksPaginated(userID int, page, pageSize int) ([]map[string]interface{}
 	return results, total, nil
 }
 
+// GetTaskByID 根据ID获取单个任务
+func GetTaskByID(taskID int64, userID int) (map[string]interface{}, error) {
+	var id int64
+	var localID sql.NullString
+	var serverVersion sql.NullInt64
+	var title, description, status, priority sql.NullString
+	var dueAt, createdAt, updatedAt, completedAt sql.NullString
+	var isDeleted sql.NullBool
+	var lastModified sql.NullString
+
+	err := DB.QueryRow(`
+		SELECT id, local_id, server_version, title, description, status, priority, 
+		       due_at, created_at, updated_at, completed_at, is_deleted, last_modified
+		FROM tasks 
+		WHERE id = ? AND user_id = ?
+	`, taskID, userID).Scan(&id, &localID, &serverVersion, &title, &description,
+		&status, &priority, &dueAt, &createdAt, &updatedAt, &completedAt, &isDeleted, &lastModified)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("任务不存在")
+		}
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"id":       id,
+		"local_id": localID.String,
+		"server_version": func() interface{} {
+			if serverVersion.Valid {
+				return serverVersion.Int64
+			}
+			return nil
+		}(),
+		"title":         title.String,
+		"description":   description.String,
+		"status":        status.String,
+		"priority":      priority.String,
+		"due_at":        dueAt.String,
+		"created_at":    createdAt.String,
+		"updated_at":    updatedAt.String,
+		"completed_at":  completedAt.String,
+		"is_deleted":    isDeleted.Bool,
+		"last_modified": lastModified.String,
+	}, nil
+}
+
 // CreateTask 创建新任务
 func CreateTask(userID int, localID, title string) (int64, error) {
 	now := time.Now().UTC()
@@ -632,6 +679,37 @@ func UpdateTask(taskID int64, title, status string) error {
 		SET title = ?, status = ?, updated_at = ?, last_modified = ?
 		WHERE id = ?
 	`, title, status, now, now, taskID)
+	return err
+}
+
+// UpdateTaskFull 完整更新任务
+func UpdateTaskFull(taskID int64, title, description, status, priority string) error {
+	now := time.Now().UTC()
+
+	query := "UPDATE tasks SET "
+	var args []interface{}
+
+	if title != "" {
+		query += "title = ?, "
+		args = append(args, title)
+	}
+	if description != "" {
+		query += "description = ?, "
+		args = append(args, description)
+	}
+	if status != "" {
+		query += "status = ?, "
+		args = append(args, status)
+	}
+	if priority != "" {
+		query += "priority = ?, "
+		args = append(args, priority)
+	}
+
+	query += "updated_at = ?, last_modified = ? WHERE id = ?"
+	args = append(args, now, now, taskID)
+
+	_, err := DB.Exec(query, args...)
 	return err
 }
 

@@ -6,6 +6,7 @@ import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.todoapp.R
 import com.todoapp.data.crypto.KeyStorage
+import com.todoapp.data.remote.InitPairingRequest
 import com.todoapp.data.remote.RetrofitClient
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,15 +18,15 @@ import javax.inject.Inject
 data class PairingData(
     val type: String,
     val v: Int,
-    val key: String,
+    val key: String?,
     val server: String,
-    val expires: Long
+    val expires: String?
 )
 
 sealed class PairingState {
     object Idle : PairingState()
     object Loading : PairingState()
-    data class Success(val token: String) : PairingState()
+    data class Success(val message: String) : PairingState()
     data class Error(val message: String) : PairingState()
 }
 
@@ -49,8 +50,27 @@ class PairingViewModel @Inject constructor() : ViewModel() {
                     return@launch
                 }
 
-                KeyStorage.saveKey(context, pairingData.key, pairingData.server)
-                RetrofitClient.setBaseUrl(pairingData.server)
+                var finalKey = pairingData.key
+                var serverUrl = pairingData.server
+
+                if (finalKey.isNullOrEmpty()) {
+                    val response = RetrofitClient.getApiService(context)
+                        .initPairing(InitPairingRequest("android", null))
+                    
+                    if (response.isSuccessful && response.body() != null) {
+                        val initResponse = response.body()!!
+                        finalKey = initResponse.key
+                        serverUrl = initResponse.serverUrl
+                    } else {
+                        _pairingState.value = PairingState.Error(
+                            context.getString(R.string.pairing_failed) + ": 无法获取配对密钥"
+                        )
+                        return@launch
+                    }
+                }
+
+                KeyStorage.saveKey(context, finalKey, serverUrl)
+                RetrofitClient.setBaseUrl(serverUrl)
 
                 _pairingState.value = PairingState.Success(
                     context.getString(R.string.pairing_success)
@@ -73,10 +93,18 @@ class PairingViewModel @Inject constructor() : ViewModel() {
     }
 
     private fun isValidPairingData(data: PairingData): Boolean {
-        return data.type == "todoapp-pairing" &&
-               data.v == 1 &&
-               data.key.matches(Regex("[0-9a-fA-F]{64}")) &&
-               data.server.isNotBlank() &&
-               data.expires > System.currentTimeMillis()
+        if (data.type != "todoapp-pairing" || data.v != 1) {
+            return false
+        }
+        
+        if (data.server.isBlank()) {
+            return false
+        }
+
+        if (!data.key.isNullOrEmpty()) {
+            return data.key.matches(Regex("[0-9a-fA-F]{64}"))
+        }
+
+        return true
     }
 }

@@ -40,7 +40,10 @@ object AppConfig {
     fun getWebSocketUrl(token: String, encryptionEnabled: Boolean = true): String {
         val serverAddress = getServerAddress()
         val encryptionParam = if (encryptionEnabled) "&encryption=true" else ""
-        return "ws://$serverAddress$WEB_SOCKET_PATH?token=$token$encryptionParam"
+        
+        // Determine WebSocket protocol based on base URL protocol
+        val wsProtocol = if (baseUrl.startsWith("https")) "wss://" else "ws://"
+        return "$wsProtocol$serverAddress$WEB_SOCKET_PATH?token=$token$encryptionParam"
     }
 
     private fun getServerAddress(): String {
