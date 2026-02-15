@@ -137,8 +137,6 @@ class TaskListViewModel @Inject constructor(
             null
         }
     }
-        }
-    }
 
     override fun onCleared() {
         super.onCleared()
