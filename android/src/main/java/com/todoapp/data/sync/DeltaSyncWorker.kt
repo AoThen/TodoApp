@@ -210,9 +210,9 @@ class DeltaSyncWorker(
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
 
-            val request = PeriodicWorkRequestBuilder<DeltaSyncWorker>(
-                15, TimeUnit.MINUTES
-            )
+val request = PeriodicWorkRequestBuilder<DeltaSyncWorker>(
+        5, TimeUnit.MINUTES
+      )
                 .setConstraints(constraints)
                 .setBackoffCriteria(
                     BackoffPolicy.EXPONENTIAL,

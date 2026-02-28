@@ -6,6 +6,7 @@ type ConflictCallback = (conflicts: Conflict[]) => void;
 class SyncManager {
   private syncInProgress = false;
   private syncIntervalId: number | null = null;
+  private pendingSyncTimer: number | null = null;
   private conflictListeners: ConflictCallback[] = [];
 
   onConflicts(callback: ConflictCallback): void {
@@ -20,6 +21,16 @@ class SyncManager {
     this.conflictListeners.forEach(callback => callback(conflicts));
   }
 
+  private scheduleDebouncedSync(): void {
+    if (this.pendingSyncTimer !== null) {
+      clearTimeout(this.pendingSyncTimer);
+    }
+    this.pendingSyncTimer = window.setTimeout(() => {
+      this.sync().catch(console.error);
+      this.pendingSyncTimer = null;
+    }, 5000);
+  }
+
   async sync(): Promise<void> {
     if (this.syncInProgress) {
       console.log('同步已在进行中，跳过');
@@ -28,21 +39,17 @@ class SyncManager {
 
     this.syncInProgress = true;
     try {
-      // 获取待处理的 delta
       const pendingDeltas = await indexedDBService.getPendingDeltas();
       if (pendingDeltas.length === 0) {
         console.log('没有待同步的更改');
         return;
       }
 
-      // 获取同步元数据
       const syncMeta = await indexedDBService.getSyncMeta('current-user');
       const lastSyncAt = syncMeta?.last_sync_at || new Date(0).toISOString();
 
-      // 执行同步
       const response = await apiService.sync(lastSyncAt, pendingDeltas);
 
-      // 应用服务器更改
       for (const serverChange of response.server_changes) {
         const localTask = await indexedDBService.getTaskByLocalId(serverChange.id.toString());
         if (localTask) {
@@ -56,7 +63,6 @@ class SyncManager {
         }
       }
 
-      // 清除已确认的 delta
       for (const clientChange of response.client_changes) {
         const delta = pendingDeltas.find(d => d.local_id === clientChange.local_id);
         if (delta) {
@@ -64,7 +70,6 @@ class SyncManager {
         }
       }
 
-      // 处理冲突
       const conflicts: Conflict[] = [];
       for (const conflict of response.conflicts) {
         await indexedDBService.addConflict({
@@ -83,15 +88,13 @@ class SyncManager {
         } as Conflict);
       }
 
-      // 通知冲突
       if (conflicts.length > 0) {
         this.notifyConflicts(conflicts);
       }
 
-      // 更新同步元数据
       await indexedDBService.updateSyncMeta('current-user', {
         last_sync_at: response.last_sync_at,
-        last_server_version: 0, // 可以跟踪实际的服务器版本
+        last_server_version: 0,
       });
 
       console.log('同步成功完成');
@@ -117,8 +120,7 @@ class SyncManager {
       client_version: clientVersion,
     });
 
-    // 触发同步
-    await this.sync();
+    this.scheduleDebouncedSync();
   }
 
   startAutoSync(intervalMs: number = 30000): void {
@@ -132,6 +134,10 @@ class SyncManager {
     if (this.syncIntervalId !== null) {
       clearInterval(this.syncIntervalId);
       this.syncIntervalId = null;
+    }
+    if (this.pendingSyncTimer !== null) {
+      clearTimeout(this.pendingSyncTimer);
+      this.pendingSyncTimer = null;
     }
   }
 }

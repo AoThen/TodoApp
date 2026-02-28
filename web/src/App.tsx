@@ -12,6 +12,7 @@ import ErrorBoundary from './components/common/ErrorBoundary';
 import Header from './components/layout/Header';
 import TaskList from './components/tasks/TaskList';
 import TaskForm from './components/tasks/TaskForm';
+import TaskFilter, { FilterState } from './components/tasks/TaskFilter';
 import { toast } from 'react-toastify';
 import './App.css';
 
@@ -32,6 +33,13 @@ const AppContent: React.FC = () => {
   const [undoTaskIds, setUndoTaskIds] = useState<number[]>([]);
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
+  const [filters, setFilters] = useState<FilterState>({
+    status: '',
+    priority: '',
+    search: '',
+    sortBy: 'created_at',
+    sortOrder: 'desc',
+  });
 
   // Listen for conflicts from sync
   useEffect(() => {
@@ -82,16 +90,33 @@ const AppContent: React.FC = () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, []);
+}, []);
+
+  useEffect(() => {
+    if (authToken) {
+      loadTasks();
+    }
+  }, [filters, authToken]);
 
   const loadTasks = async () => {
-    try {
+  try {
+    if (authToken) {
+      const response = await apiService.getTasks({
+        status: filters.status || undefined,
+        priority: filters.priority || undefined,
+        search: filters.search || undefined,
+        sort_by: filters.sortBy,
+        sort_order: filters.sortOrder,
+      });
+      setTasks(response.tasks.filter((t: any) => !t.is_deleted));
+    } else {
       const allTasks = await indexedDBService.getAllTasks();
       setTasks(allTasks.filter(t => !t.is_deleted));
-    } catch (error) {
-      console.error('Failed to load tasks:', error);
     }
-  };
+  } catch (error) {
+    console.error('Failed to load tasks:', error);
+  }
+};
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -415,6 +440,7 @@ const AppContent: React.FC = () => {
       />
 
       <main className="app-main">
+        <TaskFilter filters={filters} onFilterChange={setFilters} />
         <TaskForm onAddTask={handleAddTaskFromForm} />
 
          {/* 批量操作工具栏 */}

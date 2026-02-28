@@ -179,8 +179,24 @@ class ApiService {
   }
 
   // Task operations
-  async getTasks(): Promise<Task[]> {
-    const response = await this.client.get('/tasks');
+  async getTasks(params?: {
+    page?: number;
+    page_size?: number;
+    status?: string;
+    priority?: string;
+    search?: string;
+    sort_by?: string;
+    sort_order?: string;
+  }): Promise<{ tasks: Task[]; pagination: any }> {
+    const queryParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== '') {
+          queryParams.append(key, String(value));
+        }
+      });
+    }
+    const response = await this.client.get(`/tasks?${queryParams}`);
     return response.data;
   }
 

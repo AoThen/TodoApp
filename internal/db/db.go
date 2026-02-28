@@ -610,6 +610,108 @@ func GetTasksPaginated(userID int, page, pageSize int) ([]map[string]interface{}
 	}
 	return results, total, nil
 }
+// GetTasksFiltered 支持筛选、搜索、排序的分页查询
+func GetTasksFiltered(userID int, page, pageSize int, status, priority, search, sortBy, sortOrder string) ([]map[string]interface{}, int, error) {
+	offset := (page - 1) * pageSize
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	whereClause := "WHERE user_id = ? AND is_deleted = 0"
+	args := []interface{}{userID}
+
+	if status != "" {
+		whereClause += " AND status = ?"
+		args = append(args, status)
+	}
+	if priority != "" {
+		whereClause += " AND priority = ?"
+		args = append(args, priority)
+	}
+	if search != "" {
+		whereClause += " AND (title LIKE ? OR description LIKE ?)"
+		searchPattern := "%" + search + "%"
+		args = append(args, searchPattern, searchPattern)
+	}
+
+	var total int
+	countQuery := "SELECT COUNT(*) FROM tasks " + whereClause
+	err := DB.QueryRow(countQuery, args...).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	sortField := "created_at"
+	if sortBy == "updated_at" {
+		sortField = "updated_at"
+	} else if sortBy == "priority" {
+		sortField = "CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END"
+	}
+
+	order := "DESC"
+	if sortOrder == "asc" {
+		order = "ASC"
+	}
+
+	query := fmt.Sprintf(`
+		SELECT id, local_id, server_version, title, description, status, priority,
+			due_at, created_at, updated_at, completed_at, is_deleted, last_modified
+		FROM tasks
+		%s
+		ORDER BY %s %s
+		LIMIT ? OFFSET ?
+	`, whereClause, sortField, order)
+
+	args = append(args, pageSize, offset)
+	rows, err := DB.Query(query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var results []map[string]interface{}
+	for rows.Next() {
+		var id int64
+		var localID sql.NullString
+		var serverVersion sql.NullInt64
+		var title, description, statusVal, priorityVal sql.NullString
+		var dueAt, createdAt, updatedAt, completedAt sql.NullString
+		var isDeleted sql.NullBool
+		var lastModified sql.NullString
+
+		if err := rows.Scan(&id, &localID, &serverVersion, &title, &description, &statusVal, &priorityVal,
+			&dueAt, &createdAt, &updatedAt, &completedAt, &isDeleted, &lastModified); err != nil {
+			return nil, 0, err
+		}
+
+		row := map[string]interface{}{
+			"id":            id,
+			"local_id":      localID.String,
+			"server_version": func() interface{} {
+				if serverVersion.Valid {
+					return serverVersion.Int64
+				}
+				return nil
+			}(),
+			"title":         title.String,
+			"description":   description.String,
+			"status":        statusVal.String,
+			"priority":      priorityVal.String,
+			"due_at":        dueAt.String,
+			"created_at":    createdAt.String,
+			"updated_at":    updatedAt.String,
+			"completed_at":  completedAt.String,
+			"is_deleted":    isDeleted.Bool,
+			"last_modified": lastModified.String,
+		}
+		results = append(results, row)
+	}
+	return results, total, nil
+}
+
 
 // GetTaskByID 根据ID获取单个任务
 func GetTaskByID(taskID int64, userID int) (map[string]interface{}, error) {

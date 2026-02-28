@@ -698,24 +698,31 @@ func handleTasks(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// 解析分页参数
-		pageStr := r.URL.Query().Get("page")
-		page, err := strconv.Atoi(pageStr)
-		if err != nil || page < 1 {
-			page = 1
-		}
+	// 解析分页参数
+	pageStr := r.URL.Query().Get("page")
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page < 1 {
+		page = 1
+	}
 
-		pageSizeStr := r.URL.Query().Get("page_size")
-		pageSize, err := strconv.Atoi(pageSizeStr)
-		if err != nil || pageSize < 1 || pageSize > 100 {
-			pageSize = 20
-		}
+	pageSizeStr := r.URL.Query().Get("page_size")
+	pageSize, err := strconv.Atoi(pageSizeStr)
+	if err != nil || pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
 
-		tasks, total, err := db.GetTasksPaginated(userID, page, pageSize)
-		if err != nil {
-			response.ErrorResponse(w, "获取任务失败", http.StatusInternalServerError)
-			return
-		}
+	// 解析筛选参数
+	status := r.URL.Query().Get("status")
+	priority := r.URL.Query().Get("priority")
+	search := r.URL.Query().Get("search")
+	sortBy := r.URL.Query().Get("sort_by")
+	sortOrder := r.URL.Query().Get("sort_order")
+
+	tasks, total, err := db.GetTasksFiltered(userID, page, pageSize, status, priority, search, sortBy, sortOrder)
+	if err != nil {
+		response.ErrorResponse(w, "获取任务失败", http.StatusInternalServerError)
+		return
+	}
 
 		response.SuccessResponse(w, map[string]interface{}{
 			"tasks": tasks,
@@ -739,6 +746,10 @@ func handleTasks(w http.ResponseWriter, r *http.Request) {
 
 		if t.Title == "" {
 			response.ErrorResponse(w, "标题不能为空", http.StatusBadRequest)
+			return
+		}
+		if !validator.IsValidTaskTitle(t.Title) {
+			response.ErrorResponse(w, "标题长度需在1-200字符之间", http.StatusBadRequest)
 			return
 		}
 
