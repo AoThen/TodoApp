@@ -213,10 +213,14 @@ func main() {
 	log.Printf("环境: %s, WebSocket强制加密: %v", environment, enforceWSEncryption)
 
 	// Initialize database with connection pool
-	if err := db.InitDB("todoapp.db"); err != nil {
+	dbPath := os.Getenv("DATABASE_URL")
+	if dbPath == "" {
+		dbPath = "todoapp.db"
+	}
+	if err := db.InitDB(dbPath); err != nil {
 		log.Fatalf("failed to init db: %v", err)
 	}
-	log.Println("Database initialized.")
+	log.Printf("Database initialized (%s).", dbPath)
 
 	// Initialize WebSocket Hub
 	wsHub := websocket.NewHub()
@@ -254,21 +258,23 @@ func main() {
 
 	protected.HandleFunc("/users/me", handleMe).Methods("GET")
 	protected.HandleFunc("/tasks", handleTasks).Methods("GET", "POST")
-	protected.HandleFunc("/tasks/{id}", handleTaskByID).Methods("GET", "PATCH", "DELETE")
+	// 具体路径必须注册在 {id} 之前，否则会被 {id} 捕获（如 /tasks/batch）
 	protected.HandleFunc("/tasks/batch", func(w http.ResponseWriter, r *http.Request) {
 		handleBatchDeleteTasks(w, r, wsHub)
 	}).Methods("DELETE")
+	protected.HandleFunc("/tasks/{id}", handleTaskByID).Methods("GET", "PATCH", "DELETE")
 	protected.HandleFunc("/tasks/{id}/restore", handleRestoreTask).Methods("POST")
 	protected.HandleFunc("/sync", func(w http.ResponseWriter, r *http.Request) { handleSync(w, r, wsHub) }).Methods("POST")
 	protected.HandleFunc("/export", handleExport).Methods("GET")
 	protected.HandleFunc("/import", handleImport).Methods("POST")
 	protected.HandleFunc("/notifications", handleGetNotifications).Methods("GET")
 	protected.HandleFunc("/notifications", handleCreateNotification).Methods("POST")
-	protected.HandleFunc("/notifications/{id}/read", handleMarkAsRead).Methods("PATCH")
+	// 具体路径必须注册在 {id} 之前，否则会被 {id} 捕获
 	protected.HandleFunc("/notifications/read-all", handleMarkAllAsRead).Methods("PATCH")
-	protected.HandleFunc("/notifications/{id}", handleDeleteNotification).Methods("DELETE")
-	protected.HandleFunc("/notifications/clear", handleClearNotifications).Methods("DELETE")
 	protected.HandleFunc("/notifications/unread-count", handleGetUnreadCount).Methods("GET")
+	protected.HandleFunc("/notifications/clear", handleClearNotifications).Methods("DELETE")
+	protected.HandleFunc("/notifications/{id}/read", handleMarkAsRead).Methods("PATCH")
+	protected.HandleFunc("/notifications/{id}", handleDeleteNotification).Methods("DELETE")
 
 	// Device pairing routes
 	protected.HandleFunc("/devices/pair/init", handleInitPairing).Methods("POST")
@@ -306,9 +312,20 @@ func main() {
 		handleWebSocket(w, r, wsHub)
 	}))).Methods("GET")
 
+	// 读取服务器端口配置（支持 SERVER_PORT 环境变量，默认 8080）
+	serverPort := os.Getenv("SERVER_PORT")
+	if serverPort == "" {
+		serverPort = "8080"
+	}
+	if _, err := strconv.Atoi(serverPort); err != nil {
+		log.Printf("SERVER_PORT 环境变量无效（%q），使用默认端口 8080", serverPort)
+		serverPort = "8080"
+	}
+	serverAddr := ":" + serverPort
+
 	// CORS handling for development
 	corsHandler := handlers.CORS(
-		handlers.AllowedOrigins([]string{"http://localhost:3000", "http://localhost:8080"}),
+		handlers.AllowedOrigins([]string{"http://localhost:3000", "http://localhost:" + serverPort}),
 		handlers.AllowedMethods([]string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}),
 		handlers.AllowedHeaders([]string{"Content-Type", "Authorization", "X-User-ID"}),
 		handlers.AllowCredentials(),
@@ -316,14 +333,14 @@ func main() {
 
 	// Configure server with timeouts
 	srv := &http.Server{
-		Addr:         ":8080",
+		Addr:         serverAddr,
 		Handler:      corsHandler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
-	log.Println("Starting server on :8080...")
+	log.Printf("Starting server on %s...", serverAddr)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("server failed: %v", err)
 	}
@@ -698,31 +715,31 @@ func handleTasks(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-	// 解析分页参数
-	pageStr := r.URL.Query().Get("page")
-	page, err := strconv.Atoi(pageStr)
-	if err != nil || page < 1 {
-		page = 1
-	}
+		// 解析分页参数
+		pageStr := r.URL.Query().Get("page")
+		page, err := strconv.Atoi(pageStr)
+		if err != nil || page < 1 {
+			page = 1
+		}
 
-	pageSizeStr := r.URL.Query().Get("page_size")
-	pageSize, err := strconv.Atoi(pageSizeStr)
-	if err != nil || pageSize < 1 || pageSize > 100 {
-		pageSize = 20
-	}
+		pageSizeStr := r.URL.Query().Get("page_size")
+		pageSize, err := strconv.Atoi(pageSizeStr)
+		if err != nil || pageSize < 1 || pageSize > 100 {
+			pageSize = 20
+		}
 
-	// 解析筛选参数
-	status := r.URL.Query().Get("status")
-	priority := r.URL.Query().Get("priority")
-	search := r.URL.Query().Get("search")
-	sortBy := r.URL.Query().Get("sort_by")
-	sortOrder := r.URL.Query().Get("sort_order")
+		// 解析筛选参数
+		status := r.URL.Query().Get("status")
+		priority := r.URL.Query().Get("priority")
+		search := r.URL.Query().Get("search")
+		sortBy := r.URL.Query().Get("sort_by")
+		sortOrder := r.URL.Query().Get("sort_order")
 
-	tasks, total, err := db.GetTasksFiltered(userID, page, pageSize, status, priority, search, sortBy, sortOrder)
-	if err != nil {
-		response.ErrorResponse(w, "获取任务失败", http.StatusInternalServerError)
-		return
-	}
+		tasks, total, err := db.GetTasksFiltered(userID, page, pageSize, status, priority, search, sortBy, sortOrder)
+		if err != nil {
+			response.ErrorResponse(w, "获取任务失败", http.StatusInternalServerError)
+			return
+		}
 
 		response.SuccessResponse(w, map[string]interface{}{
 			"tasks": tasks,
@@ -839,7 +856,7 @@ func handleTaskByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err := db.UpdateTaskFull(taskID, title, description, status, priority)
+		err := db.UpdateTaskFull(taskID, userID, title, description, status, priority)
 		if err != nil {
 			if strings.Contains(err.Error(), "任务不存在") {
 				response.ErrorResponse(w, "任务不存在", http.StatusNotFound)
@@ -853,7 +870,7 @@ func handleTaskByID(w http.ResponseWriter, r *http.Request) {
 		response.SuccessResponse(w, task, http.StatusOK)
 
 	case http.MethodDelete:
-		err := db.DeleteTask(taskID)
+		err := db.DeleteTask(taskID, userID)
 		if err != nil {
 			if strings.Contains(err.Error(), "任务不存在") {
 				response.ErrorResponse(w, "任务不存在", http.StatusNotFound)
@@ -1972,6 +1989,11 @@ func handleAdminCreateUserWithNotification(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if err := validator.ValidatePassword(req.Password); err != nil {
+		response.ErrorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	userID, err := db.CreateUser(req.Email, req.Password, req.Role)
 	if err != nil {
 		response.ErrorResponse(w, err.Error(), http.StatusBadRequest)
@@ -2061,6 +2083,10 @@ func handleAdminResetPassword(w http.ResponseWriter, r *http.Request) {
 
 	if req.NewPassword == "" {
 		response.ErrorResponse(w, "新密码不能为空", http.StatusBadRequest)
+		return
+	}
+	if err := validator.ValidatePassword(req.NewPassword); err != nil {
+		response.ErrorResponse(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 

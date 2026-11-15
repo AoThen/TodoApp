@@ -44,4 +44,12 @@ lint/generated/
 lint/outputs/
 lint/tmp/
 node_modules/
+# Go 编译产物（不应纳入版本库）
 todoapp-server
+todoapp
+test-build
+# 本地 SQLite 数据库文件
+*.db
+*.db-shm
+*.db-wal
+

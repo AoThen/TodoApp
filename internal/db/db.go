@@ -32,11 +32,6 @@ func InitDB(dataSourceName string) error {
 	DB.SetMaxIdleConns(5)
 	DB.SetConnMaxLifetime(5 * time.Minute)
 
-	// Enable WAL mode
-	if _, err = DB.Exec("PRAGMA journal_mode = WAL;"); err != nil {
-		log.Println("warning: failed to set WAL mode:", err)
-	}
-
 	// Set synchronous mode to NORMAL for better performance
 	if _, err = DB.Exec("PRAGMA synchronous = NORMAL;"); err != nil {
 		log.Println("warning: failed to set synchronous mode:", err)
@@ -610,6 +605,7 @@ func GetTasksPaginated(userID int, page, pageSize int) ([]map[string]interface{}
 	}
 	return results, total, nil
 }
+
 // GetTasksFiltered 支持筛选、搜索、排序的分页查询
 func GetTasksFiltered(userID int, page, pageSize int, status, priority, search, sortBy, sortOrder string) ([]map[string]interface{}, int, error) {
 	offset := (page - 1) * pageSize
@@ -688,8 +684,8 @@ func GetTasksFiltered(userID int, page, pageSize int, status, priority, search, 
 		}
 
 		row := map[string]interface{}{
-			"id":            id,
-			"local_id":      localID.String,
+			"id":       id,
+			"local_id": localID.String,
 			"server_version": func() interface{} {
 				if serverVersion.Valid {
 					return serverVersion.Int64
@@ -711,7 +707,6 @@ func GetTasksFiltered(userID int, page, pageSize int, status, priority, search, 
 	}
 	return results, total, nil
 }
-
 
 // GetTaskByID 根据ID获取单个任务
 func GetTaskByID(taskID int64, userID int) (map[string]interface{}, error) {
@@ -785,7 +780,7 @@ func UpdateTask(taskID int64, title, status string) error {
 }
 
 // UpdateTaskFull 完整更新任务
-func UpdateTaskFull(taskID int64, title, description, status, priority string) error {
+func UpdateTaskFull(taskID int64, userID int, title, description, status, priority string) error {
 	now := time.Now().UTC()
 
 	query := "UPDATE tasks SET "
@@ -808,22 +803,42 @@ func UpdateTaskFull(taskID int64, title, description, status, priority string) e
 		args = append(args, priority)
 	}
 
-	query += "updated_at = ?, last_modified = ? WHERE id = ?"
-	args = append(args, now, now, taskID)
+	query += "updated_at = ?, last_modified = ? WHERE id = ? AND user_id = ?"
+	args = append(args, now, now, taskID, userID)
 
-	_, err := DB.Exec(query, args...)
-	return err
+	result, err := DB.Exec(query, args...)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("任务不存在")
+	}
+	return nil
 }
 
 // DeleteTask 删除任务（软删除）
-func DeleteTask(taskID int64) error {
+func DeleteTask(taskID int64, userID int) error {
 	now := time.Now().UTC()
-	_, err := DB.Exec(`
+	result, err := DB.Exec(`
 		UPDATE tasks
 		SET is_deleted = 1, updated_at = ?, last_modified = ?
-		WHERE id = ?
-	`, now, now, taskID)
-	return err
+		WHERE id = ? AND user_id = ?
+	`, now, now, taskID, userID)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("任务不存在")
+	}
+	return nil
 }
 
 // CleanupExpiredTokens 清理过期的令牌

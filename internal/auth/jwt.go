@@ -2,9 +2,11 @@ package auth
 
 import (
 	"errors"
-	"github.com/golang-jwt/jwt/v4"
+	"log"
 	"os"
 	"time"
+
+	"github.com/golang-jwt/jwt/v4"
 )
 
 var jwtSecret []byte
@@ -12,8 +14,14 @@ var jwtSecret []byte
 func init() {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
-		secret = "default-secret-change-me"
+		log.Fatal("错误: 必须设置 JWT_SECRET 环境变量")
 	}
+
+	// 验证最小长度
+	if len(secret) < 32 {
+		log.Fatal("错误: JWT_SECRET 至少需要 32 个字符")
+	}
+
 	jwtSecret = []byte(secret)
 }
 
