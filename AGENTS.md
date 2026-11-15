@@ -105,13 +105,11 @@ response.ErrorResponse(w, "用户不存在", http.StatusNotFound)
 ```
 
 ## Backend Best Practices (Go)
-- Use transactions for data consistency (`internal/db/transaction.go` provides `WithTransaction` helper)
 - Implement conflict resolution with version control (client_version/server_version)
 - Follow defensive programming: validate inputs, handle all possible states
 - Use context for request-scoped values and cancellation
 - Implement proper rate limiting and security middleware
 - Use structured logging for debugging and monitoring
-- Use constants from `internal/config/constants.go` for configuration values
 
 ## Frontend Best Practices (TypeScript/React)
 - Use memoization (React.memo, useMemo, useCallback) to optimize performance
@@ -135,14 +133,6 @@ response.ErrorResponse(w, "用户不存在", http.StatusNotFound)
 ```go
 response.SuccessResponse(w, data, http.StatusOK)
 response.ErrorResponse(w, "错误消息", http.StatusBadRequest)
-```
-
-### Transaction Handling (Go)
-```go
-err := db.WithTransaction(func(tx *sql.Tx) error {
-    // Perform database operations with tx
-    return nil
-})
 ```
 
 ### Delta Sync Flow

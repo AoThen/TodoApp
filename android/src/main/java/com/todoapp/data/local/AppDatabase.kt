@@ -83,9 +83,6 @@ data class Notification(
 
 @Dao
 interface TaskDao {
-    @Query("SELECT * FROM tasks WHERE userId = :userId AND isDeleted = 0 ORDER BY createdAt DESC")
-    fun getAllTasksByUser(userId: String): Flow<List<Task>>
-
     @Query("SELECT * FROM tasks WHERE isDeleted = 0 ORDER BY createdAt DESC")
     fun getAllTasks(): Flow<List<Task>>
 
