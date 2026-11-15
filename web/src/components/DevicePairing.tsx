@@ -39,7 +39,7 @@ const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
   const [showRefreshConfirm, setShowRefreshConfirm] = useState<boolean>(false);
 
   useEffect(() => {
-    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080/api/v1';
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1';
     const baseUrl = apiUrl.replace('/api/v1', '');
     setServerUrl(baseUrl);
 

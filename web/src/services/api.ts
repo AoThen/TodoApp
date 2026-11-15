@@ -1,7 +1,7 @@
 import axios, { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios';
 import { Task, DeltaChange } from './indexedDB';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1';
 const REQUEST_TIMEOUT = 30000;
 
 class ApiService {
@@ -70,7 +70,7 @@ class ApiService {
           }
         }
 
-        if (process.env.NODE_ENV === 'development') {
+        if (import.meta.env.DEV) {
           console.error('API Error:', error.message);
         }
 
@@ -122,7 +122,7 @@ class ApiService {
 
       return { access_token, refresh_token, expires_in };
     } catch (error) {
-      if (process.env.NODE_ENV === 'development') {
+      if (import.meta.env.DEV) {
         console.error('Login error:', error);
       }
       throw error;
@@ -164,7 +164,7 @@ class ApiService {
     try {
       await this.client.post('/auth/logout', { refresh_token: refreshToken });
     } catch (error) {
-      if (process.env.NODE_ENV === 'development') {
+      if (import.meta.env.DEV) {
         console.warn('Logout API call failed:', error);
       }
     } finally {

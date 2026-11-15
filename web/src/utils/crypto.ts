@@ -29,7 +29,7 @@ function getKeyFromStorageOrEnv(): string {
   if (storedKey) {
     return storedKey;
   }
-  const envKey = process.env.REACT_APP_DEVICE_KEY;
+  const envKey = import.meta.env.VITE_DEVICE_KEY;
   if (envKey) {
     setDeviceKey(envKey);
     return envKey;

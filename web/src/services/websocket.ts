@@ -39,7 +39,7 @@ class WebSocketService {
     // Determine WebSocket protocol based on current page protocol
     const isSecure = window.location.protocol === 'https:';
     const wsProtocol = isSecure ? 'wss://' : 'ws://';
-    const serverHost = process.env.REACT_APP_WS_HOST || window.location.host;
+    const serverHost = import.meta.env.VITE_WS_HOST || window.location.host;
     const wsUrl = `${wsProtocol}${serverHost}/ws`;
 
     try {

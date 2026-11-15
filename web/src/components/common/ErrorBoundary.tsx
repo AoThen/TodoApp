@@ -74,7 +74,7 @@ class ErrorBoundary extends Component<Props, State> {
             }}>
               应用程序遇到了意外错误。请尝试刷新页面或返回首页。
             </p>
-            {process.env.NODE_ENV === 'development' && this.state.error && (
+            {import.meta.env.DEV && this.state.error && (
               <details style={{
                 marginTop: '16px',
                 padding: '12px',
