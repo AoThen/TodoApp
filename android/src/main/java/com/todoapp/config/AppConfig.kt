@@ -98,7 +98,7 @@ object TaskConfig {
     const val DEFAULT_PRIORITY = "medium"
 
     val PRIORITIES = listOf("low", "medium", "high")
-    val STATUSES = listOf("todo", "in_progress", "completed", "archived")
+    val STATUSES = listOf("todo", "in_progress", "done", "archived")
 }
 
 object NotificationConfig {

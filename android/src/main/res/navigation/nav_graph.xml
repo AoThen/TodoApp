@@ -60,6 +60,13 @@
         </action>
     </fragment>
 
+    <!-- Notification Fragment -->
+    <fragment
+        android:id="@+id/notificationFragment"
+        android:name="com.todoapp.ui.notifications.NotificationFragment"
+        android:label="@string/notifications_title"
+        tools:layout="@layout/activity_notification" />
+
     <!-- Add Task Fragment -->
     <fragment
         android:id="@+id/addTaskFragment"

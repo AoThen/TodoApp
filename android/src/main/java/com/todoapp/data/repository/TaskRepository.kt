@@ -91,9 +91,9 @@ class TaskRepository(
 
     suspend fun toggleTaskCompletion(task: Task): Result<Unit> {
         return Result.runCatching {
-            val isCompleting = task.status != "completed"
+            val isCompleting = task.status != "done"
             val updatedTask = task.copy(
-                status = if (isCompleting) "completed" else "todo",
+                status = if (isCompleting) "done" else "todo",
                 updatedAt = DateTimeUtils.getCurrentTimestamp(),
                 lastModified = DateTimeUtils.getCurrentTimestamp(),
                 completedAt = if (isCompleting) DateTimeUtils.getCurrentTimestamp() else null

@@ -25,14 +25,26 @@ object NetworkModule {
     @Singleton
     fun provideOkHttpClient(@ApplicationContext context: Context): OkHttpClient {
         return OkHttpClient.Builder()
+                .addInterceptor(CryptoInterceptor.getInstance(context))
             .addInterceptor { chain ->
                 val originalRequest = chain.request()
+                val token = RetrofitClient.getAccessToken(context)
                 val requestWithAuth = originalRequest.newBuilder().apply {
                     addHeader("Accept", "application/json")
                     addHeader("Content-Type", "application/json")
+                    if (token.isNotEmpty()) {
+                        addHeader("Authorization", "Bearer $token")
+                    }
                 }.build()
                 chain.proceed(requestWithAuth)
             }
+            .addInterceptor(HttpLoggingInterceptor().apply {
+                level = if (com.todoapp.BuildConfig.DEBUG) {
+                    HttpLoggingInterceptor.Level.BODY
+                } else {
+                    HttpLoggingInterceptor.Level.NONE
+                }
+            })
             .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)

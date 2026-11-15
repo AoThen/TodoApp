@@ -122,7 +122,7 @@ class AddTaskFragment : Fragment(), DatePickerDialog.OnDateSetListener {
             selectStatus("in_progress")
         }
         binding.chipStatusDone.setOnClickListener {
-            selectStatus("completed")
+            selectStatus("done")
         }
 
         binding.chipPriorityLow.setOnClickListener {

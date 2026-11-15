@@ -53,7 +53,7 @@ class TaskDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = TaskDetailState.Loading
 
-            taskRepository.getTaskById(taskId.toLongOrNull() ?: 0)
+            taskRepository.getTaskByLocalId(taskId)
                 .onSuccess { task ->
                     originalTask = task.copy()
                     currentTitle = task.title
@@ -82,7 +82,9 @@ class TaskDetailViewModel @Inject constructor(
             title.length > 200 -> context.getString(R.string.task_title_too_long)
             else -> null
         }
-        _formState.value = _formState.value.copy(titleError = error)
+        val currentFormState = _formState.value
+        val isFormValid = error == null && currentFormState.descriptionError == null
+        _formState.value = currentFormState.copy(titleError = error, isFormValid = isFormValid)
         checkUnsavedChanges()
     }
 
@@ -92,7 +94,9 @@ class TaskDetailViewModel @Inject constructor(
             description.length > 2000 -> context.getString(R.string.task_description_too_long)
             else -> null
         }
-        _formState.value = _formState.value.copy(descriptionError = error)
+        val currentFormState = _formState.value
+        val isFormValid = currentFormState.titleError == null && error == null
+        _formState.value = currentFormState.copy(descriptionError = error, isFormValid = isFormValid)
         checkUnsavedChanges()
     }
 
@@ -118,13 +122,13 @@ class TaskDetailViewModel @Inject constructor(
     }
 
     private fun checkUnsavedChanges() {
-        hasUnsavedChanges = originalTask != null && (
-            currentTitle != originalTask!!.title ||
-            currentDescription != originalTask!!.description ||
-            currentDueDate != originalTask!!.dueAt?.substringBefore("T")?.takeIf { it.isNotBlank() } ?: "" ||
-            currentStatus != originalTask!!.status ||
-            currentPriority != originalTask!!.priority
-        )
+        hasUnsavedChanges = originalTask?.let { task ->
+            currentTitle != task.title ||
+            currentDescription != task.description ||
+            currentDueDate != task.dueAt?.substringBefore("T")?.takeIf { it.isNotBlank() } ?: "" ||
+            currentStatus != task.status ||
+            currentPriority != task.priority
+        } ?: false
     }
 
     fun updateTask(context: android.content.Context) {

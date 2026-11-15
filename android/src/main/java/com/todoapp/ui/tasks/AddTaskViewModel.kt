@@ -51,7 +51,9 @@ class AddTaskViewModel @Inject constructor(
             currentTitle.length > 200 -> context.getString(R.string.task_title_too_long)
             else -> null
         }
-        _formState.value = _formState.value.copy(titleError = error)
+        val currentFormState = _formState.value
+        val isFormValid = error == null && currentFormState.descriptionError == null
+        _formState.value = currentFormState.copy(titleError = error, isFormValid = isFormValid)
     }
 
     fun validateDescription(description: String, context: android.content.Context) {
@@ -60,7 +62,9 @@ class AddTaskViewModel @Inject constructor(
             currentDescription.length > 2000 -> context.getString(R.string.task_description_too_long)
             else -> null
         }
-        _formState.value = _formState.value.copy(descriptionError = error)
+        val currentFormState = _formState.value
+        val isFormValid = currentFormState.titleError == null && error == null
+        _formState.value = currentFormState.copy(descriptionError = error, isFormValid = isFormValid)
     }
 
     fun validateDueDate(dueDate: String) {

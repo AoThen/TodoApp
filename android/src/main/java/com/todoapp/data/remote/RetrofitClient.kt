@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withTimeout
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -29,6 +29,9 @@ object RetrofitClient {
 
     @Volatile
     private var apiService: ApiService? = null
+
+    @Volatile
+    private var refreshRetrofit: Retrofit? = null
 
     private val refreshLock = Any()
 
@@ -114,24 +117,19 @@ object RetrofitClient {
                 return false
             }
 
-            val tempClient = OkHttpClient.Builder()
-                .addInterceptor(createLoggingInterceptor())
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(10, TimeUnit.SECONDS)
-                .writeTimeout(10, TimeUnit.SECONDS)
-                .build()
+            // 使用缓存的 refreshRetrofit 单例
+            val refreshApiService = refreshRetrofit ?: synchronized(this) {
+                refreshRetrofit ?: Retrofit.Builder()
+                    .baseUrl(BASE_URL)
+                    .client(createRefreshOkHttpClient())
+                    .addConverterFactory(GsonConverterFactory.create())
+                    .build()
+                    .also { refreshRetrofit = it }
+            }.create(ApiService::class.java)
 
-            val tempRetrofit = Retrofit.Builder()
-                .baseUrl(BASE_URL)
-                .client(tempClient)
-                .addConverterFactory(GsonConverterFactory.create())
-                .build()
-
-            val tempApiService = tempRetrofit.create(ApiService::class.java)
-
-            val response = runBlocking {
-                withTimeout(5000L) {
-                    tempApiService.refreshToken()
+            val response = kotlinx.coroutines.runInterruptible {
+                kotlinx.coroutines.withTimeout(5000L) {
+                    refreshApiService.refreshToken()
                 }
             }
 
@@ -148,6 +146,15 @@ object RetrofitClient {
             android.util.Log.e("RetrofitClient", "Token refresh error", e)
             false
         }
+    }
+
+    private fun createRefreshOkHttpClient(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .addInterceptor(createLoggingInterceptor())
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .writeTimeout(10, TimeUnit.SECONDS)
+            .build()
     }
 
     private fun createLoggingInterceptor(): HttpLoggingInterceptor {
@@ -238,6 +245,7 @@ object RetrofitClient {
 
         retrofit = null
         apiService = null
+        refreshRetrofit = null
     }
 
     fun getBaseUrl(): String {

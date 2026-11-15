@@ -53,7 +53,7 @@ class TaskAdapter(
                 val statusText = when (task.status) {
                     "todo" -> root.context.getString(R.string.task_status_todo)
                     "in_progress" -> root.context.getString(R.string.task_status_in_progress)
-                    "completed" -> root.context.getString(R.string.task_status_completed)
+                    "done" -> root.context.getString(R.string.task_status_completed)
                     else -> root.context.getString(R.string.task_status_todo)
                 }
                 tvTaskStatus.text = statusText
@@ -77,7 +77,7 @@ class TaskAdapter(
                 tvTaskPriority.setTextColor(root.context.getColor(priorityColor))
                 
                 // Completion state
-                val isCompleted = task.status == "completed"
+                val isCompleted = task.status == "done"
                 checkboxTask.isChecked = isCompleted
                 
                 // Visual styling for completed tasks

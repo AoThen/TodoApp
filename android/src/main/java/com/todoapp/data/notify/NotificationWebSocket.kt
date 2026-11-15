@@ -101,7 +101,18 @@ class NotificationWebSocket(
             try {
                 val jsonString = if (isEncrypted) {
                     val bytes = data as ByteArray
-                    String(bytes) // 简化：暂不解密，生产环境应实现解密
+                    // 解密接收到的数据
+                    try {
+                        val key = KeyStorage.getKey(context.applicationContext)
+                        if (key != null) {
+                            AesGcmManager.decryptBytes(bytes, key).toString(Charsets.UTF_8)
+                        } else {
+                            throw Exception("无法获取解密密钥")
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e(Config.TAG, "解密失败", e)
+                        throw e
+                    }
                 } else {
                     data as String
                 }
@@ -142,7 +153,18 @@ class NotificationWebSocket(
         scope.launch {
             try {
                 val messageStr = message.toString()
-                webSocket?.send(messageStr)
+                if (encrypt && encryptionEnabled) {
+                    val key = KeyStorage.getKey(context.applicationContext)
+                    if (key != null) {
+                        val encryptedBytes = AesGcmManager.encryptBytes(messageStr.toByteArray(Charsets.UTF_8), key)
+                        webSocket?.send(okio.ByteString.of(*encryptedBytes))
+                    } else {
+                        android.util.Log.w(Config.TAG, "No encryption key available, sending unencrypted")
+                        webSocket?.send(messageStr)
+                    }
+                } else {
+                    webSocket?.send(messageStr)
+                }
             } catch (e: Exception) {
                 android.util.Log.e(Config.TAG, "Failed to send message", e)
             }
