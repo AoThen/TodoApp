@@ -42,9 +42,9 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
+      # Android SDK 由 runner 镜像预装（ANDROID_HOME 已内置）；
+      # android-actions/setup-android@v3 在 ubuntu-26.04 镜像上因 sdkmanager
+      # 安装废弃的 'tools' 包失败（2026-11 回归），故不再单独安装 SDK。
 
       - name: Cache Gradle packages
         uses: actions/cache@v4
