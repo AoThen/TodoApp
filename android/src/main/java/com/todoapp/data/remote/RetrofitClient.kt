@@ -118,14 +118,15 @@ object RetrofitClient {
             }
 
             // 使用缓存的 refreshRetrofit 单例
-            val refreshApiService = refreshRetrofit ?: synchronized(this) {
+            // 注意：elvis 表达式必须加括号后再调用 create，否则公共类型退化为 Any
+            val refreshApiService = (refreshRetrofit ?: synchronized(this) {
                 refreshRetrofit ?: Retrofit.Builder()
                     .baseUrl(BASE_URL)
                     .client(createRefreshOkHttpClient())
                     .addConverterFactory(GsonConverterFactory.create())
                     .build()
                     .also { refreshRetrofit = it }
-            }.create(ApiService::class.java)
+            }).create(ApiService::class.java)
 
             val response = runBlocking {
                 withTimeout(5000L) {
