@@ -48,7 +48,6 @@ TodoApp 是一个功能强大的跨平台任务管理应用，支持离线优先
 ### Web 前端 (React/TypeScript)
 - 响应式任务列表界面
 - 在线状态实时显示
-- 手动同步按钮
 - 通知中心与未读计数
 - 管理员面板（仅管理员可见）
 - 设备配对 QR 码生成
@@ -64,7 +63,7 @@ TodoApp 是一个功能强大的跨平台任务管理应用，支持离线优先
 ## 快速开始
 
 ### 环境要求
-- Go 1.19+
+- Go 1.20+
 - Node.js 16+
 - Android Studio (Android 开发)
 - GCC (SQLite 需要)
@@ -108,7 +107,7 @@ npm start
 ```bash
 cd android
 ./gradlew assembleDebug
-# APK 将生成在 android/app/build/outputs/apk/debug/
+# APK 将生成在 android/build/outputs/apk/debug/
 ```
 
 更多详细部署信息请参考 [DEPLOYMENT.md](DEPLOYMENT.md)。
@@ -171,6 +170,7 @@ cd android
 | 方法 | 端点 | 描述 | 认证 |
 |------|------|------|------|
 | GET | `/api/v1/devices` | 获取已配对设备列表 | 是 |
+| POST | `/api/v1/devices/pair/init` | 初始化配对会话 | 是 |
 | POST | `/api/v1/devices/pair` | 配对新设备 | 是 |
 | POST | `/api/v1/devices/{id}/regenerate` | 重新生成配对密钥 | 是 |
 | DELETE | `/api/v1/devices/{id}` | 撤销设备 | 是 |
@@ -178,8 +178,9 @@ cd android
 ### 用户
 | 方法 | 端点 | 描述 | 认证 |
 |------|------|------|------|
-| POST | `/api/v1/users/register` | 用户注册 | 否 |
 | GET | `/api/v1/users/me` | 获取当前用户信息 | 是 |
+
+> 注：系统采用管理员建号模式（`POST /api/v1/admin/users`），不开放自助注册端点。
 
 ### 其他
 | 方法 | 端点 | 描述 | 认证 |
@@ -195,11 +196,15 @@ todoapp/
 ├── main.go                          # Go 后端入口
 ├── internal/
 │   ├── auth/                        # JWT 认证
+│   ├── cache/                       # 内存缓存
 │   ├── db/                          # 数据库操作
 │   ├── response/                    # 统一响应格式
+│   ├── types/                       # 类型与常量
 │   ├── validator/                   # 输入验证
+│   ├── utils/                       # 工具（CSV 流式导出等）
 │   ├── crypto/                      # 加密模块
 │   └── websocket/                   # WebSocket 服务
+├── prototype/                       # UI 视觉原型（零依赖单文件 HTML）
 ├── web/
 │   └── src/
 │       ├── App.tsx                  # 主组件
@@ -219,9 +224,11 @@ todoapp/
 │           └── crypto.ts            # 加密工具
 ├── android/
 │   └── src/main/java/com/todoapp/
+│       ├── config/                  # 应用配置
 │       ├── data/
 │       │   ├── local/               # Room 数据库
 │       │   ├── remote/              # Retrofit 网络层
+│       │   ├── repository/          # 仓库层
 │       │   ├── sync/                # WorkManager 同步
 │       │   ├── crypto/              # 加密实现
 │       │   └── notify/              # 通知管理
@@ -252,7 +259,7 @@ todoapp/
 
 ### Android
 - Kotlin
-- Jetpack Compose / ViewBinding
+- ViewBinding
 - Room (本地数据库)
 - WorkManager (后台任务)
 - Retrofit (网络请求)
@@ -291,10 +298,9 @@ go test -v ./internal/db -run TestInitDB    # 运行单个测试
 ### 前端 (React/TypeScript)
 ```bash
 cd web
-npm install && npm start                    # 开发服务器
+npm install && npm start                    # 开发服务器（Vite）
 npm run build                               # 生产构建
-npm test                                    # 运行测试
-npm test -- App.test.tsx                    # 运行单个测试
+# 测试体系待建（见 docs/ui_revamp_plan.md），落地后恢复 npm test
 ```
 
 ### Android (Kotlin)
@@ -393,6 +399,7 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 - [AGENTS.md](AGENTS.md) - 开发者指南（给 AI 代理的编码指南）
 - [DEPLOYMENT.md](DEPLOYMENT.md) - 详细部署指南
+- [docs/ui_revamp_plan.md](docs/ui_revamp_plan.md) - UI 改版与工程化实施方案
 - [SECURITY_REVIEW.md](SECURITY_REVIEW.md) - 安全审查报告
 - [ANDROID_INTEGRATION_GUIDE.md](ANDROID_INTEGRATION_GUIDE.md) - Android 集成指南
 - [NOTIFICATION_IMPLEMENTATION_COMPLETE.md](NOTIFICATION_IMPLEMENTATION_COMPLETE.md) - 通知系统实现报告
