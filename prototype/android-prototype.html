@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TodoApp · Android 原型</title>
+<style>
+:root{
+  --bg:#f6f7fb; --surface:#ffffff; --card:#ffffff; --border:#e7eaf3;
+  --text:#191c26; --muted:#6b7280; --primary:#6366f1; --primary2:#8b5cf6;
+  --success:#10b981; --warning:#f59e0b; --danger:#ef4444; --info:#3b82f6;
+  --nav:#ffffff;
+}
+html.dark{
+  --bg:#101320; --surface:#191d2b; --card:#1e2333; --border:#2b3148;
+  --text:#e8eaf2; --muted:#9aa1b5; --nav:#171b29;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(160deg,#dfe4f5,#efe6f7 60%,#dcedf7);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:30px 10px;transition:background .3s}
+html.dark body{background:linear-gradient(160deg,#0b0d15,#141021 60%,#0d1720)}
+.hidden{display:none!important}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,textarea,select{font-family:inherit;color:var(--text)}
+/* ---------- 手机外框 ---------- */
+.phone{width:390px;height:844px;background:#0b0d13;border-radius:54px;padding:14px;box-shadow:0 30px 80px rgba(20,25,60,.45),0 0 0 2px #2a2f3d;position:relative}
+.screen{width:100%;height:100%;border-radius:42px;overflow:hidden;background:var(--bg);position:relative;display:flex;flex-direction:column;transition:background .3s}
+.status-bar{height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 26px;font-size:12.5px;font-weight:600;color:var(--text);flex-shrink:0}
+.status-bar .icons{display:flex;gap:5px;align-items:center}
+.sig{width:15px;height:10px;background:var(--text);border-radius:2px;clip-path:polygon(0 100%,100% 0,100% 100%)}
+.batt{width:22px;height:11px;border:1.5px solid var(--text);border-radius:3px;position:relative}
+.batt::after{content:"";position:absolute;right:-4px;top:3px;width:2px;height:5px;background:var(--text)}
+/* ---------- 登录 ---------- */
+.login{flex:1;display:flex;flex-direction:column;padding:36px 30px;background:linear-gradient(180deg,rgba(99,102,241,.14),transparent 40%),var(--bg)}
+.login .logo{width:64px;height:64px;border-radius:18px;background:linear-gradient(135deg,var(--primary),var(--primary2));display:flex;align-items:center;justify-content:center;margin:40px 0 22px;box-shadow:0 12px 30px rgba(99,102,241,.4)}
+.login .logo svg{width:30px;height:30px;stroke:#fff;fill:none;stroke-width:2.4;stroke-linecap:round}
+.login h1{font-size:26px;font-weight:800;letter-spacing:-.5px}
+.login p{color:var(--muted);font-size:13.5px;margin:8px 0 34px}
+.a-input{width:100%;padding:14px 16px;border:1.5px solid var(--border);border-radius:14px;background:var(--card);font-size:14px;outline:none;margin-bottom:14px;transition:border .2s}
+.a-input:focus{border-color:var(--primary)}
+.a-btn{width:100%;padding:15px;border-radius:14px;background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff;font-size:15px;font-weight:700;box-shadow:0 10px 24px rgba(99,102,241,.4);transition:transform .15s;margin-top:8px}
+.a-btn:active{transform:scale(.97)}
+.login .hint{text-align:center;color:var(--muted);font-size:12px;margin-top:auto;padding-bottom:8px}
+/* ---------- 主界面 ---------- */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.greet{padding:14px 22px 4px;display:flex;align-items:center;justify-content:space-between}
+.greet h2{font-size:19px;font-weight:800}
+.greet p{font-size:12px;color:var(--muted);margin-top:3px}
+.sync-chip{font-size:11px;padding:5px 10px;border-radius:99px;background:rgba(16,185,129,.12);color:var(--success);font-weight:600}
+.avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}
+.search{margin:12px 22px;padding:11px 15px;background:var(--card);border:1.5px solid var(--border);border-radius:13px;font-size:13px;color:var(--muted)}
+.page-area{flex:1;overflow-y:auto;padding:4px 22px 100px}
+.page-area::-webkit-scrollbar{display:none}
+/* 任务卡片 */
+.t-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:15px 16px;margin-bottom:11px;display:flex;gap:12px;box-shadow:0 2px 10px rgba(20,30,60,.05);position:relative;overflow:hidden;transition:transform .15s;cursor:pointer}
+.t-card:active{transform:scale(.985)}
+.t-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--bar)}
+.c1{--bar:#ef4444}.c2{--bar:#f59e0b}.c3{--bar:#10b981}
+.check{width:22px;height:22px;border:2px solid var(--border);border-radius:8px;flex-shrink:0;margin-top:2px;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.check svg{width:12px;height:12px;stroke:#fff;stroke-width:3;fill:none;opacity:0}
+.t-card.done .check{background:var(--success);border-color:var(--success)}
+.t-card.done .check svg{opacity:1}
+.t-card.done .tt{text-decoration:line-through;color:var(--muted)}
+.t-body{flex:1}
+.tt{font-size:14.5px;font-weight:600}
+.td{font-size:12px;color:var(--muted);margin-top:3px;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.t-card.done .td{opacity:.7}
+.t-meta{display:flex;gap:8px;margin-top:8px;font-size:10.5px;color:var(--muted);align-items:center}
+.chip{padding:2px 8px;border-radius:99px;font-weight:600}
+.chip.blue{background:rgba(59,130,246,.13);color:var(--info)}
+.chip.amber{background:rgba(245,158,11,.15);color:var(--warning)}
+.chip.green{background:rgba(16,185,129,.15);color:var(--success)}
+.chip.gray{background:rgba(107,114,128,.14);color:var(--muted)}
+/* FAB */
+.fab{position:absolute;right:22px;bottom:92px;width:58px;height:58px;border-radius:19px;background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff;font-size:28px;font-weight:300;display:flex;align-items:center;justify-content:center;box-shadow:0 12px 28px rgba(99,102,241,.5);z-index:20;transition:transform .15s}
+.fab:active{transform:scale(.92)}
+/* 底部导航 */
+.bottom-nav{height:76px;background:var(--nav);border-top:1px solid var(--border);display:flex;padding:0 8px 14px;flex-shrink:0;transition:background .3s}
+.bn-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:10.5px;color:var(--muted);position:relative;transition:color .2s}
+.bn-item svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.bn-item.active{color:var(--primary);font-weight:700}
+.bn-item .dot{position:absolute;top:8px;right:26%;width:8px;height:8px;background:var(--danger);border-radius:50%;border:2px solid var(--nav)}
+/* 日历 */
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;background:var(--card);border:1px solid var(--border);border-radius:18px;padding:16px}
+.cal-grid span{text-align:center;font-size:12px;padding:7px 0;border-radius:10px;color:var(--muted)}
+.cal-grid .dow{font-size:10.5px;font-weight:700}
+.cal-grid .day{color:var(--text);cursor:pointer;transition:background .2s}
+.cal-grid .day.today{background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff;font-weight:700}
+.cal-grid .day.has-task::after{content:"";display:block;width:4px;height:4px;border-radius:50%;background:var(--primary);margin:1px auto 0}
+/* 设置 */
+.set-group{background:var(--card);border:1px solid var(--border);border-radius:18px;overflow:hidden;margin-bottom:14px}
+.set-item{display:flex;align-items:center;gap:13px;padding:15px 17px;border-bottom:1px solid var(--border);font-size:13.5px}
+.set-item:last-child{border-bottom:none}
+.set-item svg{width:18px;height:18px;stroke:var(--primary);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.set-item .arrow{margin-left:auto;stroke:var(--muted)}
+.switch{margin-left:auto;width:44px;height:25px;border-radius:99px;background:var(--border);position:relative;transition:background .25s;flex-shrink:0}
+.switch::after{content:"";position:absolute;left:3px;top:3px;width:19px;height:19px;border-radius:50%;background:#fff;transition:left .25s;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.switch.on{background:var(--primary)}
+.switch.on::after{left:22px}
+/* 配对 */
+.pair-box{background:var(--card);border:1px solid var(--border);border-radius:22px;padding:30px;text-align:center;margin-top:10px}
+.qr{width:170px;height:170px;margin:14px auto;border-radius:16px;background:repeating-conic-gradient(var(--text) 0 25%,transparent 0 50%) 0 0/20px 20px;border:6px solid var(--surface);box-shadow:0 8px 24px rgba(0,0,0,.12)}
+.scan-line{position:relative}
+.scan-line::after{content:"";position:absolute;left:8px;right:8px;height:2px;background:linear-gradient(90deg,transparent,var(--primary),transparent);animation:scan 2.2s ease-in-out infinite;top:20px}
+@keyframes scan{0%,100%{transform:translateY(0)}50%{transform:translateY(120px)}}
+/* 通知 */
+.n-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:14px 15px;margin-bottom:10px;display:flex;gap:12px}
+.n-card.unread{border-left:3px solid var(--primary)}
+.n-icon{width:36px;height:36px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.n-icon svg{width:17px;height:17px;stroke-width:2;fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
+.n-icon.i{background:rgba(59,130,246,.12);color:var(--info)}
+.n-icon.w{background:rgba(245,158,11,.15);color:var(--warning)}
+.n-icon.s{background:rgba(16,185,129,.14);color:var(--success)}
+/* 弹窗 */
+.mask{position:absolute;inset:0;background:rgba(8,10,18,.55);z-index:50;display:flex;align-items:flex-end;animation:fade .2s}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.sheet{width:100%;background:var(--surface);border-radius:26px 26px 0 0;padding:22px 22px 30px;animation:up .28s ease;max-height:86%;overflow-y:auto}
+@keyframes up{from{transform:translateY(60%)}to{transform:none}}
+.sheet h3{font-size:17px;margin-bottom:16px}
+.field-l{font-size:11.5px;color:var(--muted);margin:2px 2px 6px;font-weight:600}
+.st-row{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.st-chip{padding:8px 14px;border-radius:99px;border:1.5px solid var(--border);font-size:12.5px;color:var(--muted);transition:all .2s}
+.st-chip.sel{background:rgba(99,102,241,.12);border-color:var(--primary);color:var(--primary);font-weight:700}
+.del-line{width:100%;text-align:center;color:var(--danger);font-weight:600;font-size:13.5px;padding:12px 0 2px}
+/* toast */
+.a-toast{position:absolute;left:50%;bottom:100px;transform:translateX(-50%) translateY(20px);background:#262b3d;color:#fff;font-size:12.5px;padding:10px 18px;border-radius:99px;opacity:0;transition:all .3s;z-index:60;white-space:nowrap}
+.a-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.section-t{font-size:13px;font-weight:700;color:var(--muted);margin:16px 2px 10px;letter-spacing:.3px}
+</style>
+</head>
+<body>
+<div class="phone"><div class="screen">
+
+  <!-- 登录页 -->
+  <div id="aLogin" style="display:flex;flex-direction:column;flex:1">
+    <div class="status-bar"><span>9:41</span><div class="icons"><span class="sig"></span><span class="sig"></span><span class="batt"></span></div></div>
+    <div class="login">
+      <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></div>
+      <h1>TodoApp</h1>
+      <p>跨平台任务管理 · 离线优先 · 实时同步</p>
+      <input class="a-input" placeholder="邮箱" value="demo@todoapp.com">
+      <input class="a-input" type="password" placeholder="密码" value="password123">
+      <button class="a-btn" onclick="aLogin()">登 录</button>
+      <div class="hint">WorkManager 后台同步 · Room 本地存储</div>
+    </div>
+  </div>
+
+  <!-- 主界面 -->
+  <div id="aMain" class="main hidden">
+    <div class="status-bar"><span>9:41</span><div class="icons"><span class="sig"></span><span class="sig"></span><span class="batt"></span></div></div>
+    <div class="greet">
+      <div><h2>早上好，Demo</h2><p id="greetSub">今天有 3 个任务等待处理</p></div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="sync-chip" id="aSync">● 已同步</span>
+        <div class="avatar">D</div>
+      </div>
+    </div>
+    <div class="search">搜索任务…</div>
+
+    <div class="page-area" id="aPageArea">
+      <!-- 任务 tab -->
+      <section id="tab-tasks">
+        <div class="section-t">今日任务 · 点击卡片可编辑</div>
+        <div id="aTaskList"></div>
+        <div class="section-t">即将到来</div>
+        <div id="aUpcomingList"></div>
+      </section>
+
+      <!-- 日历 tab -->
+      <section id="tab-calendar" class="hidden">
+        <div class="section-t">2026年11月</div>
+        <div class="cal-grid" id="calGrid"></div>
+        <div class="section-t">今日日程</div>
+        <div id="aCalList"></div>
+      </section>
+
+      <!-- 通知 tab -->
+      <section id="tab-notifications" class="hidden">
+        <div class="section-t">通知中心 · 3 条未读</div>
+        <div class="n-card unread"><div class="n-icon s"><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div>
+          <div><div style="font-size:13.5px;font-weight:600">同步完成</div><div style="font-size:12px;color:var(--muted);margin-top:2px">6 条变更已推送到云端</div></div><span style="margin-left:auto;font-size:11px;color:var(--muted)">刚刚</span></div>
+        <div class="n-card unread"><div class="n-icon w"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg></div>
+          <div><div style="font-size:13.5px;font-weight:600">任务即将到期</div><div style="font-size:12px;color:var(--muted);margin-top:2px">「OKR 评审材料」明天截止</div></div><span style="margin-left:auto;font-size:11px;color:var(--muted)">10分钟</span></div>
+        <div class="n-card unread"><div class="n-icon i"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg></div>
+          <div><div style="font-size:13.5px;font-weight:600">新设备配对成功</div><div style="font-size:12px;color:var(--muted);margin-top:2px">Pixel 8 已加入设备列表</div></div><span style="margin-left:auto;font-size:11px;color:var(--muted)">1小时</span></div>
+        <div class="n-card"><div class="n-icon i"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg></div>
+          <div><div style="font-size:13.5px;font-weight:600">系统配置更新</div><div style="font-size:12px;color:var(--muted);margin-top:2px">通知保留期调整为 30 天</div></div><span style="margin-left:auto;font-size:11px;color:var(--muted)">昨天</span></div>
+      </section>
+
+      <!-- 设置 tab -->
+      <section id="tab-settings" class="hidden">
+        <div class="section-t">账户</div>
+        <div class="set-group">
+          <div class="set-item"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>demo@todoapp.com</div>
+          <div class="set-item"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>设备配对与管理<span class="arrow" onclick="showPair()">›</span></div>
+        </div>
+        <div class="section-t">同步与通知</div>
+        <div class="set-group">
+          <div class="set-item"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-9-9"/><path d="M21 3l-9 9"/></svg>后台自动同步<div class="switch on" onclick="this.classList.toggle('on')"></div></div>
+          <div class="set-item"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>推送通知<div class="switch on" onclick="this.classList.toggle('on')"></div></div>
+          <div class="set-item"><svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>深色模式<div class="switch" id="darkSwitch" onclick="aToggleDark(this)"></div></div>
+        </div>
+        <div class="section-t">服务器</div>
+        <div class="set-group">
+          <div class="set-item"><svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>http://10.0.2.2:8080</div>
+          <div class="set-item" style="color:var(--danger);justify-content:center;font-weight:600" onclick="aLogout()">退出登录</div>
+        </div>
+      </section>
+
+      <!-- 配对页 -->
+      <section id="tab-pair" class="hidden">
+        <div class="section-t">扫描二维码配对</div>
+        <div class="pair-box">
+          <div class="qr scan-line" id="pairQr"></div>
+          <div style="font-size:13px;font-weight:700;margin-bottom:4px">将二维码对准取景框</div>
+          <div style="font-size:11.5px;color:var(--muted);margin-bottom:18px">配对密钥经服务器下发，端到端加密</div>
+          <button class="a-btn" onclick="showTab('settings',document.querySelectorAll('.bn-item')[3]);aToast('配对成功：New Device 已加入')">模拟扫描成功</button>
+        </div>
+      </section>
+    </div>
+
+    <button class="fab" onclick="openSheet()">+</button>
+
+    <nav class="bottom-nav">
+      <button class="bn-item active" onclick="showTab('tasks',this)"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>任务</button>
+      <button class="bn-item" onclick="showTab('calendar',this)"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>日历</button>
+      <button class="bn-item" onclick="showTab('notifications',this)"><span class="dot"></span><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>通知</button>
+      <button class="bn-item" onclick="showTab('settings',this)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33h0a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51h0a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v0a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>设置</button>
+    </nav>
+  </div>
+
+  <!-- 新建/编辑任务底部弹层 -->
+  <div id="aSheetMask" class="mask hidden" onclick="closeSheet()">
+    <div class="sheet" onclick="event.stopPropagation()">
+      <h3 id="aSheetTitle">新建任务</h3>
+      <div class="field-l">标题</div>
+      <input class="a-input" id="aFTitle" placeholder="要做什么？">
+      <div class="field-l">备注 / 描述</div>
+      <textarea class="a-input" id="aFDesc" rows="4" placeholder="补充细节（可选），支持多行" style="resize:none"></textarea>
+      <div class="field-l">状态</div>
+      <div class="st-row" id="aStRow">
+        <button class="st-chip sel" data-v="todo" onclick="pickStatus(this)">待办</button>
+        <button class="st-chip" data-v="in_progress" onclick="pickStatus(this)">进行中</button>
+        <button class="st-chip" data-v="done" onclick="pickStatus(this)">已完成</button>
+        <button class="st-chip" data-v="archived" onclick="pickStatus(this)">已归档</button>
+      </div>
+      <div style="display:flex;gap:10px">
+        <div style="flex:1"><div class="field-l">优先级</div>
+          <select class="a-input" id="aFPrio" style="margin-bottom:0"><option value="c1">高优先级</option><option value="c2" selected>中优先级</option><option value="c3">低优先级</option></select></div>
+        <div style="flex:1"><div class="field-l">截止日期</div>
+          <input class="a-input" id="aFDue" type="date" value="2026-11-19" style="margin-bottom:0"></div>
+      </div>
+      <button class="a-btn" id="aSheetSave" onclick="saveATask()">保存</button>
+      <button class="del-line hidden" id="aSheetDel" onclick="delATask()">删除任务</button>
+    </div>
+  </div>
+
+  <div class="a-toast" id="aToast"></div>
+</div></div>
+
+<script>
+const stMeta={todo:["blue","待办"],in_progress:["amber","进行中"],done:["green","已完成"],archived:["gray","已归档"]};
+let allTasks=[
+ {id:1,sec:"today",t:"完成季度 OKR 评审材料",d:"整理 Q4 进度、关键结果与风险项，输出评审 PPT。\n需要与产品、研发对齐优先级排序。",cls:"c1",status:"in_progress",due:"2026-11-19"},
+ {id:2,sec:"today",t:"修复 Delta 同步冲突检测",d:"client_version / server_version 比对，冲突写入 conflicts 表。",cls:"c1",status:"todo",due:"2026-11-19"},
+ {id:3,sec:"today",t:"编写 WebSocket 心跳机制",d:"ping/pong 30 秒间隔，断线指数退避重连。",cls:"c2",status:"todo",due:"2026-11-19"},
+ {id:4,sec:"upcoming",t:"Android 端 Room 迁移 v3",d:"新增通知设置表，保留已有任务数据。",cls:"c2",status:"in_progress",due:"2026-11-25"},
+ {id:5,sec:"upcoming",t:"整理设备配对文档",d:"QR 流程 + 密钥轮换说明。",cls:"c3",status:"done",due:"2026-11-28"},
+];
+let editingId=null;
+const $=id=>document.getElementById(id);
+
+function aLogin(){$("aLogin").classList.add("hidden");$("aMain").classList.remove("hidden");renderAll();buildCal();}
+function aLogout(){$("aMain").classList.add("hidden");$("aLogin").classList.remove("hidden");}
+function showTab(name,btn){
+ ["tasks","calendar","notifications","settings","pair"].forEach(t=>$("tab-"+t).classList.add("hidden"));
+ $("tab-"+name).classList.remove("hidden");
+ document.querySelectorAll(".bn-item").forEach(b=>b.classList.remove("active"));
+ if(btn&&btn.classList.contains("bn-item"))btn.classList.add("active");
+ if(name==="pair")$("pairQr").classList.add("scan-line");
+}
+function showPair(){showTab("pair",null);}
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\n/g,"<br>");}
+
+function cardHTML(t){
+ const [chipCls,chipTxt]=stMeta[t.status]||stMeta.todo;
+ return `<div class="t-card ${t.cls} ${t.status==="done"?"done":""}" onclick="openSheet(${t.id})">
+    <div class="check" onclick="event.stopPropagation();aToggle(${t.id})"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div>
+    <div class="t-body"><div class="tt">${esc(t.t)}</div>
+    ${t.d?`<div class="td">${esc(t.d)}</div>`:""}
+    <div class="t-meta"><span class="chip ${chipCls}">${chipTxt}</span><span>${t.due==="2026-11-19"?"今天":esc(t.due)}</span></div></div>
+  </div>`;
+}
+function renderAll(){
+ $("aTaskList").innerHTML=allTasks.filter(t=>t.sec==="today").map(cardHTML).join("")||`<div style="text-align:center;color:var(--muted);font-size:12.5px;padding:24px 0">今天没有任务，点 + 新建一个</div>`;
+ $("aUpcomingList").innerHTML=allTasks.filter(t=>t.sec==="upcoming").map(cardHTML).join("");
+ $("aCalList").innerHTML=allTasks.filter(t=>t.sec==="today").map(cardHTML).join("");
+ const n=allTasks.filter(t=>t.sec==="today"&&t.status!=="done").length;
+ $("greetSub").textContent=`今天有 ${n} 个任务等待处理`;
+}
+function aToggle(id){const t=allTasks.find(x=>x.id===id);t.status=t.status==="done"?"todo":"done";renderAll();aSimSync();}
+function pickStatus(el){document.querySelectorAll("#aStRow .st-chip").forEach(b=>b.classList.remove("sel"));el.classList.add("sel");}
+
+function openSheet(id){
+ editingId=id||null;
+ const t=id?allTasks.find(x=>x.id===id):null;
+ $("aSheetTitle").textContent=t?"编辑任务":"新建任务";
+ $("aSheetSave").textContent=t?"保存修改":"创建任务";
+ $("aSheetDel").classList.toggle("hidden",!t);
+ $("aFTitle").value=t?t.t:"";$("aFDesc").value=t?(t.d||""):"";
+ $("aFPrio").value=t?t.cls:"c2";$("aFDue").value=t?t.due:"2026-11-19";
+ document.querySelectorAll("#aStRow .st-chip").forEach(b=>b.classList.toggle("sel",t?b.dataset.v===t.status:b.dataset.v==="todo"));
+ $("aSheetMask").classList.remove("hidden");$("aFTitle").focus();
+}
+function closeSheet(){$("aSheetMask").classList.add("hidden");editingId=null;}
+function saveATask(){
+ const title=$("aFTitle").value.trim();if(!title)return;
+ const selChip=document.querySelector("#aStRow .st-chip.sel");
+ const status=selChip?selChip.dataset.v:"todo";
+ const data={t:title,d:$("aFDesc").value.trim(),cls:$("aFPrio").value,status,due:$("aFDue").value||"2026-11-19"};
+ if(editingId){const t=allTasks.find(x=>x.id===editingId);Object.assign(t,data);aToast("任务已更新，变更加入同步队列");}
+ else{allTasks.unshift({id:Date.now(),sec:"today",...data});aToast("已创建，加入同步队列");}
+ closeSheet();renderAll();aSimSync();
+}
+function delATask(){
+ const t=allTasks.find(x=>x.id===editingId);
+ allTasks=allTasks.filter(x=>x.id!==editingId);
+ closeSheet();renderAll();aToast(`已删除「${t?t.t:""}」`);
+}
+function buildCal(){
+ const g=$("calGrid");g.innerHTML="";
+ "日一二三四五六".split("").forEach(d=>g.innerHTML+=`<span class="dow">${d}</span>`);
+ for(let i=0;i<33;i++){
+  const d=i+1;let cls="day";
+  if(d===19)cls+=" today";
+  if([3,8,12,19,24,27].includes(d))cls+=" has-task";
+  if(d>30){g.innerHTML+="<span></span>";continue;}
+  g.innerHTML+=`<span class="${cls}">${d}</span>`;
+ }
+}
+function aToggleDark(sw){sw.classList.toggle("on");document.documentElement.classList.toggle("dark");}
+let st;
+function aSimSync(){const s=$("aSync");s.textContent="● 同步中…";s.style.background="rgba(245,158,11,.15)";s.style.color="var(--warning)";clearTimeout(st);
+ st=setTimeout(()=>{s.textContent="● 已同步";s.style.background="rgba(16,185,129,.12)";s.style.color="var(--success)";},1500);}
+let tt;
+function aToast(msg){const t=$("aToast");t.textContent=msg;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),2600);}
+</script>
+</body>
+</html>
