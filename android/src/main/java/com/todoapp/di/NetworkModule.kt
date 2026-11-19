@@ -3,6 +3,7 @@ package com.todoapp.di
 import android.content.Context
 import com.todoapp.config.AppConfig
 import com.todoapp.config.SyncConfig
+import com.todoapp.data.crypto.CryptoInterceptor
 import com.todoapp.data.remote.ApiService
 import com.todoapp.data.remote.RetrofitClient
 import dagger.Module

@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
-import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -127,8 +127,8 @@ object RetrofitClient {
                     .also { refreshRetrofit = it }
             }.create(ApiService::class.java)
 
-            val response = kotlinx.coroutines.runInterruptible {
-                kotlinx.coroutines.withTimeout(5000L) {
+            val response = runBlocking {
+                withTimeout(5000L) {
                     refreshApiService.refreshToken()
                 }
             }
