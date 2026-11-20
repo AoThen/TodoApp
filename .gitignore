@@ -44,10 +44,10 @@ lint/generated/
 lint/outputs/
 lint/tmp/
 node_modules/
-# Go 编译产物（不应纳入版本库）
-todoapp-server
-todoapp
-test-build
+# Go 编译产物（不应纳入版本库；根锚定避免误伤 android 源码包路径）
+/todoapp-server
+/todoapp
+/test-build
 # 本地 SQLite 数据库文件
 *.db
 *.db-shm
