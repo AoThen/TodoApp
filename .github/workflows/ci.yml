@@ -79,10 +79,13 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: 运行 instrumented 测试（API 30 模拟器）
+      - name: 运行 instrumented 测试（API 30 arm64 模拟器）
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
-          arch: x86_64
-          disable-linux-hw-accel: false
+          arch: arm64-v8a
+          disable-linux-hw-accel: true
+          emulator-boot-timeout: 1800
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 3072
           script: cd android && ./gradlew connectedDebugAndroidTest --no-daemon
+        timeout-minutes: 45
