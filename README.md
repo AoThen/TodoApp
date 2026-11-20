@@ -64,7 +64,7 @@ TodoApp 是一个功能强大的跨平台任务管理应用，支持离线优先
 
 ### 环境要求
 - Go 1.20+
-- Node.js 16+
+- Node.js 18+
 - Android Studio (Android 开发)
 - GCC (SQLite 需要)
 
@@ -196,7 +196,6 @@ todoapp/
 ├── main.go                          # Go 后端入口
 ├── internal/
 │   ├── auth/                        # JWT 认证
-│   ├── cache/                       # 内存缓存
 │   ├── db/                          # 数据库操作
 │   ├── response/                    # 统一响应格式
 │   ├── types/                       # 类型与常量
@@ -264,7 +263,7 @@ todoapp/
 - WorkManager (后台任务)
 - Retrofit (网络请求)
 - OkHttp (HTTP 客户端)
-- ZXing (QR 扫描)
+- MLKit Barcode Scanning (QR 扫描)
 
 ## 安全特性
 
@@ -397,7 +396,7 @@ export INITIAL_ADMIN_PASSWORD="YourSecurePassword123!"
 
 ## 许可证
 
-MIT License - 详见 [LICENSE](LICENSE) 文件
+MIT License
 
 ## 相关文档
 
