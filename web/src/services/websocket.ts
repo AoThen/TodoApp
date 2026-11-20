@@ -175,7 +175,8 @@ class WebSocketService {
     this.stopPingTimer();
     this.pingTimer = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
-        this.send({ type: 'ping' });
+        // 心跳失败静默处理：连接状态由 onclose/onerror 驱动重连，避免 unhandled rejection
+        this.send({ type: 'ping' }).catch(() => {});
       }
     }, PING_INTERVAL);
   }

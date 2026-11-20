@@ -1,8 +1,12 @@
 package com.todoapp.data.notify
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.todoapp.R
 import com.todoapp.data.local.AppDatabase
 import com.todoapp.data.local.Notification as NotificationEntity
@@ -77,6 +81,13 @@ class NotificationManager(
      * 显示系统通知
      */
     private fun showSystemNotification(id: Int, title: String, content: String, priority: String) {
+        // Android 13+ 通知需要 POST_NOTIFICATIONS 运行时权限，未授予时静默跳过
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
         val importance = when (priority) {
             "urgent", "high" -> NotificationCompat.PRIORITY_HIGH
             "normal" -> NotificationCompat.PRIORITY_DEFAULT
