@@ -92,8 +92,7 @@ object AesGcmManager {
 
     fun isValidKey(keyHex: String): Boolean {
         return try {
-            val key = hexStringToByteArray(keyHex)
-            key.size == 32
+            keyHex.length == 32 * 2 && keyHex.all { Character.digit(it, 16) >= 0 }
         } catch (e: Exception) {
             false
         }
