@@ -2,7 +2,6 @@ package com.todoapp
 
 import android.app.Application
 import androidx.work.Configuration
-import androidx.work.WorkManager
 import com.todoapp.config.AppConfig
 import com.todoapp.data.crypto.KeyStorage
 import com.todoapp.data.remote.RetrofitClient
@@ -16,8 +15,6 @@ class TodoApp : Application(), Configuration.Provider {
 
         KeyStorage.init(this)
         AppConfig.initialize(this)
-
-        WorkManager.initialize(this, workManagerConfiguration)
     }
 
     override fun getWorkManagerConfiguration(): Configuration {
