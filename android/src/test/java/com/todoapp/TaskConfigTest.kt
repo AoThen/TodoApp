@@ -1,6 +1,7 @@
 package com.todoapp
 
 import com.todoapp.config.EncryptionConfig
+import com.todoapp.config.SyncConfig
 import com.todoapp.config.TaskConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
