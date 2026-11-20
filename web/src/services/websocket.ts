@@ -29,10 +29,13 @@ class WebSocketService {
   private pingTimer: NodeJS.Timeout | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
 
-  async connect(token: string, enableEncryption: boolean = true): Promise<void> {
+  async connect(token: string, enableEncryption: boolean = true, isReconnect: boolean = false): Promise<void> {
     this.token = token;
     this.encryptionEnabled = enableEncryption;
-    this.reconnectAttempts = 0;
+    // 仅手动连接时重置重连计数；自动重连路径必须保留计数，否则退避上限永不生效
+    if (!isReconnect) {
+      this.reconnectAttempts = 0;
+    }
 
     const protocol = enableEncryption ? 'todoapp.encryption' : 'todoapp';
     
@@ -193,7 +196,7 @@ class WebSocketService {
 
       this.reconnectTimer = setTimeout(() => {
         if (this.token) {
-          this.connect(this.token, this.encryptionEnabled);
+          this.connect(this.token, this.encryptionEnabled, true);
         }
       }, delay);
     } else {
@@ -216,6 +219,8 @@ class WebSocketService {
       this.reconnectTimer = null;
     }
     if (this.ws) {
+      // 主动断开不应触发自动重连
+      this.ws.onclose = null;
       this.ws.close();
       this.ws = null;
     }
