@@ -96,7 +96,8 @@ class DeltaSyncWorkerTest {
 
     private fun runWorker(): ListenableWorker.Result {
         val worker = TestListenableWorkerBuilder<DeltaSyncWorker>(context).build()
-        return runBlocking { worker.doWork().get() }
+        // CoroutineWorker 的 suspend doWork() 直接返回 Result，无需 ListenableFuture.get()
+        return runBlocking { worker.doWork() }
     }
 
     private fun stubSync(response: Response<SyncResponse>) {
