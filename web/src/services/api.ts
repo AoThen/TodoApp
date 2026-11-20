@@ -31,7 +31,20 @@ class ApiService {
     );
 
     this.client.interceptors.response.use(
-      (response) => response,
+      (response) => {
+        // 后端统一返回 {success, data} 包裹结构；此处解包，使调用方直接拿到业务数据
+        const body = response.data;
+        if (
+          body &&
+          typeof body === 'object' &&
+          'success' in body &&
+          'data' in body &&
+          !Array.isArray(body)
+        ) {
+          response.data = (body as { data: unknown }).data;
+        }
+        return response;
+      },
       async (error: AxiosError) => {
         const originalRequest = error.config as unknown as { _retry?: boolean; _retryCount?: number } & Record<string, unknown>;
 
@@ -105,22 +118,22 @@ class ApiService {
 
   async login(email: string, password: string): Promise<{
     access_token: string;
-    refresh_token: string;
     expires_in: number;
   }> {
     try {
       const response = await this.client.post('/auth/login', { email, password });
-      const { access_token, refresh_token, expires_in } = response.data;
+      // refresh_token 由后端写入 HttpOnly cookie，响应体仅含 access_token
+      const { access_token, expires_in } = response.data;
 
-      if (!access_token || !refresh_token) {
+      if (!access_token) {
         throw new Error('No tokens received');
       }
 
       localStorage.setItem('access_token', access_token);
-      localStorage.setItem('refresh_token', refresh_token);
+      localStorage.removeItem('refresh_token');
       localStorage.setItem('token_expires_at', String(Date.now() + expires_in * 1000));
 
-      return { access_token, refresh_token, expires_in };
+      return { access_token, expires_in };
     } catch (error) {
       if (import.meta.env.DEV) {
         console.error('Login error:', error);
@@ -134,24 +147,17 @@ class ApiService {
   }
 
   private async performTokenRefresh(): Promise<void> {
-    const refreshToken = this.getRefreshToken();
-    if (!refreshToken) {
-      this.clearTokens();
-      throw new Error('No refresh token available');
-    }
-
+    // 刷新令牌在 HttpOnly cookie 中随请求自动携带
     try {
-      const response = await this.client.post('/auth/refresh', { refresh_token: refreshToken });
-      const { access_token, refresh_token, expires_in } = response.data;
+      const response = await this.client.post('/auth/refresh');
+      const { access_token, expires_in } = response.data;
 
       if (!access_token) {
         throw new Error('No access token received from refresh');
       }
 
       localStorage.setItem('access_token', access_token);
-      if (refresh_token) {
-        localStorage.setItem('refresh_token', refresh_token);
-      }
+      localStorage.removeItem('refresh_token');
       localStorage.setItem('token_expires_at', String(Date.now() + expires_in * 1000));
     } catch (error) {
       this.clearTokens();

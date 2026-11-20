@@ -53,20 +53,20 @@ describe('apiService', () => {
     expect(config.headers['X-Request-ID']).toBeTruthy();
   });
 
-  it('login 成功存储三个 token 字段', async () => {
+  it('login 成功存储 access_token，refresh_token 走 cookie 不落盘', async () => {
     mockClient.post.mockResolvedValue({
-      data: { access_token: 'at', refresh_token: 'rt', expires_in: 900 },
+      data: { access_token: 'at', expires_in: 900 },
     });
     const result = await apiService.login('a@b.c', 'pass');
     expect(result.access_token).toBe('at');
     expect(localStorage.getItem('access_token')).toBe('at');
-    expect(localStorage.getItem('refresh_token')).toBe('rt');
+    expect(localStorage.getItem('refresh_token')).toBeNull();
     expect(localStorage.getItem('token_expires_at')).toBeTruthy();
     expect(apiService.isTokenExpired()).toBe(false);
   });
 
   it('login 缺少 token 时抛错且不落盘', async () => {
-    mockClient.post.mockResolvedValue({ data: { access_token: 'at' } });
+    mockClient.post.mockResolvedValue({ data: { expires_in: 900 } });
     await expect(apiService.login('a@b.c', 'pass')).rejects.toThrow('No tokens received');
     expect(localStorage.getItem('access_token')).toBeNull();
   });
@@ -80,15 +80,14 @@ describe('apiService', () => {
   });
 
   it('401 时自动刷新 token 并重试原请求', async () => {
-    localStorage.setItem('refresh_token', 'rt-old');
     mockClient.post.mockResolvedValue({
-      data: { access_token: 'at-new', refresh_token: 'rt-new', expires_in: 900 },
+      data: { access_token: 'at-new', expires_in: 900 },
     });
 
     const error = { response: { status: 401 }, config: { headers: {} as any } };
     const result = await responseErrorHandler(error);
 
-    expect(mockClient.post).toHaveBeenCalledWith('/auth/refresh', { refresh_token: 'rt-old' });
+    expect(mockClient.post).toHaveBeenCalledWith('/auth/refresh');
     expect(localStorage.getItem('access_token')).toBe('at-new');
     expect(result.data.retried).toBe(true);
   });
