@@ -108,9 +108,9 @@ func globalRateLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip := getClientIP(r)
 
+		// 仅在限流判定期间持锁；绝不能带着锁调用 next.ServeHTTP——
+		// WebSocket 等长连接 handler 会长期占用锁，阻塞整个服务的后续请求
 		ipMutex.Lock()
-		defer ipMutex.Unlock()
-
 		now := time.Now()
 
 		// 清理过期请求记录
@@ -122,6 +122,8 @@ func globalRateLimitMiddleware(next http.Handler) http.Handler {
 		}
 
 		if len(validRequests) >= globalRateLimit {
+			ipRequests[ip] = validRequests
+			ipMutex.Unlock()
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Retry-After", "60")
 			w.WriteHeader(http.StatusTooManyRequests)
@@ -132,6 +134,8 @@ func globalRateLimitMiddleware(next http.Handler) http.Handler {
 		}
 
 		ipRequests[ip] = append(validRequests, now)
+		ipMutex.Unlock()
+
 		next.ServeHTTP(w, r)
 	})
 }
