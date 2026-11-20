@@ -119,11 +119,11 @@ func TestHeadersMiddleware(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	expected := map[string]string{
-		"X-Content-Type-Options":   "nosniff",
-		"X-Frame-Options":          "DENY",
-		"X-XSS-Protection":         "1; mode=block",
-		"Content-Security-Policy":  "default-src 'self'",
-		"Cache-Control":            "no-store, no-cache, must-revalidate",
+		"X-Content-Type-Options":    "nosniff",
+		"X-Frame-Options":           "DENY",
+		"X-XSS-Protection":          "1; mode=block",
+		"Content-Security-Policy":   "default-src 'self'",
+		"Cache-Control":             "no-store, no-cache, must-revalidate",
 		"Strict-Transport-Security": "max-age=31536000; includeSubDomains",
 	}
 	for k, v := range expected {
@@ -222,7 +222,7 @@ func TestAdminMiddleware(t *testing.T) {
 			}))
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			if tt.role != "" {
-				req = req.WithContext(context.WithValue(req.Context(), "role", tt.role))
+				req = req.WithContext(context.WithValue(req.Context(), ctxKeyRole, tt.role))
 			}
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
@@ -265,9 +265,9 @@ func TestContextHelpers(t *testing.T) {
 	if got := getUserIDFromContext(ctx); got != "" {
 		t.Errorf("空上下文 userID 应为空串, got %q", got)
 	}
-	ctx = context.WithValue(ctx, "userID", "42")
-	ctx = context.WithValue(ctx, "email", "a@b.c")
-	ctx = context.WithValue(ctx, "role", "admin")
+	ctx = context.WithValue(ctx, ctxKeyUserID, "42")
+	ctx = context.WithValue(ctx, ctxKeyEmail, "a@b.c")
+	ctx = context.WithValue(ctx, ctxKeyRole, "admin")
 	if getUserIDFromContext(ctx) != "42" || getEmailFromContext(ctx) != "a@b.c" || getRoleFromContext(ctx) != "admin" {
 		t.Error("上下文取值与写入不一致")
 	}

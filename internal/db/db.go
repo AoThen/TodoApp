@@ -239,7 +239,7 @@ func seedIfEmpty() {
 		}
 		userID, _ := res.LastInsertId()
 		// sample task
-		DB.Exec("INSERT INTO tasks (user_id, local_id, server_version, title, status, created_at, updated_at, last_modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", userID, "sample-1", 0, "Sample Task", "todo", now, now, now)
+		_, _ = DB.Exec("INSERT INTO tasks (user_id, local_id, server_version, title, status, created_at, updated_at, last_modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", userID, "sample-1", 0, "Sample Task", "todo", now, now, now)
 
 		// Initialize default system config
 		initSystemConfig(now)
@@ -264,7 +264,7 @@ func initSystemConfig(now time.Time) {
 	}
 
 	for _, cfg := range configs {
-		DB.Exec("INSERT OR IGNORE INTO system_config (key, value, description, updated_at) VALUES (?, ?, ?, ?)",
+		_, _ = DB.Exec("INSERT OR IGNORE INTO system_config (key, value, description, updated_at) VALUES (?, ?, ?, ?)",
 			cfg.key, cfg.value, cfg.description, now)
 	}
 }
@@ -365,17 +365,19 @@ func IsAccountLocked(email string) (bool, time.Time, error) {
 }
 
 // RecordFailedLogin 记录失败的登录尝试
-func RecordFailedLogin(email string) error {
+// maxAttempts：允许的最大失败次数（达到即锁定）；lockout：锁定时长
+func RecordFailedLogin(email string, maxAttempts int, lockout time.Duration) error {
+	lockoutModifier := fmt.Sprintf("+%d seconds", int(lockout.Seconds()))
 	_, err := DB.Exec(`
 		UPDATE users
 		SET failed_attempts = COALESCE(failed_attempts, 0) + 1,
 		    locked_until = CASE
-		        WHEN COALESCE(failed_attempts, 0) + 1 >= 5
-		        THEN datetime('now', '+30 minutes')
+		        WHEN COALESCE(failed_attempts, 0) + 1 >= ?
+		        THEN datetime('now', ?)
 		        ELSE locked_until
 		    END
 		WHERE email = ?
-	`, email)
+	`, maxAttempts, lockoutModifier, email)
 	return err
 }
 
@@ -612,13 +614,13 @@ func GetTasksPaginated(userID int, page, pageSize int) ([]map[string]interface{}
 
 // GetTasksFiltered 支持筛选、搜索、排序的分页查询
 func GetTasksFiltered(userID int, page, pageSize int, status, priority, search, sortBy, sortOrder string) ([]map[string]interface{}, int, error) {
-	offset := (page - 1) * pageSize
 	if page < 1 {
 		page = 1
 	}
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 20
 	}
+	offset := (page - 1) * pageSize
 
 	whereClause := "WHERE user_id = ? AND is_deleted = 0"
 	args := []interface{}{userID}
@@ -1483,6 +1485,21 @@ func CleanupExpiredNotifications() (int64, error) {
 	result, err := DB.Exec(
 		"DELETE FROM notifications WHERE expires_at IS NOT NULL AND expires_at < ?",
 		time.Now().UTC().Format("2006-01-02 15:04:05"),
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// CleanupNotificationsOlderThan 清理创建时间超过 retentionDays 天的通知（保留期策略）
+func CleanupNotificationsOlderThan(retentionDays int) (int64, error) {
+	if retentionDays <= 0 {
+		return 0, nil
+	}
+	result, err := DB.Exec(
+		"DELETE FROM notifications WHERE created_at < datetime('now', ?)",
+		fmt.Sprintf("-%d days", retentionDays),
 	)
 	if err != nil {
 		return 0, err

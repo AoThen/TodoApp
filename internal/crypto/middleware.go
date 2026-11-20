@@ -103,7 +103,7 @@ func (em *EncryptionMiddleware) WrapResponseWriter(next http.Handler) http.Handl
 
 			w.Header().Set("Content-Type", "application/octet-stream")
 			w.Header().Set("X-Encrypted", "true")
-			w.Write(encrypted)
+			_, _ = w.Write(encrypted)
 		}
 	})
 }
@@ -175,7 +175,7 @@ func (em *EncryptionMiddleware) EncryptResponse(next http.Handler) http.Handler 
 
 			w.Header().Set("Content-Type", "application/octet-stream")
 			w.Header().Set("X-Encrypted", "true")
-			w.Write(encrypted)
+			_, _ = w.Write(encrypted)
 		}
 	})
 }
@@ -233,7 +233,7 @@ func (eh *encryptionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 			w.Header().Set("Content-Type", "application/octet-stream")
 			w.Header().Set("X-Encrypted", "true")
-			w.Write(encrypted)
+			_, _ = w.Write(encrypted)
 		}
 	} else {
 		eh.next.ServeHTTP(w, r)

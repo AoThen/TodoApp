@@ -267,7 +267,7 @@ func handleBatchDeleteTasks(w http.ResponseWriter, r *http.Request, wsHub *wscli
 	}
 
 	// 发送通知
-	sendNotificationToUser(userID, "tasks_deleted", "任务已删除", fmt.Sprintf("已删除 %d 个任务，30秒内可撤销", count), "normal", wsHub)
+	_, _ = sendNotificationToUser(userID, "tasks_deleted", "任务已删除", fmt.Sprintf("已删除 %d 个任务，30秒内可撤销", count), "normal", wsHub)
 
 	response.SuccessResponse(w, map[string]interface{}{
 		"status":              "deleted",

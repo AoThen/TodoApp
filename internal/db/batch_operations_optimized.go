@@ -19,9 +19,9 @@ func BatchDeleteTasksOptimized(userID int, taskIDs []int64) (int, error) {
 	}
 	defer func() {
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 		} else {
-			tx.Commit()
+			_ = tx.Commit()
 		}
 	}()
 

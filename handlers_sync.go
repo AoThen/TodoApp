@@ -16,6 +16,13 @@ import (
 	wsclient "todoapp/internal/websocket"
 )
 
+// conflictRecord 待记录的同步冲突（事务提交后统一落库，避免事务内跨连接写锁竞争）
+type conflictRecord struct {
+	localID  string
+	serverID int64
+	reason   string
+}
+
 func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 	var s syncReq
 	if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
@@ -47,15 +54,14 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 	}
 	defer func() {
 		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
+			_ = tx.Rollback()
 		}
 	}()
 
 	serverChanges := []map[string]interface{}{}
 	clientChanges := []map[string]interface{}{}
 	conflicts := []map[string]interface{}{}
+	pendingConflicts := []conflictRecord{}
 	syncFailed := false
 
 	for _, c := range s.Changes {
@@ -100,8 +106,8 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 							"local_id": c.LocalID, "server_id": serverID, "op": "insert",
 						})
 
-						// 记录冲突
-						recordConflict(c.LocalID, existingID, "duplicate_insert", userID)
+						// 记录冲突（事务提交后落库）
+						pendingConflicts = append(pendingConflicts, conflictRecord{localID: c.LocalID, serverID: existingID, reason: "duplicate_insert"})
 						conflicts = append(conflicts, map[string]interface{}{
 							"local_id":  c.LocalID,
 							"server_id": existingID,
@@ -201,8 +207,8 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 							"local_id": c.LocalID, "server_id": id, "op": "update",
 						})
 
-						// 记录冲突
-						recordConflict(c.LocalID, id, "intelligent_merge", userID)
+						// 记录冲突（事务提交后落库）
+						pendingConflicts = append(pendingConflicts, conflictRecord{localID: c.LocalID, serverID: id, reason: "intelligent_merge"})
 						conflicts = append(conflicts, map[string]interface{}{
 							"local_id":   c.LocalID,
 							"server_id":  id,
@@ -287,8 +293,8 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 								"local_id": c.LocalID, "server_id": id, "op": "delete",
 							})
 
-							// 记录冲突：服务器被标记为删除
-							recordConflict(c.LocalID, id, "delete_while_modified", userID)
+							// 记录冲突：服务器被标记为删除（事务提交后落库）
+							pendingConflicts = append(pendingConflicts, conflictRecord{localID: c.LocalID, serverID: id, reason: "delete_while_modified"})
 							conflicts = append(conflicts, map[string]interface{}{
 								"local_id":  c.LocalID,
 								"server_id": id,
@@ -315,13 +321,25 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 		}
 	}
 
+	// ✅ 显式提交事务
+	if err = tx.Commit(); err != nil {
+		log.Printf("事务提交失败: %v", err)
+		response.ErrorResponse(w, "同步失败", http.StatusInternalServerError)
+		return
+	}
+
+	// 事务提交后统一记录冲突，避免事务内跨连接写 conflicts 表的锁竞争
+	for _, pc := range pendingConflicts {
+		recordConflict(pc.localID, pc.serverID, pc.reason, userID)
+	}
+
 	// 发送同步结果通知
 	if syncFailed {
-		sendNotificationToUser(userID, "sync_failed", "同步失败", "部分任务同步失败，请检查网络连接", "high", wsHub)
+		_, _ = sendNotificationToUser(userID, "sync_failed", "同步失败", "部分任务同步失败，请检查网络连接", "high", wsHub)
 	} else if len(conflicts) > 0 {
-		sendNotificationToUser(userID, "sync_conflict", "同步完成但存在冲突", fmt.Sprintf("成功同步 %d 个任务，但检测到 %d 个冲突", len(clientChanges), len(conflicts)), "high", wsHub)
+		_, _ = sendNotificationToUser(userID, "sync_conflict", "同步完成但存在冲突", fmt.Sprintf("成功同步 %d 个任务，但检测到 %d 个冲突", len(clientChanges), len(conflicts)), "high", wsHub)
 	} else if len(clientChanges) > 0 {
-		sendNotificationToUser(userID, "sync_success", "同步完成", fmt.Sprintf("成功同步 %d 个任务", len(clientChanges)), "normal", wsHub)
+		_, _ = sendNotificationToUser(userID, "sync_success", "同步完成", fmt.Sprintf("成功同步 %d 个任务", len(clientChanges)), "normal", wsHub)
 	}
 
 	resp := map[string]interface{}{
@@ -331,7 +349,7 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 		"conflicts":      conflicts, // ✅ 返回实际冲突
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // handleInitPairing 初始化配对，请求服务器生成配对密钥

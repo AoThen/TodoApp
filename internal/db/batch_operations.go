@@ -28,7 +28,7 @@ func RestoreDeletedTask(taskID int64, userID int) error {
 	// 2. 检查30秒期限
 	if time.Since(deletedAt) > 30*time.Second {
 		// 标记为不可恢复
-		DB.Exec("UPDATE deleted_tasks SET is_restorable=0 WHERE task_id=? AND user_id=?", taskID, userID)
+		_, _ = DB.Exec("UPDATE deleted_tasks SET is_restorable=0 WHERE task_id=? AND user_id=?", taskID, userID)
 		return &UndoExpiredError{}
 	}
 

@@ -48,10 +48,10 @@ func TestIntelligentMergeDescriptionConcat(t *testing.T) {
 
 func TestIntelligentMergeDescriptionFallbacks(t *testing.T) {
 	cases := []struct {
-		name        string
-		serverDesc  string
-		clientDesc  string
-		want        string
+		name       string
+		serverDesc string
+		clientDesc string
+		want       string
 	}{
 		{"客户端为空保持服务端", "服务端", "", "服务端"},
 		{"服务端为空取客户端", "", "客户端", "客户端"},

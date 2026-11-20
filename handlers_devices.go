@@ -72,7 +72,7 @@ func handleInitPairing(w http.ResponseWriter, r *http.Request) {
 
 func generateDeviceID(deviceType string) string {
 	bytes := make([]byte, 8)
-	rand.Read(bytes)
+	_, _ = rand.Read(bytes)
 	return fmt.Sprintf("%s-%s", deviceType, hex.EncodeToString(bytes))
 }
 

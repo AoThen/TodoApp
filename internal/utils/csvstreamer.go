@@ -27,19 +27,19 @@ func (cs *CSVStreamer) WriteHeader(headers []string) error {
 // WriteRow 流式写入单行数据
 func (cs *CSVStreamer) WriteRow(task map[string]interface{}) error {
 	row := []string{
-		EscapeCSV(task["id"]),
-		EscapeCSV(task["local_id"]),
-		EscapeCSV(task["server_version"]),
-		EscapeCSV(task["title"]),
-		EscapeCSV(task["description"]),
-		EscapeCSV(task["status"]),
-		EscapeCSV(task["priority"]),
-		EscapeCSV(task["due_at"]),
-		EscapeCSV(task["created_at"]),
-		EscapeCSV(task["updated_at"]),
-		EscapeCSV(task["completed_at"]),
-		EscapeCSV(task["is_deleted"]),
-		EscapeCSV(task["last_modified"]),
+		toCSVCell(task["id"]),
+		toCSVCell(task["local_id"]),
+		toCSVCell(task["server_version"]),
+		toCSVCell(task["title"]),
+		toCSVCell(task["description"]),
+		toCSVCell(task["status"]),
+		toCSVCell(task["priority"]),
+		toCSVCell(task["due_at"]),
+		toCSVCell(task["created_at"]),
+		toCSVCell(task["updated_at"]),
+		toCSVCell(task["completed_at"]),
+		toCSVCell(task["is_deleted"]),
+		toCSVCell(task["last_modified"]),
 	}
 
 	if err := cs.writer.Write(row); err != nil {
@@ -53,6 +53,23 @@ func (cs *CSVStreamer) WriteRow(task map[string]interface{}) error {
 	}
 
 	return nil
+}
+
+// toCSVCell 将字段值转为字符串并做公式注入防护；CSV 结构转义（逗号/引号/换行）统一交给 csv.Writer
+func toCSVCell(value interface{}) string {
+	return sanitizeCSVFormula(convertToString(value))
+}
+
+// sanitizeCSVFormula 防护 Excel/WPS 公式注入：以 = + - @ \t \r 开头的值前缀单引号，使其按文本处理
+func sanitizeCSVFormula(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
 }
 
 // WriteRows 批量写入行数据

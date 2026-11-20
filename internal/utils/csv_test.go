@@ -91,21 +91,56 @@ func TestCSVStreamerEscapesSpecialChars(t *testing.T) {
 	if err != nil {
 		t.Fatalf("写出内容无法解析: %v", err)
 	}
-	// 已知现状：WriteRow 先经 EscapeCSV 转义、csv.Writer 再次包裹，存在双重转义；
-	// 解析结果等于 EscapeCSV 输出而非原始值。此处固化当前行为。
-	if parsed[3] != EscapeCSV("a,\"b\"\nc") {
-		t.Errorf("特殊字符字段与当前转义行为不一致: %q", parsed[3])
+	// WriteRow 仅做公式注入防护，结构转义由 csv.Writer 单次完成，解析应还原原始值
+	if parsed[3] != "a,\"b\"\nc" {
+		t.Errorf("特殊字符字段应被单次转义并可解析还原: %q", parsed[3])
 	}
 
-	// 已知现状：以 = 开头的公式字符串不会被转义（无 CSV 注入防护），此处仅固化行为
+	// 以 = 开头的公式字符串应被前缀单引号，防止 Excel/WPS 公式注入
 	var buf2 strings.Builder
 	cs2 := NewCSVStreamer(&buf2)
 	if err := cs2.WriteRow(map[string]interface{}{"id": 2, "title": "=SUM(A1)", "status": "todo"}); err != nil {
 		t.Fatal(err)
 	}
 	cs2.Close()
-	if !strings.Contains(buf2.String(), "=SUM(A1)") {
-		t.Error("当前行为：公式字符串原样输出")
+	if !strings.Contains(buf2.String(), "'=SUM(A1)") {
+		t.Errorf("公式字符串应被前缀单引号防护: %q", buf2.String())
+	}
+}
+
+func TestSanitizeCSVFormula(t *testing.T) {
+	cases := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{"空串", "", ""},
+		{"普通文本", "写周报", "写周报"},
+		{"等号公式", "=SUM(A1)", "'=SUM(A1)"},
+		{"加号公式", "+cmd|'/C calc'", "'+cmd|'/C calc'"},
+		{"减号公式", "-2+3", "'-2+3"},
+		{"@宏", "@SUM(1)", "'@SUM(1)"},
+		{"制表符开头", "\ttab", "'\ttab"},
+		{"回车开头", "\rcr", "'\rcr"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := sanitizeCSVFormula(c.value); got != c.want {
+				t.Errorf("sanitizeCSVFormula(%q) = %q, want %q", c.value, got, c.want)
+			}
+		})
+	}
+}
+
+func TestToCSVCell(t *testing.T) {
+	if got := toCSVCell(42); got != "42" {
+		t.Errorf("toCSVCell(42) = %q, want %q", got, "42")
+	}
+	if got := toCSVCell(nil); got != "" {
+		t.Errorf("toCSVCell(nil) = %q, want 空串", got)
+	}
+	if got := toCSVCell("-1"); got != "'-1" {
+		t.Errorf("toCSVCell(\"-1\") = %q, want %q（负数前缀防护）", got, "'-1")
 	}
 }
 
@@ -138,10 +173,10 @@ func TestEscapeCSV(t *testing.T) {
 
 func TestCalculatePagination(t *testing.T) {
 	cases := []struct {
-		name                     string
-		page, pageSize, total    int
-		offset, totalPages       int
-		hasPrev, hasNext         bool
+		name                  string
+		page, pageSize, total int
+		offset, totalPages    int
+		hasPrev, hasNext      bool
 	}{
 		{"正常中间页", 2, 10, 25, 10, 3, true, true},
 		{"首页", 1, 10, 25, 0, 3, false, true},

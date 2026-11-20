@@ -18,6 +18,15 @@ import (
 	"todoapp/internal/response"
 )
 
+// contextKey 自定义 context key 类型，避免使用内置 string 作为 key 产生碰撞
+type contextKey string
+
+const (
+	ctxKeyUserID contextKey = "userID"
+	ctxKeyEmail  contextKey = "email"
+	ctxKeyRole   contextKey = "role"
+)
+
 func checkRateLimit(ip string) bool {
 	attemptsMutex.Lock()
 	defer attemptsMutex.Unlock()
@@ -116,7 +125,7 @@ func globalRateLimitMiddleware(next http.Handler) http.Handler {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Retry-After", "60")
 			w.WriteHeader(http.StatusTooManyRequests)
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"error": "请求过于频繁，请稍后再试",
 			})
 			return
@@ -213,9 +222,9 @@ func authMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Store user ID, email and role in context for handlers to use
-		ctx := context.WithValue(r.Context(), "userID", claims.UserID)
-		ctx = context.WithValue(ctx, "email", claims.Email)
-		ctx = context.WithValue(ctx, "role", role)
+		ctx := context.WithValue(r.Context(), ctxKeyUserID, claims.UserID)
+		ctx = context.WithValue(ctx, ctxKeyEmail, claims.Email)
+		ctx = context.WithValue(ctx, ctxKeyRole, role)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -224,7 +233,7 @@ func authMiddleware(next http.Handler) http.Handler {
 
 func adminMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		role, ok := r.Context().Value("role").(string)
+		role, ok := r.Context().Value(ctxKeyRole).(string)
 		if !ok || role != "admin" {
 			log.Printf("Unauthorized admin access attempt from user with role: %v", role)
 			response.ErrorResponse(w, "禁止访问：需要管理员权限", http.StatusForbidden)
@@ -257,14 +266,14 @@ func webSocketEncryptionMiddleware(enforceEncryption bool) func(http.Handler) ht
 }
 
 func getUserIDFromContext(ctx context.Context) string {
-	if id, ok := ctx.Value("userID").(string); ok {
+	if id, ok := ctx.Value(ctxKeyUserID).(string); ok {
 		return id
 	}
 	return ""
 }
 
 func getRoleFromContext(ctx context.Context) string {
-	if role, ok := ctx.Value("role").(string); ok {
+	if role, ok := ctx.Value(ctxKeyRole).(string); ok {
 		return role
 	}
 	return ""
@@ -278,7 +287,7 @@ type loginReq struct {
 }
 
 func getEmailFromContext(ctx context.Context) string {
-	if email, ok := ctx.Value("email").(string); ok {
+	if email, ok := ctx.Value(ctxKeyEmail).(string); ok {
 		return email
 	}
 	return ""

@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -63,18 +64,17 @@ func (c *Client) ReadPump() {
 	}()
 
 	c.conn.SetReadLimit(maxMessageSize)
-	c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error {
-		c.conn.SetReadDeadline(time.Now().Add(pongWait))
+		_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
 
 	for {
 		messageType, message, err := c.conn.ReadMessage()
 		if err != nil {
-			if gorillawebsocket.IsUnexpectedCloseError(err, gorillawebsocket.CloseGoingAway, gorillawebsocket.CloseAbnormalClosure) {
-				// Log error but don't crash
-			}
+			// 读取失败（含意外关闭）仅记录，不中断流程
+			log.Printf("websocket 读取错误: %v", err)
 			break
 		}
 
@@ -96,9 +96,9 @@ func (c *Client) WritePump() {
 	for {
 		select {
 		case message, ok := <-c.send:
-			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
-				c.conn.WriteMessage(gorillawebsocket.CloseMessage, []byte{})
+				_ = c.conn.WriteMessage(gorillawebsocket.CloseMessage, []byte{})
 				return
 			}
 
@@ -181,10 +181,9 @@ func (c *Client) handleHandshake(data []byte) error {
 
 // sendPing 发送ping
 func (c *Client) sendPing() {
-	c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-	if err := c.conn.WriteMessage(gorillawebsocket.PingMessage, nil); err != nil {
-		// Log error
-	}
+	_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+	// 发送失败仅忽略，连接生命周期由读写循环管理
+	_ = c.conn.WriteMessage(gorillawebsocket.PingMessage, nil)
 }
 
 // sendPong 发送pong
@@ -193,7 +192,7 @@ func (c *Client) sendPong() {
 		Type:      "pong",
 		Timestamp: time.Now().Format(time.RFC3339),
 	}
-	c.SendMessage(msg)
+	_ = c.SendMessage(msg)
 }
 
 // sendError 发送错误消息
@@ -203,7 +202,7 @@ func (c *Client) sendError(errMsg string) {
 		Data:      map[string]interface{}{"error": errMsg},
 		Timestamp: time.Now().Format(time.RFC3339),
 	}
-	c.SendMessage(msg)
+	_ = c.SendMessage(msg)
 }
 
 // SendMessage 发送消息（自动加密）

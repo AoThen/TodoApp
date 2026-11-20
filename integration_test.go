@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"todoapp/internal/db"
 	wsclient "todoapp/internal/websocket"
@@ -124,7 +125,7 @@ func cleanTables(t *testing.T) {
 			"DELETE FROM login_logs", "DELETE FROM admin_logs", "DELETE FROM deleted_tasks",
 			"DELETE FROM system_config", "DELETE FROM sync_meta",
 		} {
-			db.DB.Exec(q)
+			_, _ = db.DB.Exec(q)
 		}
 		resetRateLimitState()
 	})
@@ -153,7 +154,7 @@ func doJSON(t *testing.T, method, path, token string, body interface{}) (*http.R
 	}
 	defer resp.Body.Close()
 	var out map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&out)
+	_ = json.NewDecoder(resp.Body).Decode(&out)
 	return resp, out
 }
 
@@ -241,10 +242,10 @@ func TestLoginSuccess(t *testing.T) {
 func TestLoginFailures(t *testing.T) {
 	cleanTables(t)
 	cases := []struct {
-		name    string
-		email   string
-		pass    string
-		want    int
+		name  string
+		email string
+		pass  string
+		want  int
 	}{
 		{"密码错误", "user@test.local", "WrongP@ss1", http.StatusUnauthorized},
 		{"邮箱不存在", "ghost@test.local", testPassword, http.StatusUnauthorized},
@@ -293,7 +294,7 @@ func TestAccountLockout(t *testing.T) {
 		t.Fatalf("创建锁定测试用户失败: %v", err)
 	}
 	for i := 0; i < 5; i++ {
-		db.RecordFailedLogin("lock@test.local")
+		_ = db.RecordFailedLogin("lock@test.local", 5, 30*time.Minute)
 	}
 	body, _ := json.Marshal(map[string]string{"email": "lock@test.local", "password": testPassword})
 	resp, err := http.Post(testTS.URL+"/api/v1/auth/login", "application/json", bytes.NewReader(body))
@@ -355,7 +356,7 @@ func TestRefreshTokenRotation(t *testing.T) {
 			AccessToken string `json:"access_token"`
 		} `json:"data"`
 	}
-	json.NewDecoder(resp3.Body).Decode(&out)
+	_ = json.NewDecoder(resp3.Body).Decode(&out)
 	if out.Data.AccessToken == "" {
 		t.Error("刷新应返回新 access_token")
 	}
@@ -451,7 +452,7 @@ func TestTaskCRUD(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || dataMap(out)["is_deleted"] != true {
 		t.Errorf("软删除后单查应 200 且 is_deleted=true, got %d %v", resp.StatusCode, dataMap(out))
 	}
-	resp, out = doJSON(t, http.MethodGet, "/api/v1/tasks", userTok, nil)
+	_, out = doJSON(t, http.MethodGet, "/api/v1/tasks", userTok, nil)
 	if tasks, _ := dataMap(out)["tasks"].([]interface{}); len(tasks) != 2 {
 		t.Errorf("软删除后列表应只剩 2 条, got %v", dataMap(out))
 	}
@@ -572,7 +573,7 @@ func TestSyncInsertDelta(t *testing.T) {
 		t.Fatalf("insert delta 应产生 1 条 server_change 与 1 条 client_change: %v", out)
 	}
 	// 落库可见
-	resp, out = doJSON(t, http.MethodGet, "/api/v1/tasks", userTok, nil)
+	_, out = doJSON(t, http.MethodGet, "/api/v1/tasks", userTok, nil)
 	tasks, _ := dataMap(out)["tasks"].([]interface{})
 	if len(tasks) != 1 {
 		t.Fatalf("同步后应能查到任务, got %v", tasks)
@@ -612,7 +613,7 @@ func TestSyncUpdateConflictIntelligentMerge(t *testing.T) {
 				"payload":        map[string]interface{}{"title": "服务器标题", "description": "服务器描述", "status": "in_progress", "priority": "medium"},
 				"client_version": 0},
 		}})
-	resp, out := doJSON(t, http.MethodGet, "/api/v1/tasks", userTok, nil)
+	_, out := doJSON(t, http.MethodGet, "/api/v1/tasks", userTok, nil)
 	tasks, _ := dataMap(out)["tasks"].([]interface{})
 	if len(tasks) != 1 {
 		t.Fatalf("sync insert 后应能查到 1 个任务, got %v", dataMap(out))
@@ -622,7 +623,7 @@ func TestSyncUpdateConflictIntelligentMerge(t *testing.T) {
 	serverVersion := task["server_version"].(float64)
 
 	// 用过期的 client_version 推送更新 → 冲突合并
-	resp, out = doJSON(t, http.MethodPost, "/api/v1/sync", userTok,
+	resp, out := doJSON(t, http.MethodPost, "/api/v1/sync", userTok,
 		map[string]interface{}{"last_sync_at": "", "changes": []map[string]interface{}{
 			{"local_id": "local-merge", "op": "update",
 				"payload":        map[string]interface{}{"id": serverID, "title": "客户端标题", "description": "客户端描述", "status": "done"},
@@ -637,7 +638,7 @@ func TestSyncUpdateConflictIntelligentMerge(t *testing.T) {
 	}
 
 	// 合并结果：标题服务器优先、状态取优先级高者（done）
-	resp, out = doJSON(t, http.MethodGet, fmt.Sprintf("/api/v1/tasks/%v", serverID), userTok, nil)
+	_, out = doJSON(t, http.MethodGet, fmt.Sprintf("/api/v1/tasks/%v", serverID), userTok, nil)
 	merged := dataMap(out)
 	if merged["title"] != "服务器标题" {
 		t.Errorf("合并后标题应服务器优先: %v", merged)
@@ -655,7 +656,7 @@ func TestSyncUpdateNoConflict(t *testing.T) {
 				"payload":        map[string]interface{}{"title": "原标题", "status": "todo", "priority": "low"},
 				"client_version": 0},
 		}})
-	resp, out := doJSON(t, http.MethodGet, "/api/v1/tasks", userTok, nil)
+	_, out := doJSON(t, http.MethodGet, "/api/v1/tasks", userTok, nil)
 	tasks, _ := dataMap(out)["tasks"].([]interface{})
 	if len(tasks) != 1 {
 		t.Fatalf("sync insert 后应能查到 1 个任务, got %v", dataMap(out))
@@ -665,7 +666,7 @@ func TestSyncUpdateNoConflict(t *testing.T) {
 	serverVersion := int(task["server_version"].(float64))
 
 	// 带正确 client_version 的更新 → 无冲突
-	resp, out = doJSON(t, http.MethodPost, "/api/v1/sync", userTok,
+	resp, out := doJSON(t, http.MethodPost, "/api/v1/sync", userTok,
 		map[string]interface{}{"last_sync_at": "", "changes": []map[string]interface{}{
 			{"local_id": "local-ok", "op": "update",
 				"payload":        map[string]interface{}{"id": serverID, "title": "新标题", "status": "done"},
@@ -677,7 +678,7 @@ func TestSyncUpdateNoConflict(t *testing.T) {
 	if conflicts, _ := out["conflicts"].([]interface{}); len(conflicts) != 0 {
 		t.Errorf("版本匹配不应有冲突: %v", out)
 	}
-	resp, out = doJSON(t, http.MethodGet, fmt.Sprintf("/api/v1/tasks/%v", serverID), userTok, nil)
+	_, out = doJSON(t, http.MethodGet, fmt.Sprintf("/api/v1/tasks/%v", serverID), userTok, nil)
 	if dataMap(out)["title"] != "新标题" || dataMap(out)["status"] != "done" {
 		t.Errorf("正常更新未生效: %v", out)
 	}

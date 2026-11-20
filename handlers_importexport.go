@@ -11,6 +11,7 @@ import (
 )
 
 import (
+	"todoapp/internal/config"
 	"todoapp/internal/db"
 	"todoapp/internal/response"
 	"todoapp/internal/utils"
@@ -214,15 +215,26 @@ func handleExport(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Disposition", "attachment;filename=tasks.json")
 
-		w.Write([]byte("[\n"))
+		streaming := config.EnvBool("EXPORT_STREAMING_ENABLED", true)
+		var buffered []map[string]interface{}
 		first := true
+		writeJSONTask := func(task map[string]interface{}) error {
+			if !first {
+				_, _ = w.Write([]byte(",\n"))
+			}
+			first = false
+			return json.NewEncoder(w).Encode(task)
+		}
+
+		_, _ = w.Write([]byte("[\n"))
 		if err := db.GetTasksStreaming(userIDInt, 100, func(batch []map[string]interface{}) error {
+			if !streaming {
+				// 非流式模式：全部载入内存后统一写出
+				buffered = append(buffered, batch...)
+				return nil
+			}
 			for _, task := range batch {
-				if !first {
-					w.Write([]byte(",\n"))
-				}
-				first = false
-				if err := json.NewEncoder(w).Encode(task); err != nil {
+				if err := writeJSONTask(task); err != nil {
 					return err
 				}
 			}
@@ -231,9 +243,21 @@ func handleExport(w http.ResponseWriter, r *http.Request) {
 			response.ErrorResponse(w, "导出错误", http.StatusInternalServerError)
 			return
 		}
-		w.Write([]byte("\n]"))
+		if !streaming {
+			for _, task := range buffered {
+				if err := writeJSONTask(task); err != nil {
+					response.ErrorResponse(w, "导出错误", http.StatusInternalServerError)
+					return
+				}
+			}
+		}
+		_, _ = w.Write([]byte("\n]"))
 
-		log.Printf("用户 %d 流式导出任务到 JSON 格式", userIDInt)
+		if streaming {
+			log.Printf("用户 %d 流式导出任务到 JSON 格式", userIDInt)
+		} else {
+			log.Printf("用户 %d 导出任务到 JSON 格式（非流式，共 %d 条）", userIDInt, len(buffered))
+		}
 		return
 	}
 
@@ -242,9 +266,16 @@ func handleExport(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Disposition", "attachment;filename=tasks.csv")
 
 		// 写入UTF-8 BOM（Excel兼容）
-		w.Write([]byte{0xEF, 0xBB, 0xBF})
+		_, _ = w.Write([]byte{0xEF, 0xBB, 0xBF})
 
-		// 使用CSVStreamer进行流式写入
+		// 使用CSVStreamer进行流式写入（EXPORT_STREAMING_ENABLED=false 时先缓存再统一写出）
+		streaming := config.EnvBool("EXPORT_STREAMING_ENABLED", true)
+		var buffered []map[string]interface{}
+		normalizeTask := func(task map[string]interface{}) {
+			if task["description"] == nil {
+				task["description"] = ""
+			}
+		}
 		streamer := utils.NewCSVStreamer(w)
 		defer streamer.Close()
 
@@ -260,10 +291,12 @@ func handleExport(w http.ResponseWriter, r *http.Request) {
 
 		totalExported := 0
 		if err := db.GetTasksStreaming(userIDInt, 100, func(batch []map[string]interface{}) error {
+			if !streaming {
+				buffered = append(buffered, batch...)
+				return nil
+			}
 			for _, task := range batch {
-				if task["description"] == nil {
-					task["description"] = ""
-				}
+				normalizeTask(task)
 				if err := streamer.WriteRow(task); err != nil {
 					return err
 				}
@@ -273,6 +306,16 @@ func handleExport(w http.ResponseWriter, r *http.Request) {
 		}); err != nil {
 			response.ErrorResponse(w, "导出错误", http.StatusInternalServerError)
 			return
+		}
+		if !streaming {
+			for _, task := range buffered {
+				normalizeTask(task)
+				if err := streamer.WriteRow(task); err != nil {
+					response.ErrorResponse(w, "导出错误", http.StatusInternalServerError)
+					return
+				}
+			}
+			totalExported += len(buffered)
 		}
 
 		// 记录导出审计日志

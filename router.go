@@ -99,7 +99,7 @@ func buildRouter(wsHub *websocket.Hub, enforceWSEncryption bool, serverPort stri
 	corsHandler := handlers.CORS(
 		handlers.AllowedOrigins([]string{"http://localhost:3000", "http://localhost:" + serverPort}),
 		handlers.AllowedMethods([]string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}),
-		handlers.AllowedHeaders([]string{"Content-Type", "Authorization", "X-User-ID"}),
+		handlers.AllowedHeaders([]string{"Content-Type", "Authorization", "X-User-ID", "X-Request-ID"}),
 		handlers.AllowCredentials(),
 	)(router)
 

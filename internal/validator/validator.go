@@ -65,8 +65,5 @@ func IsValidTaskTitle(title string) bool {
 
 // IsValidTaskDescription 验证任务描述
 func IsValidTaskDescription(description string) bool {
-	if len(description) > 5000 {
-		return false
-	}
-	return true
+	return len(description) <= 5000
 }

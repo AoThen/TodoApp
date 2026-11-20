@@ -33,10 +33,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, wsHub *websocket.Hu
 	if token == "" {
 		token = r.URL.Query().Get("token")
 		if token == "" {
-			token = r.Header.Get("Authorization")
-			if strings.HasPrefix(token, "Bearer ") {
-				token = token[7:]
-			}
+			token = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		}
 	}
 

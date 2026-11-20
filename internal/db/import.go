@@ -24,9 +24,9 @@ func BatchInsertTasks(userID int, tasks []map[string]interface{}) ([]int64, erro
 	}
 	defer func() {
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 		} else {
-			tx.Commit()
+			_ = tx.Commit()
 		}
 	}()
 

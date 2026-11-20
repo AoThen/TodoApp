@@ -10,6 +10,7 @@ import (
 )
 
 import (
+	"todoapp/internal/config"
 	"todoapp/internal/crypto"
 	"todoapp/internal/db"
 	"todoapp/internal/response"
@@ -17,14 +18,18 @@ import (
 )
 
 const (
-	// Security constants - should be overridden via environment variables in production
-	defaultJWTSecret     = "change-this-in-production-use-environment-variable"
-	maxRequestBodySize   = 10 * 1024 * 1024 // 10MB
-	accessTokenDuration  = 15 * time.Minute
-	refreshTokenDuration = 7 * 24 * time.Hour
-	cookieSameSite       = http.SameSiteStrictMode
-	maxLoginAttempts     = 5
-	loginAttemptWindow   = 15 * time.Minute
+	defaultJWTSecret   = "change-this-in-production-use-environment-variable"
+	maxRequestBodySize = 10 * 1024 * 1024 // 10MB
+	cookieSameSite     = http.SameSiteStrictMode
+)
+
+// 安全与令牌相关配置：支持通过环境变量覆盖（详见 README 环境变量说明）
+var (
+	accessTokenDuration  = config.EnvDuration("ACCESS_TOKEN_DURATION", 15*time.Minute)
+	refreshTokenDuration = config.EnvDuration("REFRESH_TOKEN_DURATION", 7*24*time.Hour)
+	maxLoginAttempts     = config.EnvInt("MAX_LOGIN_ATTEMPTS", 5)
+	loginAttemptWindow   = config.EnvDuration("LOGIN_ATTEMPT_WINDOW", 15*time.Minute)
+	lockoutDuration      = config.EnvDuration("LOCKOUT_DURATION", 30*time.Minute)
 )
 
 // Rate limiting structures
@@ -112,6 +117,12 @@ func main() {
 	// 路由与中间件装配（与集成测试共享）
 	handler := buildRouter(wsHub, enforceWSEncryption, serverPort)
 
+	// 生产环境可选 HTTP→HTTPS 重定向（依赖反向代理设置 X-Forwarded-Proto）
+	if environment == "production" && config.EnvBool("AUTO_REDIRECT_HTTPS", false) {
+		handler = httpsRedirectMiddleware(handler)
+		log.Println("AUTO_REDIRECT_HTTPS 已启用：HTTP 请求将重定向到 HTTPS")
+	}
+
 	// Configure server with timeouts
 	serverAddr := ":" + serverPort
 	srv := &http.Server{
@@ -128,6 +139,17 @@ func main() {
 	}
 }
 
+// httpsRedirectMiddleware 将非 HTTPS 请求（依据 X-Forwarded-Proto）301 重定向到 HTTPS
+func httpsRedirectMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Forwarded-Proto") == "http" {
+			http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusMovedPermanently)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // securityMiddleware adds security headers and request validation
 
 func startCleanupTasks() {
@@ -140,14 +162,22 @@ func startCleanupTasks() {
 		}
 	}()
 
-	// 每天清理一次旧日志和删除记录
+	// 每天清理一次旧日志、删除记录与超过保留期的通知
 	dailyTicker := time.NewTicker(24 * time.Hour)
 	go func() {
 		for range dailyTicker.C {
-			db.CleanupOldLoginLogs()
+			if err := db.CleanupOldLoginLogs(); err != nil {
+				log.Printf("Failed to cleanup old login logs: %v", err)
+			}
 			count, _ := db.CleanupOldDeletedTasks()
 			if count > 0 {
 				log.Printf("Cleaned up %d old deleted_task records", count)
+			}
+			retentionDays := config.EnvInt("NOTIFICATION_RETENTION_DAYS", 30)
+			if n, err := db.CleanupNotificationsOlderThan(retentionDays); err != nil {
+				log.Printf("Failed to cleanup notifications older than %d days: %v", retentionDays, err)
+			} else if n > 0 {
+				log.Printf("Cleaned up %d notifications older than %d days", n, retentionDays)
 			}
 		}
 	}()

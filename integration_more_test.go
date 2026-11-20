@@ -39,7 +39,7 @@ func TestNotificationLifecycle(t *testing.T) {
 	}
 
 	// 未读数
-	resp, out = doJSON(t, http.MethodGet, "/api/v1/notifications/unread-count", userTok, nil)
+	_, out = doJSON(t, http.MethodGet, "/api/v1/notifications/unread-count", userTok, nil)
 	if resp.StatusCode != http.StatusOK || dataMap(out)["unread_count"].(float64) != 2 {
 		t.Errorf("未读数应为 2: %d %v", resp.StatusCode, out)
 	}
@@ -49,7 +49,7 @@ func TestNotificationLifecycle(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || dataMap(out)["status"] != "已标记为已读" {
 		t.Errorf("标记已读失败: %d %v", resp.StatusCode, out)
 	}
-	resp, out = doJSON(t, http.MethodGet, "/api/v1/notifications/unread-count", userTok, nil)
+	_, out = doJSON(t, http.MethodGet, "/api/v1/notifications/unread-count", userTok, nil)
 	if dataMap(out)["unread_count"].(float64) != 1 {
 		t.Errorf("标记后未读数应为 1: %v", out)
 	}
@@ -59,7 +59,7 @@ func TestNotificationLifecycle(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("全部已读应 200, got %d", resp.StatusCode)
 	}
-	resp, out = doJSON(t, http.MethodGet, "/api/v1/notifications/unread-count", userTok, nil)
+	_, out = doJSON(t, http.MethodGet, "/api/v1/notifications/unread-count", userTok, nil)
 	if dataMap(out)["unread_count"].(float64) != 0 {
 		t.Errorf("全部已读后未读数应为 0: %v", out)
 	}
@@ -129,7 +129,7 @@ func TestExportCSV(t *testing.T) {
 		t.Fatalf("CSV 导出应 200, got %d", resp.StatusCode)
 	}
 	buf := new(bytes.Buffer)
-	buf.ReadFrom(resp.Body)
+	_, _ = buf.ReadFrom(resp.Body)
 	if !bytes.Contains(buf.Bytes(), []byte("id,local_id,server_version,title")) {
 		t.Errorf("CSV 导出缺少表头: %q", buf.String())
 	}
@@ -151,8 +151,8 @@ func importFile(t *testing.T, token, filename, content, format string) (*http.Re
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	fw, _ := mw.CreateFormFile("file", filename)
-	fw.Write([]byte(content))
-	mw.WriteField("format", format)
+	_, _ = fw.Write([]byte(content))
+	_ = mw.WriteField("format", format)
 	mw.Close()
 	req, _ := http.NewRequest(http.MethodPost, testTS.URL+"/api/v1/import", &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
@@ -163,7 +163,7 @@ func importFile(t *testing.T, token, filename, content, format string) (*http.Re
 	}
 	defer resp.Body.Close()
 	var out map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&out)
+	_ = json.NewDecoder(resp.Body).Decode(&out)
 	return resp, out
 }
 
@@ -273,11 +273,11 @@ func TestAdminLogsAndConfig(t *testing.T) {
 		"email": "loguser@test.local", "password": "LogUser@2026", "role": "user",
 	})
 
-	resp, out := doJSON(t, http.MethodGet, "/api/v1/admin/logs/actions", adminTok, nil)
+	resp, _ := doJSON(t, http.MethodGet, "/api/v1/admin/logs/actions", adminTok, nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("动作日志应 200, got %d", resp.StatusCode)
 	}
-	resp, out = doJSON(t, http.MethodGet, "/api/v1/admin/logs/login", adminTok, nil)
+	resp, _ = doJSON(t, http.MethodGet, "/api/v1/admin/logs/login", adminTok, nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("登录日志应 200, got %d", resp.StatusCode)
 	}
@@ -287,7 +287,7 @@ func TestAdminLogsAndConfig(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("读取配置应 200, got %d", resp.StatusCode)
 	}
-	resp, out = doJSON(t, http.MethodPut, "/api/v1/admin/config", adminTok, map[string]string{
+	resp, out := doJSON(t, http.MethodPut, "/api/v1/admin/config", adminTok, map[string]string{
 		"key": "test_key", "value": "test_value", "description": "测试配置",
 	})
 	if resp.StatusCode != http.StatusOK {
@@ -310,7 +310,7 @@ func TestDevicePairingFlow(t *testing.T) {
 		t.Errorf("配对响应应含 key 与 server_url: %v", data)
 	}
 
-	resp, out = doJSON(t, http.MethodGet, "/api/v1/devices", userTok, nil)
+	resp, _ = doJSON(t, http.MethodGet, "/api/v1/devices", userTok, nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("设备列表应 200, got %d", resp.StatusCode)
 	}
@@ -327,12 +327,13 @@ func TestSecurityHeadersViaServer(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	checks := map[string]string{
-		"X-Content-Type-Options": "nosniff",
-		"X-Frame-Options":        "DENY",
+		"X-Content-Type-Options":  "nosniff",
+		"X-Frame-Options":         "DENY",
 		"Content-Security-Policy": "default-src 'self'",
 	}
 	for k, want := range checks {
-		if got := resp.Header.Get(k); got != want {			t.Errorf("安全头 %s = %q, want %q", k, got, want)
+		if got := resp.Header.Get(k); got != want {
+			t.Errorf("安全头 %s = %q, want %q", k, got, want)
 		}
 	}
 }

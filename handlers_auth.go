@@ -17,12 +17,6 @@ import (
 	"todoapp/internal/validator"
 )
 
-func handleRegister(w http.ResponseWriter, r *http.Request) {
-	// Placeholder: In real implementation, register user
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]string{"status": "registered"})
-}
-
 func handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req loginReq
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil {
@@ -55,7 +49,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		log.Printf("登录失败 %s: %v", req.Email, err)
 
 		// 记录失败的登录尝试
-		if err := db.RecordFailedLogin(req.Email); err != nil {
+		if err := db.RecordFailedLogin(req.Email, maxLoginAttempts, lockoutDuration); err != nil {
 			log.Printf("记录失败登录尝试错误: %v", err)
 		}
 		if err := db.LogLoginAttempt(req.Email, ip, false); err != nil {
