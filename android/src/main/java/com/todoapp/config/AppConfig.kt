@@ -8,7 +8,8 @@ object AppConfig {
     private const val KEY_BASE_URL = "base_url"
     private const val KEY_IS_FIRST_LAUNCH = "is_first_launch"
 
-    const val DEFAULT_BASE_URL = "http://10.0.2.2:8080/api/v1/"
+    // 默认服务端地址来自构建时注入的 BuildConfig.SERVER_URL（可用 -PSERVER_URL 覆盖）
+    val DEFAULT_BASE_URL = BuildConfig.SERVER_URL
     const val WEB_SOCKET_PATH = "/ws"
 
     private var baseUrl: String = DEFAULT_BASE_URL

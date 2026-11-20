@@ -15,7 +15,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 
 object RetrofitClient {
-    private var BASE_URL = "http://10.0.2.2:8080/api/v1/"
+    private var BASE_URL = com.todoapp.config.AppConfig.DEFAULT_BASE_URL
     private const val PREFS_NAME = "todoapp_prefs"
     private const val ACCESS_TOKEN_KEY = "access_token"
     private const val REFRESH_TOKEN_KEY = "refresh_token"

@@ -113,6 +113,9 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
         binding.chipEditStatusDone.setOnClickListener {
             selectStatus("done")
         }
+        binding.chipEditStatusArchived.setOnClickListener {
+            selectStatus("archived")
+        }
 
         binding.chipEditPriorityLow.setOnClickListener {
             selectPriority("low")
@@ -172,23 +175,14 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
 
     private fun selectStatus(status: String) {
         viewModel.updateStatus(status)
-        when (status) {
-            "todo" -> {
-                binding.chipEditStatusTodo.isChecked = true
-                binding.chipEditStatusInProgress.isChecked = false
-                binding.chipEditStatusDone.isChecked = false
-            }
-            "in_progress" -> {
-                binding.chipEditStatusTodo.isChecked = false
-                binding.chipEditStatusInProgress.isChecked = true
-                binding.chipEditStatusDone.isChecked = false
-            }
-            "done" -> {
-                binding.chipEditStatusTodo.isChecked = false
-                binding.chipEditStatusInProgress.isChecked = false
-                binding.chipEditStatusDone.isChecked = true
-            }
-        }
+        binding.chipEditStatusTodo.isChecked = status == "todo"
+        binding.chipEditStatusInProgress.isChecked = status == "in_progress"
+        binding.chipEditStatusDone.isChecked = status == "done"
+        binding.chipEditStatusArchived.isChecked = status == "archived"
+        binding.chipStatusTodo.isChecked = status == "todo"
+        binding.chipStatusInProgress.isChecked = status == "in_progress"
+        binding.chipStatusDone.isChecked = status == "done"
+        binding.chipStatusArchived.isChecked = status == "archived"
     }
 
     private fun selectPriority(priority: String) {
@@ -265,21 +259,31 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
                 binding.chipStatusTodo.isChecked = true
                 binding.chipStatusInProgress.isChecked = false
                 binding.chipStatusDone.isChecked = false
+                binding.chipStatusArchived.isChecked = false
             }
             "in_progress" -> {
                 binding.chipStatusTodo.isChecked = false
                 binding.chipStatusInProgress.isChecked = true
                 binding.chipStatusDone.isChecked = false
+                binding.chipStatusArchived.isChecked = false
             }
             "done" -> {
                 binding.chipStatusTodo.isChecked = false
                 binding.chipStatusInProgress.isChecked = false
                 binding.chipStatusDone.isChecked = true
+                binding.chipStatusArchived.isChecked = false
+            }
+            "archived" -> {
+                binding.chipStatusTodo.isChecked = false
+                binding.chipStatusInProgress.isChecked = false
+                binding.chipStatusDone.isChecked = false
+                binding.chipStatusArchived.isChecked = true
             }
             else -> {
                 binding.chipStatusTodo.isChecked = true
                 binding.chipStatusInProgress.isChecked = false
                 binding.chipStatusDone.isChecked = false
+                binding.chipStatusArchived.isChecked = false
             }
         }
 
@@ -373,6 +377,7 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
             "todo" -> selectStatus("todo")
             "in_progress" -> selectStatus("in_progress")
             "done" -> selectStatus("done")
+            "archived" -> selectStatus("archived")
             else -> selectStatus("todo")
         }
 

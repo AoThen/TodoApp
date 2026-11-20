@@ -18,6 +18,9 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        // 服务端地址：构建时可用 -PSERVER_URL=https://your-host/api/v1/ 覆盖，默认指向模拟器宿主
+        buildConfigField("String", "SERVER_URL", "\"${project.findProperty("SERVER_URL") ?: "http://10.0.2.2:8080/api/v1/"}\"")
+
         ndk {
             abiFilters += listOf("arm64-v8a")
         }

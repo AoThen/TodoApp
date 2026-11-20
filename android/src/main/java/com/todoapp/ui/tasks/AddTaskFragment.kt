@@ -124,6 +124,9 @@ class AddTaskFragment : Fragment(), DatePickerDialog.OnDateSetListener {
         binding.chipStatusDone.setOnClickListener {
             selectStatus("done")
         }
+        binding.chipStatusArchived.setOnClickListener {
+            selectStatus("archived")
+        }
 
         binding.chipPriorityLow.setOnClickListener {
             selectPriority("low")
@@ -174,23 +177,10 @@ class AddTaskFragment : Fragment(), DatePickerDialog.OnDateSetListener {
 
     private fun selectStatus(status: String) {
         viewModel.updateStatus(status)
-        when (status) {
-            "todo" -> {
-                binding.chipStatusTodo.isChecked = true
-                binding.chipStatusInProgress.isChecked = false
-                binding.chipStatusDone.isChecked = false
-            }
-            "in_progress" -> {
-                binding.chipStatusTodo.isChecked = false
-                binding.chipStatusInProgress.isChecked = true
-                binding.chipStatusDone.isChecked = false
-            }
-            "done" -> {
-                binding.chipStatusTodo.isChecked = false
-                binding.chipStatusInProgress.isChecked = false
-                binding.chipStatusDone.isChecked = true
-            }
-        }
+        binding.chipStatusTodo.isChecked = status == "todo"
+        binding.chipStatusInProgress.isChecked = status == "in_progress"
+        binding.chipStatusDone.isChecked = status == "done"
+        binding.chipStatusArchived.isChecked = status == "archived"
     }
 
     private fun selectPriority(priority: String) {

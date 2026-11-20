@@ -9,7 +9,12 @@
         android:id="@+id/calendarFragment"
         android:icon="@drawable/ic_calendar"
         android:title="@string/nav_calendar" />
-    
+
+    <item
+        android:id="@+id/notificationFragment"
+        android:icon="@drawable/ic_notifications"
+        android:title="@string/notifications_title" />
+
     <item
         android:id="@+id/settingsFragment"
         android:icon="@drawable/ic_settings"
