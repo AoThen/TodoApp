@@ -292,56 +292,6 @@ func initSystemConfig(now time.Time) {
 	}
 }
 
-// GetAllTasks retrieves all tasks (simplified export)
-func GetAllTasks() ([]map[string]interface{}, error) {
-	rows, err := DB.Query("SELECT id, local_id, server_version, title, description, status, priority, due_at, created_at, updated_at, completed_at, is_deleted, last_modified FROM tasks")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var results []map[string]interface{}
-	for rows.Next() {
-		var id int64
-		var localID sql.NullString
-		var serverVersion sql.NullInt64
-		var title sql.NullString
-		var description sql.NullString
-		var status sql.NullString
-		var priority sql.NullString
-		var dueAt sql.NullString
-		var createdAt sql.NullString
-		var updatedAt sql.NullString
-		var completedAt sql.NullString
-		var isDeleted sql.NullBool
-		var lastModified sql.NullString
-		if err := rows.Scan(&id, &localID, &serverVersion, &title, &description, &status, &priority, &dueAt, &createdAt, &updatedAt, &completedAt, &isDeleted, &lastModified); err != nil {
-			return nil, err
-		}
-		row := map[string]interface{}{
-			"id":       id,
-			"local_id": localID.String,
-			"server_version": func() interface{} {
-				if serverVersion.Valid {
-					return serverVersion.Int64
-				}
-				return nil
-			}(),
-			"title":         title.String,
-			"description":   description.String,
-			"status":        status.String,
-			"priority":      priority.String,
-			"due_at":        dueAt.String,
-			"created_at":    createdAt.String,
-			"updated_at":    updatedAt.String,
-			"completed_at":  completedAt.String,
-			"is_deleted":    isDeleted.Bool,
-			"last_modified": lastModified.String,
-		}
-		results = append(results, row)
-	}
-	return results, nil
-}
-
 // SaveRefreshToken persists a refresh token for a user for rotation support
 func SaveRefreshToken(userID string, token string, expiresAt time.Time) error {
 	_, err := DB.Exec("INSERT INTO tokens (user_id, access_token, refresh_token, expires_at, revoked) VALUES (?, NULL, ?, ?, 0)", userID, token, expiresAt)
@@ -566,76 +516,6 @@ func GetTasksStreaming(userID int, batchSize int, processFunc func([]map[string]
 	return nil
 }
 
-// GetTasksPaginated 分页获取任务
-func GetTasksPaginated(userID int, page, pageSize int) ([]map[string]interface{}, int, error) {
-	offset := (page - 1) * pageSize
-
-	// 获取总数
-	var total int
-	err := DB.QueryRow("SELECT COUNT(*) FROM tasks WHERE user_id = ? AND is_deleted = 0", userID).Scan(&total)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	// 获取分页任务
-	query := `
-		SELECT id, local_id, server_version, title, description, status, priority,
-		       due_at, created_at, updated_at, completed_at, is_deleted, last_modified
-		FROM tasks
-		WHERE user_id = ? AND is_deleted = 0
-		ORDER BY created_at DESC
-		LIMIT ? OFFSET ?
-	`
-	rows, err := DB.Query(query, userID, pageSize, offset)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer rows.Close()
-
-	var results []map[string]interface{}
-	for rows.Next() {
-		var id int64
-		var localID sql.NullString
-		var serverVersion sql.NullInt64
-		var title sql.NullString
-		var description sql.NullString
-		var status sql.NullString
-		var priority sql.NullString
-		var dueAt sql.NullString
-		var createdAt sql.NullString
-		var updatedAt sql.NullString
-		var completedAt sql.NullString
-		var isDeleted sql.NullBool
-		var lastModified sql.NullString
-		if err := rows.Scan(&id, &localID, &serverVersion, &title, &description, &status, &priority, &dueAt, &createdAt, &updatedAt, &completedAt, &isDeleted, &lastModified); err != nil {
-			return nil, 0, err
-		}
-		row := map[string]interface{}{
-			"id":       id,
-			"local_id": localID.String,
-			"server_version": func() interface{} {
-				if serverVersion.Valid {
-					return serverVersion.Int64
-				}
-				return nil
-			}(),
-			"title":         title.String,
-			"description":   description.String,
-			"status":        status.String,
-			"priority":      priority.String,
-			"due_at":        dueAt.String,
-			"created_at":    createdAt.String,
-			"updated_at":    updatedAt.String,
-			"completed_at":  completedAt.String,
-			"is_deleted":    isDeleted.Bool,
-			"last_modified": lastModified.String,
-		}
-		results = append(results, row)
-	}
-	return results, total, nil
-}
-
-// GetTasksFiltered 支持筛选、搜索、排序的分页查询
 func GetTasksFiltered(userID int, page, pageSize int, status, priority, search, sortBy, sortOrder string) ([]map[string]interface{}, int, error) {
 	if page < 1 {
 		page = 1
@@ -797,18 +677,6 @@ func CreateTask(userID int, localID, title string) (int64, error) {
 	return result.LastInsertId()
 }
 
-// UpdateTask 更新任务
-func UpdateTask(taskID int64, title, status string) error {
-	now := time.Now().UTC()
-	_, err := DB.Exec(`
-		UPDATE tasks
-		SET title = ?, status = ?, updated_at = ?, last_modified = ?
-		WHERE id = ?
-	`, title, status, now, now, taskID)
-	return err
-}
-
-// UpdateTaskFull 完整更新任务
 // dueAt/hasDueAt：hasDueAt 为 true 时更新 due_at（空串表示清除），否则保持原值
 func UpdateTaskFull(taskID int64, userID int, title, description, status, priority string, dueAt string, hasDueAt bool) error {
 	now := time.Now().UTC()
@@ -1522,6 +1390,21 @@ func CleanupNotificationsOlderThan(retentionDays int) (int64, error) {
 	}
 	result, err := DB.Exec(
 		"DELETE FROM notifications WHERE datetime(created_at) < datetime('now', ?)",
+		fmt.Sprintf("-%d days", retentionDays),
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// CleanupOldConflicts 清理超过保留期的同步冲突记录（conflicts 表只增不删会无限增长）
+func CleanupOldConflicts(retentionDays int) (int64, error) {
+	if retentionDays <= 0 {
+		return 0, nil
+	}
+	result, err := DB.Exec(
+		"DELETE FROM conflicts WHERE datetime(created_at) < datetime('now', ?)",
 		fmt.Sprintf("-%d days", retentionDays),
 	)
 	if err != nil {

@@ -145,6 +145,11 @@ func handleDevicePairing(w http.ResponseWriter, r *http.Request) {
 	// 记录审计日志
 	log.Printf("用户 %d 注册设备: type=%s, id=%s", userID, req.DeviceType, req.DeviceID)
 
+	// 清理已消费的待配对记录，避免 devices 表堆积 is_active=0 的行
+	if err := db.ClearPendingPairing(userID, req.Key); err != nil {
+		log.Printf("清理待配对记录失败: %v", err)
+	}
+
 	response.SuccessResponse(w, map[string]interface{}{
 		"status":     "paired",
 		"device_id":  req.DeviceID,

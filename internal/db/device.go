@@ -79,16 +79,6 @@ func GetUserDevices(userID int) ([]map[string]interface{}, error) {
 	return results, nil
 }
 
-// UpdateDeviceLastSeen 更新设备最后活跃时间
-func UpdateDeviceLastSeen(deviceID string) error {
-	now := time.Now().UTC()
-	_, err := DB.Exec(
-		"UPDATE devices SET last_seen = ? WHERE device_id = ?",
-		now, deviceID,
-	)
-	return err
-}
-
 // RegeneratePairingKey 重新生成设备配对密钥
 func RegeneratePairingKey(deviceID string, newKey string) error {
 	_, err := DB.Exec(
@@ -122,14 +112,13 @@ func GetDeviceInfoByDeviceID(deviceID string) (int, string, string, bool, error)
 	return userID, serverURL, lastSeen.Format(time.RFC3339), isActive, err
 }
 
-// GetDeviceCount 获取用户设备数量
-func GetDeviceCount(userID int) (int, error) {
-	var count int
-	err := DB.QueryRow(
-		"SELECT COUNT(*) FROM devices WHERE user_id = ? AND is_active = 1",
-		userID,
-	).Scan(&count)
-	return count, err
+// ClearPendingPairing 清理已使用的待配对记录，防止 devices 表堆积 is_active=0 的垃圾行
+func ClearPendingPairing(userID int, pairingKey string) error {
+	_, err := DB.Exec(
+		"DELETE FROM devices WHERE user_id = ? AND pairing_key = ? AND is_active = 0",
+		userID, pairingKey,
+	)
+	return err
 }
 
 // GeneratePairingKey 生成64字符随机配对密钥
@@ -159,24 +148,4 @@ func CreatePendingPairing(userID int, deviceType string) (string, string, error)
 	}
 
 	return key, expiresAt.Format(time.RFC3339), nil
-}
-
-// ConfirmPairing 确认配对
-func ConfirmPairing(userID int, key string, deviceID, serverURL string) error {
-	now := time.Now().UTC()
-	_, err := DB.Exec(
-		"UPDATE devices SET device_id = ?, server_url = ?, paired_at = ?, last_seen = ?, is_active = 1 WHERE user_id = ? AND pairing_key = ? AND is_active = 0",
-		deviceID, serverURL, now, now, userID, key,
-	)
-	return err
-}
-
-// GetPendingPairing 获取待确认的配对信息
-func GetPendingPairing(userID int, key string) (bool, error) {
-	var count int
-	err := DB.QueryRow(
-		"SELECT COUNT(*) FROM devices WHERE user_id = ? AND pairing_key = ? AND is_active = 0",
-		userID, key,
-	).Scan(&count)
-	return count > 0, err
 }

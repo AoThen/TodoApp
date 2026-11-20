@@ -77,23 +77,6 @@ func BatchInsertTasks(userID int, tasks []map[string]interface{}) ([]int64, erro
 	return insertedIDs, nil
 }
 
-// CheckConflictByLocalID 检查local_id是否冲突
-func CheckConflictByLocalID(userID int, localID string) (int64, string, error) {
-	var existingID int64
-	var existingTitle string
-
-	err := DB.QueryRow(
-		"SELECT id, title FROM tasks WHERE local_id = ? AND user_id = ?",
-		localID, userID,
-	).Scan(&existingID, &existingTitle)
-
-	if err != nil {
-		return 0, "", err
-	}
-
-	return existingID, existingTitle, nil
-}
-
 // taskValue 从interface安全地转换为字符串
 func taskValue(v interface{}) string {
 	if v == nil {

@@ -225,6 +225,12 @@ func startCleanupTasks() {
 			} else if n > 0 {
 				log.Printf("Cleaned up %d notifications older than %d days", n, retentionDays)
 			}
+			// 冲突记录与删除记录同保留期（30 天），防止 conflicts 表无限增长
+			if n, err := db.CleanupOldConflicts(30); err != nil {
+				log.Printf("Failed to cleanup old conflicts: %v", err)
+			} else if n > 0 {
+				log.Printf("Cleaned up %d old conflict records", n)
+			}
 		}
 	}()
 }

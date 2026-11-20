@@ -59,38 +59,6 @@ func RestoreDeletedTask(taskID int64, userID int) error {
 	return err
 }
 
-// GetRestorableTask 获取可恢复的任务
-func GetRestorableTask(taskID int64, userID int) (map[string]interface{}, error) {
-	var taskData string
-	var deletedAt time.Time
-
-	err := DB.QueryRow(
-		"SELECT task_data, deleted_at FROM deleted_tasks WHERE task_id = ? AND user_id = ? AND is_restorable=1",
-		taskID, userID,
-	).Scan(&taskData, &deletedAt)
-
-	if err != nil {
-		return nil, err
-	}
-
-	// 检查30秒期限
-	if time.Since(deletedAt) > 30*time.Second {
-		return nil, &UndoExpiredError{}
-	}
-
-	// 解析任务数据
-	var taskMap map[string]interface{}
-	err = json.Unmarshal([]byte(taskData), &taskMap)
-	if err != nil {
-		return nil, err
-	}
-
-	taskMap["deleted_at"] = deletedAt.Format(time.RFC3339)
-	taskMap["seconds_until_expiry"] = 30 - int(time.Since(deletedAt).Seconds())
-
-	return taskMap, nil
-}
-
 // CleanupOldDeletedTasks 清理旧删除记录（超过30天）
 func CleanupOldDeletedTasks() (int, error) {
 	threshold := time.Now().AddDate(0, 0, -30).UTC()
