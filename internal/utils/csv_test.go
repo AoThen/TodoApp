@@ -122,6 +122,8 @@ func TestSanitizeCSVFormula(t *testing.T) {
 		{"@宏", "@SUM(1)", "'@SUM(1)"},
 		{"制表符开头", "\ttab", "'\ttab"},
 		{"回车开头", "\rcr", "'\rcr"},
+		{"空格前缀公式", " =SUM(A1)", "' =SUM(A1)"},
+		{"换行前缀公式", "\n=cmd()", "'\n=cmd()"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

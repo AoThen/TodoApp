@@ -16,6 +16,14 @@ var DB *sql.DB
 
 // InitDB initializes the SQLite database and creates core tables if not existing.
 func InitDB(dataSourceName string) error {
+	// WAL 模式下并发写会遇到 SQLITE_BUSY，设置 busy_timeout 让写操作短暂等待而非立即失败
+	if !strings.Contains(dataSourceName, "_busy_timeout") {
+		if strings.Contains(dataSourceName, "?") {
+			dataSourceName += "&_busy_timeout=5000"
+		} else {
+			dataSourceName += "?_busy_timeout=5000"
+		}
+	}
 	var err error
 	DB, err = sql.Open("sqlite3", dataSourceName)
 	if err != nil {
@@ -1498,7 +1506,7 @@ func CleanupNotificationsOlderThan(retentionDays int) (int64, error) {
 		return 0, nil
 	}
 	result, err := DB.Exec(
-		"DELETE FROM notifications WHERE created_at < datetime('now', ?)",
+		"DELETE FROM notifications WHERE datetime(created_at) < datetime('now', ?)",
 		fmt.Sprintf("-%d days", retentionDays),
 	)
 	if err != nil {

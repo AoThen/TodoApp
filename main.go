@@ -139,11 +139,16 @@ func main() {
 	}
 }
 
-// httpsRedirectMiddleware 将非 HTTPS 请求（依据 X-Forwarded-Proto）301 重定向到 HTTPS
+// httpsRedirectMiddleware 将非 HTTPS 的 GET/HEAD 请求（依据 X-Forwarded-Proto）301 重定向到 HTTPS。
+// 非 GET/HEAD 请求不重定向（301 会丢弃请求体，破坏 API 写操作）。
 func httpsRedirectMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Forwarded-Proto") == "http" {
-			http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusMovedPermanently)
+			if r.Method == http.MethodGet || r.Method == http.MethodHead {
+				http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusMovedPermanently)
+				return
+			}
+			http.Error(w, "请使用 HTTPS 访问", http.StatusUpgradeRequired)
 			return
 		}
 		next.ServeHTTP(w, r)

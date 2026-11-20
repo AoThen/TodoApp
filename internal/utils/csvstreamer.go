@@ -60,13 +60,14 @@ func toCSVCell(value interface{}) string {
 	return sanitizeCSVFormula(convertToString(value))
 }
 
-// sanitizeCSVFormula 防护 Excel/WPS 公式注入：以 = + - @ \t \r 开头的值前缀单引号，使其按文本处理
+// sanitizeCSVFormula 防护 Excel/WPS 公式注入：以 = + - @ \t \r \n 或空格开头的值前缀单引号
+// （Excel 打开 CSV 时会剥离前导空格，故空格前缀同样危险），使其按文本处理
 func sanitizeCSVFormula(s string) string {
 	if s == "" {
 		return s
 	}
 	switch s[0] {
-	case '=', '+', '-', '@', '\t', '\r':
+	case '=', '+', '-', '@', '\t', '\r', '\n', ' ':
 		return "'" + s
 	}
 	return s
