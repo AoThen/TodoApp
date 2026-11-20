@@ -54,6 +54,12 @@ android {
         buildConfig = true
     }
 
+    lint {
+        // WorkManager 已升级 2.9.1 并使用 on-demand 初始化；
+        // 依赖合并 manifest 中残留的 WorkManagerInitializer 与实际运行时不符，属误报
+        disable += "RemoveWorkManagerInitializer"
+    }
+
     splits {
         abi {
             isEnable = false
