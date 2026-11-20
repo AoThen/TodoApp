@@ -99,6 +99,59 @@ jobs:
       - name: Android lint
         run: ./gradlew lint --no-daemon
 
+  web-e2e:
+    name: Web E2E 冒烟
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 构建并启动后端
+        env:
+          JWT_SECRET: e2e-test-secret-key-1234567890abcdef
+          ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+          INITIAL_ADMIN_EMAIL: admin@e2e.local
+          INITIAL_ADMIN_PASSWORD: "E2eAdmin@2026"
+          SERVER_PORT: "8080"
+        run: |
+          go build -o /tmp/todoapp-server .
+          /tmp/todoapp-server &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8080/api/v1/health && break
+            sleep 1
+          done
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Install Playwright chromium
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E smoke
+        working-directory: web
+        env:
+          E2E_ADMIN_EMAIL: admin@e2e.local
+          E2E_ADMIN_PASSWORD: "E2eAdmin@2026"
+        run: npx playwright test
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: web/test-results/
+
   # 注：GitHub 托管 runner 当前无 KVM，且新版 emulator 禁止 x86_64 宿主上的
   # 软件仿真与跨架构（arm64）仿真，模拟器 instrumented 测试无法在托管 runner 执行。
   # androidTest 目录下的 instrumented 测试（TaskDao/NotificationDao）可在本地
