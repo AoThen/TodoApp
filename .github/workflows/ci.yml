@@ -84,4 +84,5 @@ jobs:
         with:
           api-level: 30
           arch: x86_64
+          disable-linux-hw-accel: false
           script: cd android && ./gradlew connectedDebugAndroidTest --no-daemon
