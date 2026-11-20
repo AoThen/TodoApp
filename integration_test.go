@@ -15,10 +15,11 @@ import (
 )
 
 var (
-	testTS   *httptest.Server
-	adminTok string
-	userTok  string
-	user2Tok string
+	testTS    *httptest.Server
+	testWSHub *wsclient.Hub
+	adminTok  string
+	userTok   string
+	user2Tok  string
 )
 
 const (
@@ -69,6 +70,7 @@ func TestMain(m *testing.M) {
 
 	wsHub := wsclient.NewHub()
 	go wsHub.Run()
+	testWSHub = wsHub
 
 	testTS = httptest.NewServer(buildRouter(wsHub, false, "8080"))
 
