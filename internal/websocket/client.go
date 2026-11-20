@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	gorillawebsocket "github.com/gorilla/websocket"
@@ -16,13 +17,49 @@ const (
 	maxMessageSize = 1024 * 1024 // 1MB
 )
 
+// wsAllowedOrigins WebSocket Origin 白名单（仅在服务启动前通过 SetAllowedOrigins 配置一次）
+var wsAllowedOrigins []string
+
+// SetAllowedOrigins 配置 WebSocket 允许的 Origin 白名单（生产环境必须设置，防止跨站 WebSocket 劫持）
+func SetAllowedOrigins(origins []string) {
+	wsAllowedOrigins = origins
+}
+
 // Upgrader WebSocket升级器（导出供外部使用）
 var Upgrader = gorillawebsocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		return true // 生产环境应该验证Origin
+		// 未配置白名单时放行（仅限本地开发；生产环境应配置 WS_ALLOWED_ORIGINS）
+		if len(wsAllowedOrigins) == 0 {
+			return true
+		}
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return false
+		}
+		for _, allowed := range wsAllowedOrigins {
+			if strings.EqualFold(origin, allowed) {
+				return true
+			}
+		}
+		return false
 	},
+}
+
+// safeSend 向发送通道非阻塞投递消息；通道已关闭（连接正被清理）时恢复 panic，避免拖垮进程
+func safeSend(ch chan []byte, data []byte) (sent bool) {
+	defer func() {
+		if recover() != nil {
+			sent = false
+		}
+	}()
+	select {
+	case ch <- data:
+		return true
+	default:
+		return false
+	}
 }
 
 // Message WebSocket消息结构
@@ -173,8 +210,8 @@ func (c *Client) handleHandshake(data []byte) error {
 		return err
 	}
 
-	// 握手消息不加密（或可选加密）
-	c.send <- respData
+	// 握手消息不加密（或可选加密）；缓冲满时丢弃，客户端会重试握手
+	safeSend(c.send, respData)
 
 	return nil
 }
@@ -212,11 +249,8 @@ func (c *Client) SendMessage(msg Message) error {
 		return err
 	}
 
-	select {
-	case c.send <- data:
-	default:
-		// Send buffer full
-	}
+	// 非阻塞发送，缓冲满或通道已关闭时静默丢弃
+	safeSend(c.send, data)
 
 	return nil
 }

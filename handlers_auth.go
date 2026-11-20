@@ -17,6 +17,15 @@ import (
 	"todoapp/internal/validator"
 )
 
+// maskEmail 日志脱敏：仅保留本地部分首字符与域名（如 a***@example.com），避免日志泄露完整邮箱
+func maskEmail(email string) string {
+	at := strings.Index(email, "@")
+	if at <= 0 {
+		return "***"
+	}
+	return email[:1] + "***" + email[at:]
+}
+
 func handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req loginReq
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil {
@@ -46,7 +55,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	// 验证用户凭据
 	userID, err := db.ValidateUserCredentials(req.Email, req.Password)
 	if err != nil {
-		log.Printf("登录失败 %s: %v", req.Email, err)
+		log.Printf("登录失败 %s: %v", maskEmail(req.Email), err)
 
 		// 记录失败的登录尝试
 		if err := db.RecordFailedLogin(req.Email, maxLoginAttempts, lockoutDuration); err != nil {

@@ -136,14 +136,20 @@ func globalRateLimitMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// getClientIP 获取客户端 IP 地址
+// trustedProxy 是否信任反向代理的 X-Forwarded-For 头。
+// 仅当后端部署在可信反向代理（如 Nginx）之后时设为 true；直连时必须为 false，
+// 否则客户端可伪造 X-Forwarded-For 绕过基于 IP 的限流与审计。
+var trustedProxy = os.Getenv("TRUSTED_PROXY") == "true"
 
+// getClientIP 获取客户端 IP 地址
 func getClientIP(r *http.Request) string {
-	forwarded := r.Header.Get("X-Forwarded-For")
-	if forwarded != "" {
-		ips := strings.Split(forwarded, ",")
-		if len(ips) > 0 {
-			return strings.TrimSpace(ips[0])
+	if trustedProxy {
+		forwarded := r.Header.Get("X-Forwarded-For")
+		if forwarded != "" {
+			ips := strings.Split(forwarded, ",")
+			if len(ips) > 0 {
+				return strings.TrimSpace(ips[0])
+			}
 		}
 	}
 	return strings.Split(r.RemoteAddr, ":")[0]
@@ -179,6 +185,11 @@ func headersMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
 		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'")
+
+		// 请求 ID 端到端追踪：客户端携带 X-Request-ID 时原样回写，便于联调与日志关联
+		if reqID := r.Header.Get("X-Request-ID"); reqID != "" {
+			w.Header().Set("X-Request-ID", reqID)
+		}
 
 		// Cache control for API endpoints
 		if strings.HasPrefix(r.URL.Path, "/api/v1/") {

@@ -67,7 +67,16 @@ func TestGetClientIP(t *testing.T) {
 		t.Errorf("RemoteAddr 回退解析错误: %q", got)
 	}
 
+	// 默认不信任 X-Forwarded-For（TRUSTED_PROXY=false）：防止客户端伪造绕过限流
 	r.Header.Set("X-Forwarded-For", "203.0.113.5, 10.0.0.2")
+	if got := getClientIP(r); got != "10.0.0.1" {
+		t.Errorf("默认应忽略可伪造的 X-Forwarded-For: %q", got)
+	}
+
+	// 部署于可信反向代理之后（TRUSTED_PROXY=true）时取 X-Forwarded-For 第一个 IP
+	origTrusted := trustedProxy
+	trustedProxy = true
+	defer func() { trustedProxy = origTrusted }()
 	if got := getClientIP(r); got != "203.0.113.5" {
 		t.Errorf("X-Forwarded-For 应取第一个 IP: %q", got)
 	}
