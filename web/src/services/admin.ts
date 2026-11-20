@@ -21,6 +21,21 @@ class AdminService {
       }
       return config;
     });
+
+    // 与 api.ts 一致：后端统一返回 {success, data} 包裹结构，此处解包使调用方直接拿到业务数据
+    this.client.interceptors.response.use((response) => {
+      const body = response.data;
+      if (
+        body &&
+        typeof body === 'object' &&
+        'success' in body &&
+        'data' in body &&
+        !Array.isArray(body)
+      ) {
+        response.data = (body as { data: unknown }).data;
+      }
+      return response;
+    });
   }
 
   async getUsers(params?: { page?: number; page_size?: number; email?: string; role?: string }): Promise<{ users: User[]; pagination: Pagination }> {
@@ -37,7 +52,7 @@ class AdminService {
 
   async createUser(data: CreateUserRequest): Promise<{ id: number; email: string; role: string }> {
     const response = await this.client.post('/admin/users', data);
-    return response.data.data;
+    return response.data;
   }
 
   async updateUser(id: number, data: UpdateUserRequest): Promise<void> {
@@ -71,7 +86,7 @@ class AdminService {
       if (filters.page_size) params.append('page_size', String(filters.page_size));
     }
     const response = await this.client.get(`/admin/logs/login?${params.toString()}`);
-    return response.data.data;
+    return response.data;
   }
 
   async getActionLogs(filters?: LogFilters): Promise<ActionLog[]> {
@@ -86,12 +101,12 @@ class AdminService {
       if (filters.page_size) params.append('page_size', String(filters.page_size));
     }
     const response = await this.client.get(`/admin/logs/actions?${params.toString()}`);
-    return response.data.data;
+    return response.data;
   }
 
   async getConfig(): Promise<Record<string, string>> {
     const response = await this.client.get('/admin/config');
-    return response.data.data;
+    return response.data;
   }
 
   async setConfig(key: string, value: string, description?: string): Promise<void> {
