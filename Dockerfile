@@ -46,11 +46,12 @@ RUN CGO_ENABLED=1 go build \
 # 最终阶段：运行时镜像
 FROM alpine:3.19
 
-# 安装运行时依赖
+# 安装运行时依赖（sqlite 提供 sqlite3 CLI，供 make db-backup 做一致性快照）
 RUN apk add --no-cache \
     ca-certificates \
     tzdata \
-    sqlite-libs
+    sqlite-libs \
+    sqlite
 
 # 创建非 root 用户
 RUN addgroup -g 1000 appgroup && \

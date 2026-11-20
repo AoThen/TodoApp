@@ -2,6 +2,8 @@ package main
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
@@ -95,6 +97,16 @@ func buildRouter(wsHub *websocket.Hub, enforceWSEncryption bool, serverPort stri
 		handleWebSocket(w, r, wsHub)
 	}))).Methods("GET")
 
+	// 前端静态资源与 SPA fallback：注册在所有 API 路由之后兜底。
+	// 静态目录可通过 STATIC_DIR 覆盖（Docker 镜像内为 web/build）；目录不存在（如无前端的开发场景）时不启用。
+	staticDir := os.Getenv("STATIC_DIR")
+	if staticDir == "" {
+		staticDir = "web/build"
+	}
+	if _, err := os.Stat(filepath.Join(staticDir, "index.html")); err == nil {
+		router.PathPrefix("/").Handler(serveStaticHandler(staticDir))
+	}
+
 	// CORS handling for development
 	corsHandler := handlers.CORS(
 		handlers.AllowedOrigins([]string{"http://localhost:3000", "http://localhost:" + serverPort}),
@@ -104,4 +116,23 @@ func buildRouter(wsHub *websocket.Hub, enforceWSEncryption bool, serverPort stri
 	)(router)
 
 	return corsHandler
+}
+
+// serveStaticHandler 提供前端构建产物（web/build）的静态文件服务与 SPA fallback：
+// 请求命中真实文件时直接返回；否则回退到 index.html，交由前端路由处理。
+func serveStaticHandler(dir string) http.Handler {
+	fs := http.Dir(dir)
+	fileServer := http.FileServer(fs)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// http.Dir.Open 内置路径穿越防护（拒绝包含 .. 的路径）
+		if f, err := fs.Open(r.URL.Path); err == nil {
+			stat, statErr := f.Stat()
+			_ = f.Close()
+			if statErr == nil && !stat.IsDir() {
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+		}
+		http.ServeFile(w, r, filepath.Join(dir, "index.html"))
+	})
 }

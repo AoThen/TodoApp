@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -100,6 +105,18 @@ func main() {
 	go wsHub.Run()
 	log.Println("WebSocket Hub initialized.")
 
+	// WebSocket Origin 白名单（生产环境必须配置，防止跨站 WebSocket 劫持）
+	if origins := os.Getenv("WS_ALLOWED_ORIGINS"); origins != "" {
+		var originList []string
+		for _, o := range strings.Split(origins, ",") {
+			if o = strings.TrimSpace(o); o != "" {
+				originList = append(originList, o)
+			}
+		}
+		websocket.SetAllowedOrigins(originList)
+		log.Printf("WebSocket Origin 白名单已启用: %v", originList)
+	}
+
 	// Start cleanup tasks
 	go startCleanupTasks()
 	log.Println("Cleanup tasks started.")
@@ -133,9 +150,33 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// 优雅停机：监听 SIGINT/SIGTERM，收到信号后等待进行中的请求完成（最长 10s）再退出
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	log.Printf("Starting server on %s...", serverAddr)
-	if err := srv.ListenAndServe(); err != nil {
-		log.Fatalf("server failed: %v", err)
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.ListenAndServe() }()
+
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("server failed: %v", err)
+		}
+	case <-ctx.Done():
+		log.Println("收到退出信号，开始优雅停机...")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("优雅停机未在期限内完成: %v", err)
+		}
+		if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("server failed: %v", err)
+		}
+		if err := db.CloseDB(); err != nil {
+			log.Printf("关闭数据库失败: %v", err)
+		}
+		log.Println("服务已退出")
 	}
 }
 

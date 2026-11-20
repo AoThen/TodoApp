@@ -66,18 +66,20 @@ clean: stop
 	docker system prune -f
 	@echo "✅ 清理完成"
 
-# 备份数据库
+# 备份数据库（经 sqlite3 .backup 生成一致性快照，避免直接 cat 活库丢失 WAL 数据）
 db-backup:
 	@mkdir -p backup
-	@echo "💾 备份数据库..."
-	docker-compose exec -T todoapp sh -c "cat /app/data/todoapp.db" > backup/todoapp_$(shell date +%Y%m%d_%H%M%S).db
-	@echo "✅ 备份完成: backup/"
+	@ts=$$(date +%Y%m%d_%H%M%S); \
+	echo "💾 备份数据库..."; \
+	docker-compose exec -T todoapp sh -c "sqlite3 /app/data/todoapp.db \".backup /tmp/todoapp_backup.db\" && cat /tmp/todoapp_backup.db" > backup/todoapp_$${ts}.db; \
+	echo "✅ 备份完成: backup/todoapp_$${ts}.db"
 
-# 恢复数据库
+# 恢复数据库（经 sqlite3 .restore 应用一致性快照，避免直接覆盖活库被旧 WAL 破坏）
 db-restore:
 	@echo "⚠️  警告：这将覆盖当前数据库！"
 	@read -p "请输入备份文件路径: " backup_path; \
-	docker-compose exec -T todoapp sh -c "cat > /app/data/todoapp.db" < $$backup_path
+	cat $$backup_path | docker-compose exec -T todoapp sh -c "cat > /tmp/restore.db && sqlite3 /app/data/todoapp.db \".restore /tmp/restore.db\" && rm -f /tmp/restore.db"; \
+	echo "✅ 恢复完成"
 	@echo "✅ 数据库已恢复"
 	@make restart
 

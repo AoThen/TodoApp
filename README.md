@@ -282,8 +282,11 @@ todoapp/
 **安全环境变量：**
 - `JWT_SECRET` - JWT 签名密钥（必需，最少32字符）
 - `ENCRYPTION_KEY` - AES-256-GCM 加密密钥（32字节hex）
-- `INITIAL_ADMIN_EMAIL/PASSWORD` - 首次启动必需的管理员账户
+- `INITIAL_ADMIN_EMAIL/PASSWORD` - 首次启动必需的管理员账户（无默认值，必须显式提供强密码）
 - `RATE_LIMIT_PER_MINUTE` - 每IP每分钟请求限流（默认600）
+- `TRUSTED_PROXY` - 是否信任反向代理的 X-Forwarded-For（默认 false；仅部署于可信代理之后时开启，否则可被伪造绕过限流）
+- `WS_ALLOWED_ORIGINS` - WebSocket Origin 白名单（逗号分隔；生产环境必须配置以防跨站 WebSocket 劫持，留空仅限开发）
+- `STATIC_DIR` - 前端静态资源目录（默认 web/build；后端直接提供 SPA 服务与 fallback）
 
 ## 开发命令
 

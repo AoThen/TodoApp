@@ -14,8 +14,11 @@ services:
       - SERVER_PORT=${SERVER_PORT:-8080}
       - DATABASE_URL=/app/data/todoapp.db
       - TZ=${TZ:-Asia/Shanghai}
-      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-admin@example.com}
-      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-Admin123!}
+      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:?必须在 .env 或环境中设置 INITIAL_ADMIN_EMAIL}
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:?必须在 .env 或环境中设置强 INITIAL_ADMIN_PASSWORD（禁止使用弱默认值）}
+      - WS_ALLOWED_ORIGINS=${WS_ALLOWED_ORIGINS:-}
+      - TRUSTED_PROXY=${TRUSTED_PROXY:-false}
+      - STATIC_DIR=${STATIC_DIR:-web/build}
     volumes:
       # 持久化数据库
       - todoapp-data:/app/data
