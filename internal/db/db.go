@@ -780,7 +780,8 @@ func UpdateTask(taskID int64, title, status string) error {
 }
 
 // UpdateTaskFull 完整更新任务
-func UpdateTaskFull(taskID int64, userID int, title, description, status, priority string) error {
+// dueAt/hasDueAt：hasDueAt 为 true 时更新 due_at（空串表示清除），否则保持原值
+func UpdateTaskFull(taskID int64, userID int, title, description, status, priority string, dueAt string, hasDueAt bool) error {
 	now := time.Now().UTC()
 
 	query := "UPDATE tasks SET "
@@ -801,6 +802,14 @@ func UpdateTaskFull(taskID int64, userID int, title, description, status, priori
 	if priority != "" {
 		query += "priority = ?, "
 		args = append(args, priority)
+	}
+	if hasDueAt {
+		query += "due_at = ?, "
+		if dueAt == "" {
+			args = append(args, nil)
+		} else {
+			args = append(args, dueAt)
+		}
 	}
 
 	query += "updated_at = ?, last_modified = ? WHERE id = ? AND user_id = ?"

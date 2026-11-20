@@ -851,12 +851,26 @@ func handleTaskByID(w http.ResponseWriter, r *http.Request) {
 		description, _ := updateData["description"].(string)
 		priority, _ := updateData["priority"].(string)
 
-		if title == "" && status == "" && description == "" && priority == "" {
+		dueAtRaw, hasDueAt := updateData["due_at"]
+		dueAt := ""
+		if hasDueAt {
+			dueAt, _ = dueAtRaw.(string)
+			if dueAt != "" {
+				if _, err := time.Parse(time.RFC3339, dueAt); err != nil {
+					if _, err2 := time.Parse("2006-01-02", dueAt); err2 != nil {
+						response.ErrorResponse(w, "截止日期格式无效", http.StatusBadRequest)
+						return
+					}
+				}
+			}
+		}
+
+		if title == "" && status == "" && description == "" && priority == "" && !hasDueAt {
 			response.ErrorResponse(w, "没有要更新的字段", http.StatusBadRequest)
 			return
 		}
 
-		err := db.UpdateTaskFull(taskID, userID, title, description, status, priority)
+		err := db.UpdateTaskFull(taskID, userID, title, description, status, priority, dueAt, hasDueAt)
 		if err != nil {
 			if strings.Contains(err.Error(), "任务不存在") {
 				response.ErrorResponse(w, "任务不存在", http.StatusNotFound)
@@ -1019,6 +1033,12 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 			if idVal, ok := c.Payload["id"].(float64); ok {
 				id := int64(idVal)
 
+				// 客户端携带的截止日期（nil 表示本次不更新 due_at）
+				var clientDueAt *string
+				if v, ok := c.Payload["due_at"].(string); ok {
+					clientDueAt = &v
+				}
+
 				// ✅ 获取服务器当前版本和数据
 				oldVer, serverTitle, serverDesc, serverStatus, _, err := db.GetTaskForSync(id)
 
@@ -1062,7 +1082,7 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 						priority = v
 					}
 
-					updateErr := db.UpdateTaskWithVersion(id, mergedTitle, mergedDesc, mergedStatus, priority, newVer)
+					updateErr := db.UpdateTaskWithVersion(id, mergedTitle, mergedDesc, mergedStatus, priority, clientDueAt, newVer)
 					if updateErr != nil {
 						log.Printf("应用合并结果失败: %v", updateErr)
 						syncFailed = true
@@ -1109,7 +1129,7 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 						priority = v
 					}
 
-					updateErr := db.UpdateTaskWithVersion(id, title, description, status, priority, newVer)
+					updateErr := db.UpdateTaskWithVersion(id, title, description, status, priority, clientDueAt, newVer)
 					if updateErr != nil {
 						log.Printf("更新任务失败: %v", updateErr)
 						syncFailed = true

@@ -41,12 +41,23 @@ func RecordConflict(localID string, serverID int64, reason string, optionsJSON s
 }
 
 // UpdateTaskWithVersion 更新任务并增加版本号
-func UpdateTaskWithVersion(taskID int64, title, description, status, priority string, newVer int) error {
+// dueAt 非 nil 时一并更新 due_at（空串表示清除）；nil 表示保持原值
+func UpdateTaskWithVersion(taskID int64, title, description, status, priority string, dueAt *string, newVer int) error {
 	now := time.Now().UTC()
-	_, err := DB.Exec(
-		"UPDATE tasks SET title=?, description=?, status=?, priority=?, server_version=?, updated_at=?, last_modified=? WHERE id=?",
-		title, description, status, priority, newVer, now, now, taskID,
-	)
+	query := "UPDATE tasks SET title=?, description=?, status=?, priority=?, server_version=?, updated_at=?, last_modified=?"
+	args := []interface{}{title, description, status, priority, newVer, now, now}
+	if dueAt != nil {
+		query += ", due_at=?"
+		if *dueAt == "" {
+			args = append(args, nil)
+		} else {
+			args = append(args, *dueAt)
+		}
+	}
+	query += " WHERE id=?"
+	args = append(args, taskID)
+
+	_, err := DB.Exec(query, args...)
 	return err
 }
 

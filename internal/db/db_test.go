@@ -42,12 +42,12 @@ func TestUpdateTaskFullOwnership(t *testing.T) {
 	}
 
 	// 用户A更新自己的任务：应成功
-	if err := UpdateTaskFull(taskID, int(userA), "任务A-更新", "", "todo", "high"); err != nil {
+	if err := UpdateTaskFull(taskID, int(userA), "任务A-更新", "", "todo", "high", "", false); err != nil {
 		t.Errorf("用户A更新自己的任务应成功，got: %v", err)
 	}
 
 	// 用户B尝试更新用户A的任务：应失败（越权防护）
-	if err := UpdateTaskFull(taskID, int(userB), "恶意修改", "", "done", "low"); err == nil {
+	if err := UpdateTaskFull(taskID, int(userB), "恶意修改", "", "done", "low", "", false); err == nil {
 		t.Error("用户B更新用户A的任务应被拒绝，但未报错")
 	}
 
@@ -107,5 +107,52 @@ func TestDeleteTaskNonexistent(t *testing.T) {
 	// 删除不存在用户的任务：应返回错误
 	if err := DeleteTask(1, 99999); err == nil {
 		t.Error("删除不存在用户的任务应返回错误")
+	}
+}
+
+// TestUpdateTaskFullDueAt 验证 due_at 的更新与清除语义
+func TestUpdateTaskFullDueAt(t *testing.T) {
+	setupTestDB(t)
+
+	userID := createTestUser(t, "due@test.com", "user")
+	taskID, err := CreateTask(int(userID), "local-due-1", "带截止任务")
+	if err != nil {
+		t.Fatalf("创建任务失败: %v", err)
+	}
+
+	// 不传 due_at（hasDueAt=false）：保持为空
+	if err := UpdateTaskFull(taskID, int(userID), "改标题", "", "todo", "high", "", false); err != nil {
+		t.Fatalf("更新失败: %v", err)
+	}
+	task, err := GetTaskByID(taskID, int(userID))
+	if err != nil {
+		t.Fatalf("获取任务失败: %v", err)
+	}
+	if task["due_at"] != "" {
+		t.Errorf("未传 due_at 时应保持为空, got %v", task["due_at"])
+	}
+
+	// 传 due_at：设置截止日期
+	if err := UpdateTaskFull(taskID, int(userID), "", "", "", "", "2026-12-01", true); err != nil {
+		t.Fatalf("设置 due_at 失败: %v", err)
+	}
+	task, err = GetTaskByID(taskID, int(userID))
+	if err != nil {
+		t.Fatalf("获取任务失败: %v", err)
+	}
+	if task["due_at"] != "2026-12-01" {
+		t.Errorf("due_at 应为 2026-12-01, got %v", task["due_at"])
+	}
+
+	// 传空串（hasDueAt=true）：清除截止日期
+	if err := UpdateTaskFull(taskID, int(userID), "", "", "", "", "", true); err != nil {
+		t.Fatalf("清除 due_at 失败: %v", err)
+	}
+	task, err = GetTaskByID(taskID, int(userID))
+	if err != nil {
+		t.Fatalf("获取任务失败: %v", err)
+	}
+	if task["due_at"] != "" {
+		t.Errorf("空串应清除 due_at, got %v", task["due_at"])
 	}
 }
