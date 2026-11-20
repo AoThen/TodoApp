@@ -1,6 +1,7 @@
 package db
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -140,7 +141,9 @@ func TestUpdateTaskFullDueAt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("获取任务失败: %v", err)
 	}
-	if task["due_at"] != "2026-12-01" {
+	// due_at 列声明为 DATETIME，go-sqlite3 读出时会把纯日期规范化为 RFC3339（2026-12-01T00:00:00Z），语义等价
+	dueAtStr, _ := task["due_at"].(string)
+	if !strings.HasPrefix(dueAtStr, "2026-12-01") {
 		t.Errorf("due_at 应为 2026-12-01, got %v", task["due_at"])
 	}
 
