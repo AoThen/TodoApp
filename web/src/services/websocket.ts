@@ -51,7 +51,8 @@ class WebSocketService {
       this.ws.onopen = () => {
         console.log('[WebSocket] Connected');
         this.reconnectAttempts = 0;
-        this.sendHandshake();
+        // 握手失败由 onclose/onerror 驱动重连，避免 unhandled rejection
+        this.sendHandshake().catch(() => {});
         this.startPingTimer();
       };
 

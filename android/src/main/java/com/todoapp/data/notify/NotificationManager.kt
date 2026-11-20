@@ -1,6 +1,7 @@
 package com.todoapp.data.notify
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
@@ -80,6 +81,7 @@ class NotificationManager(
     /**
      * 显示系统通知
      */
+    @SuppressLint("MissingPermission")
     private fun showSystemNotification(id: Int, title: String, content: String, priority: String) {
         // Android 13+ 通知需要 POST_NOTIFICATIONS 运行时权限，未授予时静默跳过
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
