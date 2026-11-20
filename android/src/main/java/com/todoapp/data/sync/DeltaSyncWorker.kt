@@ -3,13 +3,14 @@ package com.todoapp.data.sync
 import android.content.Context
 import androidx.work.*
 import com.todoapp.data.local.AppDatabase
-import com.todoapp.data.local.DeltaChange
 import com.todoapp.data.local.SyncMeta
+import com.todoapp.data.local.Task
 import com.todoapp.data.remote.DeltaChangeRequest
 import com.todoapp.data.remote.RetrofitClient
 import com.todoapp.data.remote.SyncRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 class DeltaSyncWorker(
@@ -57,7 +58,7 @@ class DeltaSyncWorker(
                 DeltaChangeRequest(
                     localId = delta.localId,
                     op = delta.op,
-                    payload = mapOf("data" to delta.payload),
+                    payload = SyncPayloadConverter.payloadForServer(delta.payload),
                     clientVersion = delta.clientVersion
                 )
             }
@@ -71,25 +72,59 @@ class DeltaSyncWorker(
 
             val syncResponse = response.body()!!
 
-            for (serverChange in syncResponse.serverChanges) {
-                val task = database.taskDao().getTaskById(serverChange.id)
-                if (task != null) {
-                    database.taskDao().updateTask(
-                        task.copy(
-                            serverId = serverChange.id,
-                            serverVersion = serverChange.serverVersion,
-                            title = serverChange.title,
-                            updatedAt = serverChange.updatedAt,
-                            isDeleted = serverChange.isDeleted
+            // 先处理已确认的客户端变更：清理 delta 队列，并为 insert 回填服务端 ID
+            for (clientChange in syncResponse.clientChanges) {
+                val delta = pendingDeltas.find { it.localId == clientChange.localId } ?: continue
+                if (clientChange.op == "insert") {
+                    val localTask = database.taskDao().getTaskByLocalId(delta.localId)
+                    if (localTask != null && localTask.serverId == null) {
+                        database.taskDao().updateTask(
+                            localTask.copy(serverId = clientChange.serverId)
                         )
-                    )
+                    }
                 }
+                database.deltaQueueDao().deleteDelta(delta.id)
             }
 
-            for (clientChange in syncResponse.clientChanges) {
-                val delta = pendingDeltas.find { it.localId == clientChange.localId }
-                delta?.let {
-                    database.deltaQueueDao().deleteDelta(it.id)
+            // 再应用服务端变更：按 serverId 匹配本地任务；不存在且未删除 → 其他设备新建的任务，插入本地
+            for (serverChange in syncResponse.serverChanges) {
+                val existing = database.taskDao().getTaskByServerId(serverChange.id)
+                if (existing != null) {
+                    if (serverChange.isDeleted) {
+                        database.taskDao().softDeleteTask(existing.id, serverChange.updatedAt)
+                    } else {
+                        database.taskDao().updateTask(
+                            existing.copy(
+                                serverId = serverChange.id,
+                                serverVersion = serverChange.serverVersion,
+                                title = serverChange.title ?: existing.title,
+                                description = serverChange.description ?: existing.description,
+                                status = serverChange.status ?: existing.status,
+                                priority = serverChange.priority ?: existing.priority,
+                                dueAt = serverChange.dueAt ?: existing.dueAt,
+                                updatedAt = serverChange.updatedAt,
+                                isDeleted = false
+                            )
+                        )
+                    }
+                } else if (!serverChange.isDeleted) {
+                    val timestamp = serverChange.updatedAt
+                    database.taskDao().insertTask(
+                        Task(
+                            localId = UUID.randomUUID().toString(),
+                            serverId = serverChange.id,
+                            userId = userId,
+                            serverVersion = serverChange.serverVersion,
+                            title = serverChange.title ?: "",
+                            description = serverChange.description ?: "",
+                            status = serverChange.status ?: "todo",
+                            priority = serverChange.priority ?: "medium",
+                            dueAt = serverChange.dueAt,
+                            createdAt = timestamp,
+                            updatedAt = timestamp,
+                            lastModified = timestamp
+                        )
+                    )
                 }
             }
 
@@ -99,7 +134,7 @@ class DeltaSyncWorker(
                         localId = conflict.localId,
                         serverId = conflict.serverId,
                         reason = conflict.reason,
-                        options = conflict.options.joinToString(","),
+                        options = conflict.options?.joinToString(",") ?: "",
                         createdAt = java.time.Instant.now().toString()
                     )
                 )

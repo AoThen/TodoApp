@@ -120,9 +120,14 @@ data class SyncResponse(
 data class ServerChange(
     @SerializedName("id") val id: Long,
     @SerializedName("server_version") val serverVersion: Int,
-    @SerializedName("title") val title: String,
+    // 以下字段服务端在 update/delete 场景可能不下发，需可空并在客户端做合并兜底
+    @SerializedName("title") val title: String? = null,
+    @SerializedName("description") val description: String? = null,
+    @SerializedName("status") val status: String? = null,
+    @SerializedName("priority") val priority: String? = null,
+    @SerializedName("due_at") val dueAt: String? = null,
     @SerializedName("updated_at") val updatedAt: String,
-    @SerializedName("is_deleted") val isDeleted: Boolean
+    @SerializedName("is_deleted") val isDeleted: Boolean = false
 )
 
 data class ClientChange(
@@ -135,7 +140,8 @@ data class Conflict(
     @SerializedName("local_id") val localId: String,
     @SerializedName("server_id") val serverId: Long,
     @SerializedName("reason") val reason: String,
-    @SerializedName("options") val options: List<String>
+    // 服务端冲突响应可能不下发 options，需可空避免 Gson 填 null 触发 NPE
+    @SerializedName("options") val options: List<String>? = null
 )
 
 // Device pairing data classes

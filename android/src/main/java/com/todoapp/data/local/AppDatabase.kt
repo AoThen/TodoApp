@@ -92,6 +92,9 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun getTaskById(id: Long): Task?
 
+    @Query("SELECT * FROM tasks WHERE serverId = :serverId LIMIT 1")
+    suspend fun getTaskByServerId(serverId: Long): Task?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTask(task: Task): Long
 
