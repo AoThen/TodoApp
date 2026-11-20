@@ -6,10 +6,12 @@ interface TaskListProps {
   tasks: Task[];
   onDeleteTask: (task: Task) => void;
   onToggleSelect: (localId: string, checked: boolean) => void;
+  onEditTask: (task: Task) => void;
+  onToggleStatus: (task: Task) => void;
   selectedTasks: Set<string>;
 }
 
-const TaskList: React.FC<TaskListProps> = memo(({ tasks, onDeleteTask, onToggleSelect, selectedTasks }) => {
+const TaskList: React.FC<TaskListProps> = memo(({ tasks, onDeleteTask, onToggleSelect, onEditTask, onToggleStatus, selectedTasks }) => {
   const handleToggleSelect = useCallback((localId: string, checked: boolean) => {
     onToggleSelect(localId, checked);
   }, [onToggleSelect]);
@@ -17,6 +19,14 @@ const TaskList: React.FC<TaskListProps> = memo(({ tasks, onDeleteTask, onToggleS
   const handleDelete = useCallback((task: Task) => {
     onDeleteTask(task);
   }, [onDeleteTask]);
+
+  const handleEdit = useCallback((task: Task) => {
+    onEditTask(task);
+  }, [onEditTask]);
+
+  const handleToggleStatus = useCallback((task: Task) => {
+    onToggleStatus(task);
+  }, [onToggleStatus]);
 
   if (tasks.length === 0) {
     return (
@@ -34,6 +44,8 @@ const TaskList: React.FC<TaskListProps> = memo(({ tasks, onDeleteTask, onToggleS
           task={task}
           onDelete={handleDelete}
           onToggleSelect={handleToggleSelect}
+          onEdit={handleEdit}
+          onToggleStatus={handleToggleStatus}
           isSelected={selectedTasks.has(task.local_id)}
         />
       ))}

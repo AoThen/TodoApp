@@ -12,7 +12,9 @@ import ErrorBoundary from './components/common/ErrorBoundary';
 import Header from './components/layout/Header';
 import TaskList from './components/tasks/TaskList';
 import TaskForm from './components/tasks/TaskForm';
+import TaskEditModal from './components/tasks/TaskEditModal';
 import TaskFilter, { FilterState } from './components/tasks/TaskFilter';
+import NotificationSystem from './components/NotificationSystem';
 import { toast } from 'react-toastify';
 import './App.css';
 
@@ -33,6 +35,7 @@ const AppContent: React.FC = () => {
   const [undoTaskIds, setUndoTaskIds] = useState<number[]>([]);
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [filters, setFilters] = useState<FilterState>({
     status: '',
     priority: '',
@@ -236,6 +239,32 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const handleSaveTask = async (updates: Partial<Task>) => {
+    if (!editingTask) return;
+    const now = new Date().toISOString();
+
+    const patch: Partial<Task> = { ...updates, last_modified: now };
+    if (updates.status === 'done' && editingTask.status !== 'done') {
+      patch.completed_at = now;
+    } else if (updates.status && updates.status !== 'done') {
+      patch.completed_at = undefined;
+    }
+
+    // 本地立即生效（offline-first），再入 delta 队列同步
+    await indexedDBService.updateTask(editingTask.local_id, patch);
+    setTasks(prev => prev.map(t =>
+      t.local_id === editingTask.local_id ? { ...t, ...patch } : t
+    ));
+    setEditingTask(null);
+
+    if (authToken && editingTask.server_id) {
+      await syncManager.enqueueLocalChange('update', {
+        id: editingTask.server_id,
+        ...updates,
+      }, editingTask.server_version + 1);
+    }
+  };
+
   const handleDeleteTask = async (task: Task) => {
     const confirmed = window.confirm(`确定要删除任务"${task.title}"吗？`);
     if (!confirmed) {
@@ -419,8 +448,8 @@ const AppContent: React.FC = () => {
       <div className="login-container">
         <h1>TodoApp Login</h1>
         <form onSubmit={handleLogin}>
-          <input type="email" name="email" placeholder="Email" defaultValue="test@example.com" required />
-          <input type="password" name="password" placeholder="Password" defaultValue="password" required />
+          <input type="email" name="email" placeholder="Email" required />
+          <input type="password" name="password" placeholder="Password" required />
           <button type="submit">Login</button>
         </form>
       </div>
@@ -437,6 +466,7 @@ const AppContent: React.FC = () => {
         onOpenPairing={() => setShowPairing(true)}
         onOpenImport={() => setShowImport(true)}
         isAdmin={isAdmin}
+        bell={authToken ? <NotificationSystem token={authToken} /> : undefined}
       />
 
       <main className="app-main">
@@ -474,9 +504,19 @@ const AppContent: React.FC = () => {
             tasks={tasks}
             onDeleteTask={handleDeleteTask}
             onToggleSelect={toggleTaskSelection}
+            onEditTask={setEditingTask}
+            onToggleStatus={handleToggleStatus}
             selectedTasks={selectedTasks}
           />
         </main>
+
+      {editingTask && (
+        <TaskEditModal
+          task={editingTask}
+          onSave={handleSaveTask}
+          onClose={() => setEditingTask(null)}
+        />
+      )}
 
       {showConflicts && (
         <div className="conflicts-modal">

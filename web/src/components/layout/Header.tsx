@@ -8,9 +8,10 @@ interface HeaderProps {
   onOpenPairing: () => void;
   onOpenImport: () => void;
   isAdmin: boolean;
+  bell?: React.ReactNode;
 }
 
-const Header: React.FC<HeaderProps> = memo(({ isOnline, isSyncing, onLogout, onOpenAdmin, onOpenPairing, onOpenImport, isAdmin }) => {
+const Header: React.FC<HeaderProps> = memo(({ isOnline, isSyncing, onLogout, onOpenAdmin, onOpenPairing, onOpenImport, isAdmin, bell }) => {
   const handleLogout = useCallback(() => {
     onLogout();
   }, [onLogout]);
@@ -25,6 +26,7 @@ const Header: React.FC<HeaderProps> = memo(({ isOnline, isSyncing, onLogout, onO
         {isSyncing && <span className="sync-indicator">同步中...</span>}
       </div>
       <div className="header-actions">
+        {bell}
         <button onClick={onOpenImport} className="header-btn">导入</button>
         <button onClick={onOpenPairing} className="header-btn">设备配对</button>
         {isAdmin && (

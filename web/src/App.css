@@ -99,8 +99,35 @@
   height: 18px;
 }
 
-.task-title {
+.task-item {
+  cursor: pointer;
+}
+
+.task-main {
   flex: 1;
+  min-width: 0;
+}
+
+.task-desc {
+  font-size: 13px;
+  color: #666;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-due {
+  font-size: 12px;
+  color: #999;
+  margin-top: 2px;
+}
+
+.task-status {
+  cursor: pointer;
+}
+
+.task-title {
   font-size: 16px;
 }
 

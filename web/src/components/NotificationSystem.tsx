@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'react-toastify';
 import NotificationBell from './notifications/NotificationBell';
 import NotificationCenter from './notifications/NotificationCenter';
 import { NotificationService } from '../services/notification';
@@ -63,12 +64,10 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({ token }) => {
       // 更新未读数量
       fetchUnreadCount();
 
-      // 显示 toast 通知（如果安装了 react-toastify）
-      if ((window as any).toast) {
-        (window as any).toast.info(message.data.title || '新通知', {
-          description: message.data.content
-        });
-      }
+      // 显示 toast 通知
+      const title = message.data.title || '新通知';
+      const content = message.data.content;
+      toast.info(content ? `${title}: ${content}` : title);
     }
   };
 
