@@ -17,11 +17,11 @@ class TodoApp : Application(), Configuration.Provider {
         AppConfig.initialize(this)
     }
 
-    override fun getWorkManagerConfiguration(): Configuration {
-        return Configuration.Builder()
+    // WorkManager 2.9+ 的 Configuration.Provider 使用属性而非 getter 方法
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
             .setMinimumLoggingLevel(if (BuildConfig.DEBUG) android.util.Log.DEBUG else android.util.Log.ERROR)
             .build()
-    }
 
     fun isUserPaired(): Boolean {
         return try {
