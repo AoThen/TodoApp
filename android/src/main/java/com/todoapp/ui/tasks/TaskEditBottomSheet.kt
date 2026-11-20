@@ -103,7 +103,7 @@ class TaskEditBottomSheet : BottomSheetDialogFragment(), DatePickerDialog.OnDate
                                     R.string.task_update_success,
                                     Toast.LENGTH_SHORT
                                 ).show()
-                                dismiss()
+                                dismissAllowingStateLoss()
                             }
                         }
                         is TaskDetailState.Idle -> { }
@@ -146,8 +146,10 @@ class TaskEditBottomSheet : BottomSheetDialogFragment(), DatePickerDialog.OnDate
     }
 
     override fun onDateSet(view: DatePicker?, year: Int, month: Int, day: Int) {
+        // 选择器回调可能晚于 onDestroyView，需判空防止 NPE
+        val b = _binding ?: return
         val date = String.format(Locale.US, "%04d-%02d-%02d", year, month + 1, day)
-        binding.etDueDate.setText(date)
+        b.etDueDate.setText(date)
         viewModel.validateDueDate(date)
     }
 
