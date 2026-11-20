@@ -1,9 +1,20 @@
 package db
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"time"
 )
+
+// generateImportLocalID 为导入任务生成唯一 local_id
+func generateImportLocalID() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("import-%d", time.Now().UnixNano())
+	}
+	return "import-" + hex.EncodeToString(b)
+}
 
 // BatchInsertTasks 批量插入任务（用于导入）
 func BatchInsertTasks(userID int, tasks []map[string]interface{}) ([]int64, error) {
@@ -29,8 +40,9 @@ func BatchInsertTasks(userID int, tasks []map[string]interface{}) ([]int64, erro
 		status := taskValue(taskData["status"])
 		priority := taskValue(taskData["priority"])
 
+		// 导入数据可能不带 local_id，自动生成以保证幂等同步语义
 		if localID == "" {
-			return nil, fmt.Errorf("title不能为空")
+			localID = generateImportLocalID()
 		}
 
 		if title == "" {

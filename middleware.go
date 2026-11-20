@@ -144,10 +144,10 @@ func getClientIP(r *http.Request) string {
 
 func securityMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Validate content type for POST/PUT/PATCH
+		// Validate content type for POST/PUT/PATCH（导入接口使用 multipart 上传，需放行）
 		if r.Method != "GET" && r.Method != "DELETE" {
 			contentType := r.Header.Get("Content-Type")
-			if !strings.Contains(contentType, "application/json") {
+			if !strings.Contains(contentType, "application/json") && !strings.Contains(contentType, "multipart/form-data") {
 				http.Error(w, "unsupported media type", http.StatusUnsupportedMediaType)
 				return
 			}

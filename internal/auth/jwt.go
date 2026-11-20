@@ -1,7 +1,10 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -60,10 +63,21 @@ func GenerateRefreshToken(userID string, duration time.Duration) (string, error)
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(duration)),
 			Subject:   userID,
+			ID:        randomJTI(),
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(jwtSecret)
+}
+
+// randomJTI 生成随机 token ID，保证 refresh token 唯一且不可预测
+func randomJTI() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		// 随机源失败时回退到纳秒时间戳，避免生成完全相同的令牌
+		return fmt.Sprintf("%x", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
 }
 
 // ValidateToken validates a JWT and returns claims if valid

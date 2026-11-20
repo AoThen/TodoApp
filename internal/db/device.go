@@ -2,6 +2,7 @@ package db
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"time"
 )
@@ -46,23 +47,33 @@ func GetUserDevices(userID int) ([]map[string]interface{}, error) {
 	var results []map[string]interface{}
 	for rows.Next() {
 		var id int64
-		var deviceType, deviceID, serverURL string
-		var pairedAt, lastSeen time.Time
-		var isActive bool
+		// 待配对设备的 device_id/server_url/paired_at/last_seen 可为 NULL
+		var deviceType, deviceID, serverURL sql.NullString
+		var pairedAt, lastSeen sql.NullTime
+		var isActive sql.NullBool
 
 		err := rows.Scan(&id, &deviceType, &deviceID, &serverURL, &pairedAt, &lastSeen, &isActive)
 		if err != nil {
 			return nil, err
 		}
 
+		pairedAtStr := ""
+		if pairedAt.Valid {
+			pairedAtStr = pairedAt.Time.Format(time.RFC3339)
+		}
+		lastSeenStr := ""
+		if lastSeen.Valid {
+			lastSeenStr = lastSeen.Time.Format(time.RFC3339)
+		}
+
 		results = append(results, map[string]interface{}{
 			"id":          id,
-			"device_type": deviceType,
-			"device_id":   deviceID,
-			"server_url":  serverURL,
-			"paired_at":   pairedAt.Format(time.RFC3339),
-			"last_seen":   lastSeen.Format(time.RFC3339),
-			"is_active":   isActive,
+			"device_type": deviceType.String,
+			"device_id":   deviceID.String,
+			"server_url":  serverURL.String,
+			"paired_at":   pairedAtStr,
+			"last_seen":   lastSeenStr,
+			"is_active":   isActive.Bool,
 		})
 	}
 	return results, nil

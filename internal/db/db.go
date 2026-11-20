@@ -99,7 +99,7 @@ func InitDB(dataSourceName string) error {
             created_at DATETIME,
             updated_at DATETIME,
             completed_at DATETIME,
-            is_deleted BOOLEAN,
+            is_deleted BOOLEAN DEFAULT 0,
             last_modified DATETIME,
             FOREIGN KEY(user_id) REFERENCES users(id)
         );`,
@@ -201,6 +201,10 @@ func InitDB(dataSourceName string) error {
 		if _, err := DB.Exec(s); err != nil {
 			return err
 		}
+	}
+	// 存量库迁移：历史 INSERT 未写 is_deleted 列，NULL 行对 is_deleted=0 查询不可见
+	if _, err := DB.Exec("UPDATE tasks SET is_deleted = 0 WHERE is_deleted IS NULL"); err != nil {
+		return fmt.Errorf("迁移 tasks.is_deleted 失败: %w", err)
 	}
 	// Seed default data if empty
 	seedIfEmpty()

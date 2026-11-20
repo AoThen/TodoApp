@@ -10,11 +10,6 @@ import (
 )
 
 import (
-	"github.com/gorilla/handlers"
-	"github.com/gorilla/mux"
-)
-
-import (
 	"todoapp/internal/crypto"
 	"todoapp/internal/db"
 	"todoapp/internal/response"
@@ -104,87 +99,6 @@ func main() {
 	go startCleanupTasks()
 	log.Println("Cleanup tasks started.")
 
-	// Create router with Gorilla Mux for better routing
-	router := mux.NewRouter()
-
-	// Apply security middleware
-	router.Use(securityMiddleware)
-	router.Use(headersMiddleware)
-	router.Use(globalRateLimitMiddleware)
-
-	// Health check endpoint (public)
-	router.HandleFunc("/api/v1/health", handleHealth).Methods("GET")
-
-	// Auth routes (public) - Registration disabled for admin-only user creation
-	// router.HandleFunc("/api/v1/auth/register", handleRegister).Methods("POST")
-	router.HandleFunc("/api/v1/auth/login", handleLogin).Methods("POST")
-	router.HandleFunc("/api/v1/auth/refresh", handleRefresh).Methods("POST")
-	router.HandleFunc("/api/v1/auth/logout", handleLogout).Methods("POST")
-
-	// Protected routes
-	protected := router.PathPrefix("/api/v1").Subrouter()
-	protected.Use(authMiddleware)
-
-	em := crypto.GetEncryptionMiddleware()
-	protected.Use(em.DecryptRequest)
-	protected.Use(em.EncryptResponse)
-
-	protected.HandleFunc("/users/me", handleMe).Methods("GET")
-	protected.HandleFunc("/tasks", handleTasks).Methods("GET", "POST")
-	// 具体路径必须注册在 {id} 之前，否则会被 {id} 捕获（如 /tasks/batch）
-	protected.HandleFunc("/tasks/batch", func(w http.ResponseWriter, r *http.Request) {
-		handleBatchDeleteTasks(w, r, wsHub)
-	}).Methods("DELETE")
-	protected.HandleFunc("/tasks/{id}", handleTaskByID).Methods("GET", "PATCH", "DELETE")
-	protected.HandleFunc("/tasks/{id}/restore", handleRestoreTask).Methods("POST")
-	protected.HandleFunc("/sync", func(w http.ResponseWriter, r *http.Request) { handleSync(w, r, wsHub) }).Methods("POST")
-	protected.HandleFunc("/export", handleExport).Methods("GET")
-	protected.HandleFunc("/import", handleImport).Methods("POST")
-	protected.HandleFunc("/notifications", handleGetNotifications).Methods("GET")
-	protected.HandleFunc("/notifications", handleCreateNotification).Methods("POST")
-	// 具体路径必须注册在 {id} 之前，否则会被 {id} 捕获
-	protected.HandleFunc("/notifications/read-all", handleMarkAllAsRead).Methods("PATCH")
-	protected.HandleFunc("/notifications/unread-count", handleGetUnreadCount).Methods("GET")
-	protected.HandleFunc("/notifications/clear", handleClearNotifications).Methods("DELETE")
-	protected.HandleFunc("/notifications/{id}/read", handleMarkAsRead).Methods("PATCH")
-	protected.HandleFunc("/notifications/{id}", handleDeleteNotification).Methods("DELETE")
-
-	// Device pairing routes
-	protected.HandleFunc("/devices/pair/init", handleInitPairing).Methods("POST")
-	protected.HandleFunc("/devices/pair", handleDevicePairing).Methods("POST")
-	protected.HandleFunc("/devices", handleListDevices).Methods("GET")
-	protected.HandleFunc("/devices/{id}/regenerate", handleRegenerateDeviceKey).Methods("POST")
-	protected.HandleFunc("/devices/{id}", handleRevokeDevice).Methods("DELETE")
-
-	// Admin routes (requires authentication and admin role)
-	admin := router.PathPrefix("/api/v1/admin").Subrouter()
-	admin.Use(authMiddleware)
-	admin.Use(adminMiddleware)
-
-	admin.HandleFunc("/users", handleAdminListUsers).Methods("GET")
-	admin.HandleFunc("/users", func(w http.ResponseWriter, r *http.Request) {
-		email := getEmailFromContext(r.Context())
-		handleAdminCreateUserWithNotification(w, r, email, wsHub)
-	}).Methods("POST")
-	admin.HandleFunc("/users/{id}", handleAdminUpdateUser).Methods("PATCH")
-	admin.HandleFunc("/users/{id}/password", handleAdminResetPassword).Methods("POST")
-	admin.HandleFunc("/users/{id}/lock", handleAdminLockUser).Methods("POST")
-	admin.HandleFunc("/users/{id}/unlock", handleAdminUnlockUser).Methods("POST")
-	admin.HandleFunc("/users/{id}", handleAdminDeleteUser).Methods("DELETE")
-
-	admin.HandleFunc("/logs/login", handleAdminGetLoginLogs).Methods("GET")
-	admin.HandleFunc("/logs/actions", handleAdminGetActionLogs).Methods("GET")
-
-	admin.HandleFunc("/config", handleAdminGetConfig).Methods("GET")
-	admin.HandleFunc("/config", handleAdminSetConfig).Methods("PUT")
-
-	// WebSocket endpoint (requires authentication, with optional encryption)
-	// 应用WebSocket加密中间件
-	wsMiddleware := webSocketEncryptionMiddleware(enforceWSEncryption)
-	router.Handle("/ws", wsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handleWebSocket(w, r, wsHub)
-	}))).Methods("GET")
-
 	// 读取服务器端口配置（支持 SERVER_PORT 环境变量，默认 8080）
 	serverPort := os.Getenv("SERVER_PORT")
 	if serverPort == "" {
@@ -194,20 +108,15 @@ func main() {
 		log.Printf("SERVER_PORT 环境变量无效（%q），使用默认端口 8080", serverPort)
 		serverPort = "8080"
 	}
-	serverAddr := ":" + serverPort
 
-	// CORS handling for development
-	corsHandler := handlers.CORS(
-		handlers.AllowedOrigins([]string{"http://localhost:3000", "http://localhost:" + serverPort}),
-		handlers.AllowedMethods([]string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}),
-		handlers.AllowedHeaders([]string{"Content-Type", "Authorization", "X-User-ID"}),
-		handlers.AllowCredentials(),
-	)(router)
+	// 路由与中间件装配（与集成测试共享）
+	handler := buildRouter(wsHub, enforceWSEncryption, serverPort)
 
 	// Configure server with timeouts
+	serverAddr := ":" + serverPort
 	srv := &http.Server{
 		Addr:         serverAddr,
-		Handler:      corsHandler,
+		Handler:      handler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,

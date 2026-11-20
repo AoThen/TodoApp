@@ -38,7 +38,8 @@ func BatchDeleteTasksOptimized(userID int, taskIDs []int64) (int, error) {
 	}
 
 	query := fmt.Sprintf(
-		"SELECT id, local_id, server_version, title, description, status, priority, due_at, created_at FROM tasks WHERE user_id = ? AND id IN (%s) AND is_deleted = 0",
+		// description/priority/due_at 允许为 NULL，用 COALESCE 归一为空串/默认值，避免 Scan 报错
+		"SELECT id, COALESCE(local_id,''), server_version, title, COALESCE(description,''), status, COALESCE(priority,'medium'), COALESCE(due_at,''), COALESCE(created_at,'') FROM tasks WHERE user_id = ? AND id IN (%s) AND is_deleted = 0",
 		strings.Join(placeholders, ","),
 	)
 
