@@ -1,4 +1,4 @@
-import React, { memo, useCallback } from 'react';
+import React, { memo, useCallback, useState } from 'react';
 
 interface HeaderProps {
   isOnline: boolean;
@@ -12,6 +12,19 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = memo(({ isOnline, isSyncing, onLogout, onOpenAdmin, onOpenPairing, onOpenImport, isAdmin, bell }) => {
+  const [theme, setTheme] = useState<'light' | 'dark'>(
+    () => (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
+  );
+
+  const toggleTheme = useCallback(() => {
+    setTheme(prev => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem('theme', next);
+      return next;
+    });
+  }, []);
+
   const handleLogout = useCallback(() => {
     onLogout();
   }, [onLogout]);
@@ -27,6 +40,9 @@ const Header: React.FC<HeaderProps> = memo(({ isOnline, isSyncing, onLogout, onO
       </div>
       <div className="header-actions">
         {bell}
+        <button onClick={toggleTheme} className="header-btn" title="切换深浅主题">
+          {theme === 'dark' ? '浅色' : '深色'}
+        </button>
         <button onClick={onOpenImport} className="header-btn">导入</button>
         <button onClick={onOpenPairing} className="header-btn">设备配对</button>
         {isAdmin && (

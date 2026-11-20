@@ -14,6 +14,7 @@ import TaskList from './components/tasks/TaskList';
 import TaskForm from './components/tasks/TaskForm';
 import TaskEditModal from './components/tasks/TaskEditModal';
 import TaskFilter, { FilterState } from './components/tasks/TaskFilter';
+import Pagination from './components/tasks/Pagination';
 import NotificationSystem from './components/NotificationSystem';
 import { toast } from 'react-toastify';
 import './App.css';
@@ -36,6 +37,9 @@ const AppContent: React.FC = () => {
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<{ page: number; pages: number; total: number } | null>(null);
+  const PAGE_SIZE = 20;
   const [filters, setFilters] = useState<FilterState>({
     status: '',
     priority: '',
@@ -99,12 +103,14 @@ const AppContent: React.FC = () => {
     if (authToken) {
       loadTasks();
     }
-  }, [filters, authToken]);
+  }, [page, filters, authToken]);
 
   const loadTasks = async () => {
   try {
     if (authToken) {
       const response = await apiService.getTasks({
+        page,
+        page_size: PAGE_SIZE,
         status: filters.status || undefined,
         priority: filters.priority || undefined,
         search: filters.search || undefined,
@@ -112,14 +118,22 @@ const AppContent: React.FC = () => {
         sort_order: filters.sortOrder,
       });
       setTasks(response.tasks.filter((t: any) => !t.is_deleted));
+      setPagination(response.pagination || null);
     } else {
       const allTasks = await indexedDBService.getAllTasks();
       setTasks(allTasks.filter(t => !t.is_deleted));
+      setPagination(null);
     }
   } catch (error) {
     console.error('Failed to load tasks:', error);
   }
 };
+
+  // 筛选/搜索/排序变化时重置回第 1 页
+  const handleFilterChange = (next: FilterState) => {
+    setFilters(next);
+    setPage(1);
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -470,8 +484,17 @@ const AppContent: React.FC = () => {
       />
 
       <main className="app-main">
-        <TaskFilter filters={filters} onFilterChange={setFilters} />
+        <TaskFilter filters={filters} onFilterChange={handleFilterChange} />
         <TaskForm onAddTask={handleAddTaskFromForm} />
+
+        {pagination && (
+          <Pagination
+            page={page}
+            pages={pagination.pages}
+            total={pagination.total}
+            onChange={setPage}
+          />
+        )}
 
          {/* 批量操作工具栏 */}
          <div className="batch-actions-bar">
