@@ -1,11 +1,14 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 import (
@@ -129,9 +132,37 @@ func handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	oldEmail, _ := db.GetUserEmail(userID)
+	// 先查旧值：瞬时 DB 错误必须 500 拒绝，绝不能把空串当作旧值回退（否则会清空 email/role）
+	oldEmail, err := db.GetUserEmail(userID)
+	if err != nil {
+		if strings.Contains(err.Error(), "用户不存在") || errors.Is(err, sql.ErrNoRows) {
+			response.ErrorResponse(w, "用户不存在", http.StatusNotFound)
+		} else {
+			response.ErrorResponse(w, "查询用户失败", http.StatusInternalServerError)
+		}
+		return
+	}
+	oldRole, err := db.GetUserRole(strconv.FormatInt(userID, 10))
+	if err != nil {
+		if strings.Contains(err.Error(), "用户不存在") || errors.Is(err, sql.ErrNoRows) {
+			response.ErrorResponse(w, "用户不存在", http.StatusNotFound)
+		} else {
+			response.ErrorResponse(w, "查询用户失败", http.StatusInternalServerError)
+		}
+		return
+	}
 
-	if err := db.UpdateUser(userID, req.Email, req.Role); err != nil {
+	// PATCH 语义：仅更新提交的字段，空字段保持原值，避免把 email/role 覆盖为空串
+	newEmail := req.Email
+	if newEmail == "" {
+		newEmail = oldEmail
+	}
+	newRole := req.Role
+	if newRole == "" {
+		newRole = oldRole
+	}
+
+	if err := db.UpdateUser(userID, newEmail, newRole); err != nil {
 		response.ErrorResponse(w, "更新用户失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
