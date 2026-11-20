@@ -691,3 +691,108 @@ func TestSyncInvalidBody(t *testing.T) {
 		t.Errorf("非法 sync 请求体应 400, got %d", resp.StatusCode)
 	}
 }
+
+// ---------------- 同步安全（越权防护）与事务一致性 ----------------
+
+func TestSyncIDORProtection(t *testing.T) {
+	cleanTables(t)
+	// 用户 A（userTok）通过 sync 创建任务
+	insertChange := map[string]interface{}{
+		"local_id": "idor-insert", "op": "insert",
+		"payload":        map[string]interface{}{"title": "A的私有任务", "status": "todo", "priority": "high"},
+		"client_version": 0,
+	}
+	resp, out := doJSON(t, http.MethodPost, "/api/v1/sync", userTok,
+		map[string]interface{}{"last_sync_at": "", "changes": []map[string]interface{}{insertChange}})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("用户A sync 应 200, got %d %v", resp.StatusCode, out)
+	}
+	serverChanges, _ := out["server_changes"].([]interface{})
+	if len(serverChanges) != 1 {
+		t.Fatalf("应返回 1 条 server_change: %v", out)
+	}
+	taskID := int64(serverChanges[0].(map[string]interface{})["id"].(float64))
+
+	// 用户 B（adminTok，不同 user_id）尝试通过 sync 更新/删除 A 的任务 → 应失败
+	updateByB := map[string]interface{}{
+		"local_id": "idor-update", "op": "update",
+		"payload":        map[string]interface{}{"id": float64(taskID), "title": "被篡改", "status": "done", "priority": "low"},
+		"client_version": 1,
+	}
+	resp, _ = doJSON(t, http.MethodPost, "/api/v1/sync", adminTok,
+		map[string]interface{}{"last_sync_at": "", "changes": []map[string]interface{}{updateByB}})
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("B 更新 A 的任务应 500（归属校验拦截）, got %d", resp.StatusCode)
+	}
+
+	deleteByB := map[string]interface{}{
+		"local_id": "idor-delete", "op": "delete",
+		"payload":        map[string]interface{}{"id": float64(taskID)},
+		"client_version": 1,
+	}
+	resp, _ = doJSON(t, http.MethodPost, "/api/v1/sync", adminTok,
+		map[string]interface{}{"last_sync_at": "", "changes": []map[string]interface{}{deleteByB}})
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("B 删除 A 的任务应 500（归属校验拦截）, got %d", resp.StatusCode)
+	}
+
+	// A 的任务应保持原样
+	_, out = doJSON(t, http.MethodGet, fmt.Sprintf("/api/v1/tasks/%d", taskID), userTok, nil)
+	task := dataMap(out)
+	if task["title"] != "A的私有任务" || task["status"] != "todo" {
+		t.Errorf("A 的任务被越权修改: %v", task)
+	}
+}
+
+func TestSyncRollbackOnFailure(t *testing.T) {
+	cleanTables(t)
+	// 先创建一个任务（server_version=1）
+	insertChange := map[string]interface{}{
+		"local_id": "rb-insert", "op": "insert",
+		"payload":        map[string]interface{}{"title": "回滚验证", "status": "todo", "priority": "medium"},
+		"client_version": 0,
+	}
+	_, out := doJSON(t, http.MethodPost, "/api/v1/sync", userTok,
+		map[string]interface{}{"last_sync_at": "", "changes": []map[string]interface{}{insertChange}})
+	serverChanges, _ := out["server_changes"].([]interface{})
+	if len(serverChanges) != 1 {
+		t.Fatalf("应返回 1 条 server_change: %v", out)
+	}
+	taskID := int64(serverChanges[0].(map[string]interface{})["id"].(float64))
+
+	// 同一批次：一个合法更新 + 一个更新不存在的任务 → 任一失败应整体回滚
+	batch := map[string]interface{}{
+		"last_sync_at": "",
+		"changes": []map[string]interface{}{
+			{
+				"local_id": "rb-good", "op": "update",
+				"payload":        map[string]interface{}{"id": float64(taskID), "title": "已被修改", "status": "done", "priority": "high"},
+				"client_version": 1,
+			},
+			{
+				"local_id": "rb-bad", "op": "update",
+				"payload":        map[string]interface{}{"id": float64(999999), "title": "不存在", "status": "todo", "priority": "low"},
+				"client_version": 1,
+			},
+		},
+	}
+	resp, _ := doJSON(t, http.MethodPost, "/api/v1/sync", userTok, batch)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("批次含失败项应整体 500, got %d", resp.StatusCode)
+	}
+
+	// 合法更新也必须被回滚：任务保持原状
+	_, out = doJSON(t, http.MethodGet, fmt.Sprintf("/api/v1/tasks/%d", taskID), userTok, nil)
+	task := dataMap(out)
+	if task["title"] != "回滚验证" || task["status"] != "todo" {
+		t.Errorf("失败批次未回滚，任务被部分修改: %v", task)
+	}
+}
+
+func TestAPIUnknownPathReturns404(t *testing.T) {
+	cleanTables(t)
+	resp, _ := doJSON(t, http.MethodGet, "/api/v1/definitely-not-exist", userTok, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("未知 API 路径应 404 而非落入 SPA fallback, got %d", resp.StatusCode)
+	}
+}

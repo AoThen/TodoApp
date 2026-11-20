@@ -355,7 +355,7 @@ func recordConflict(localID string, serverID int64, reason string, userID int) {
 		log.Printf("序列化冲突选项错误: %v", err)
 		optionsJSON = []byte("[]")
 	}
-	if err := db.RecordConflict(localID, serverID, reason, string(optionsJSON)); err != nil {
+	if err := db.RecordConflict(userID, localID, serverID, reason, string(optionsJSON)); err != nil {
 		log.Printf("记录冲突错误: %v", err)
 	}
 }

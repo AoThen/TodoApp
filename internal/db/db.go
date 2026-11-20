@@ -127,6 +127,7 @@ func InitDB(dataSourceName string) error {
         );`,
 		`CREATE TABLE IF NOT EXISTS conflicts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
             local_id TEXT,
             server_id INTEGER,
             reason TEXT,
@@ -160,10 +161,12 @@ func InitDB(dataSourceName string) error {
 		`CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);`,
 		`CREATE INDEX IF NOT EXISTS idx_tasks_last_modified ON tasks(last_modified);`,
 		`CREATE INDEX IF NOT EXISTS idx_tasks_is_deleted ON tasks(is_deleted);`,
+		`CREATE INDEX IF NOT EXISTS idx_tasks_local_id ON tasks(local_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_tokens_user_id ON tokens(user_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_tokens_expires_at ON tokens(expires_at);`,
 		`CREATE INDEX IF NOT EXISTS idx_login_logs_email ON login_logs(email);`,
 		`CREATE INDEX IF NOT EXISTS idx_login_logs_timestamp ON login_logs(timestamp);`,
+		`CREATE INDEX IF NOT EXISTS idx_conflicts_user_id ON conflicts(user_id);`,
 		`CREATE TABLE IF NOT EXISTS notifications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -214,8 +217,20 @@ func InitDB(dataSourceName string) error {
 	if _, err := DB.Exec("UPDATE tasks SET is_deleted = 0 WHERE is_deleted IS NULL"); err != nil {
 		return fmt.Errorf("迁移 tasks.is_deleted 失败: %w", err)
 	}
+	// 存量库迁移：conflicts 表补充 user_id 归属列（新库建表语句已包含，此处容错处理重复列）
+	if _, err := DB.Exec("ALTER TABLE conflicts ADD COLUMN user_id INTEGER"); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("迁移 conflicts.user_id 失败: %w", err)
+	}
 	// Seed default data if empty
 	seedIfEmpty()
+	return nil
+}
+
+// CloseDB 关闭数据库连接（优雅停机时调用）
+func CloseDB() error {
+	if DB != nil {
+		return DB.Close()
+	}
 	return nil
 }
 

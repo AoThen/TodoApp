@@ -1,7 +1,9 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -45,15 +47,16 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 
 	now := time.Now().UTC()
 
-	// ✅ 使用事务保护同步操作
+	// ✅ 使用事务保护同步操作：所有 insert/update/delete 均在事务内执行，任一失败整体回滚
 	tx, err := db.DB.Begin()
 	if err != nil {
 		log.Printf("事务开始失败: %v", err)
 		response.ErrorResponse(w, "事务开始失败", http.StatusInternalServerError)
 		return
 	}
+	committed := false
 	defer func() {
-		if err != nil {
+		if !committed {
 			_ = tx.Rollback()
 		}
 	}()
@@ -62,7 +65,12 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 	clientChanges := []map[string]interface{}{}
 	conflicts := []map[string]interface{}{}
 	pendingConflicts := []conflictRecord{}
-	syncFailed := false
+
+	// syncFail 同步过程中任一变更失败：整体回滚并返回 500，客户端保留 delta 队列稍后重试
+	syncFail := func(errLog string, err error) {
+		log.Printf("%s: %v", errLog, err)
+		response.ErrorResponse(w, "同步失败，请稍后重试", http.StatusInternalServerError)
+	}
 
 	for _, c := range s.Changes {
 		op := strings.ToLower(c.Op)
@@ -88,7 +96,11 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 			}
 
 			// ✅ 检查 local_id 是否已存在（冲突检测）
-			existingID, _, checkErr := db.TaskExistsByLocalID(userID, c.LocalID)
+			existingID, _, checkErr := db.TaskExistsByLocalID(tx, userID, c.LocalID)
+			if checkErr != nil && !errors.Is(checkErr, sql.ErrNoRows) {
+				syncFail("检查 local_id 失败", checkErr)
+				return
+			}
 			if checkErr == nil && existingID > 0 {
 				// 冲突：local_id重复，使用生成的新标题插入
 				newTitle := fmt.Sprintf("%s (副本: %d)", title, existingID)
@@ -100,7 +112,8 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 				if insertErr == nil {
 					if serverID, err2 := res.LastInsertId(); err2 == nil {
 						serverChanges = append(serverChanges, map[string]interface{}{
-							"id": serverID, "server_version": 1, "title": newTitle, "updated_at": now.Format(time.RFC3339), "is_deleted": false,
+							"id": serverID, "server_version": 1, "title": newTitle, "updated_at": now.Format(time.RFC3339),
+							"description": description, "status": status, "priority": priority, "is_deleted": false,
 						})
 						clientChanges = append(clientChanges, map[string]interface{}{
 							"local_id": c.LocalID, "server_id": serverID, "op": "insert",
@@ -115,8 +128,8 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 						})
 					}
 				} else {
-					log.Printf("插入副本失败: %v", insertErr)
-					syncFailed = true
+					syncFail("插入副本失败", insertErr)
+					return
 				}
 			} else {
 				// 正常插入
@@ -136,8 +149,8 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 						})
 					}
 				} else {
-					log.Printf("插入任务失败: %v", insertErr)
-					syncFailed = true
+					syncFail("插入任务失败", insertErr)
+					return
 				}
 			}
 
@@ -151,13 +164,12 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 					clientDueAt = &v
 				}
 
-				// ✅ 获取服务器当前版本和数据
-				oldVer, serverTitle, serverDesc, serverStatus, _, err := db.GetTaskForSync(id)
+				// ✅ 获取服务器当前版本和数据（校验任务归属，防止越权修改他人任务）
+				oldVer, serverTitle, serverDesc, serverStatus, _, queryErr := db.GetTaskForSync(tx, userID, id)
 
-				if err != nil {
-					log.Printf("查询任务失败: %v", err)
-					syncFailed = true
-					continue
+				if queryErr != nil {
+					syncFail("查询任务失败", queryErr)
+					return
 				}
 
 				newVer := oldVer + 1
@@ -194,10 +206,10 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 						priority = v
 					}
 
-					updateErr := db.UpdateTaskWithVersion(id, mergedTitle, mergedDesc, mergedStatus, priority, clientDueAt, newVer)
+					updateErr := db.UpdateTaskWithVersion(tx, userID, id, mergedTitle, mergedDesc, mergedStatus, priority, clientDueAt, newVer)
 					if updateErr != nil {
-						log.Printf("应用合并结果失败: %v", updateErr)
-						syncFailed = true
+						syncFail("应用合并结果失败", updateErr)
+						return
 					} else {
 						serverChanges = append(serverChanges, map[string]interface{}{
 							"id": id, "server_version": newVer, "title": mergedTitle, "description": mergedDesc,
@@ -241,10 +253,10 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 						priority = v
 					}
 
-					updateErr := db.UpdateTaskWithVersion(id, title, description, status, priority, clientDueAt, newVer)
+					updateErr := db.UpdateTaskWithVersion(tx, userID, id, title, description, status, priority, clientDueAt, newVer)
 					if updateErr != nil {
-						log.Printf("更新任务失败: %v", updateErr)
-						syncFailed = true
+						syncFail("更新任务失败", updateErr)
+						return
 					} else {
 						serverChanges = append(serverChanges, map[string]interface{}{
 							"id": id, "server_version": newVer, "title": title, "updated_at": now.Format(time.RFC3339),
@@ -255,18 +267,23 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 						})
 					}
 				}
+			} else {
+				// payload 缺少服务端任务 ID（如本地 insert 尚未确认即产生更新）：
+				// 回执给客户端以便其清理滞留 delta，避免重复重发
+				clientChanges = append(clientChanges, map[string]interface{}{
+					"local_id": c.LocalID, "server_id": int64(0), "op": op,
+				})
 			}
 
 		case "delete":
 			if idVal, ok := c.Payload["id"].(float64); ok {
 				id := int64(idVal)
 
-				oldVer, _, _, _, isDeleted, err := db.GetTaskForSync(id)
+				oldVer, _, _, _, isDeleted, queryErr := db.GetTaskForSync(tx, userID, id)
 
-				if err != nil {
-					log.Printf("查询任务失败: %v", err)
-					syncFailed = true
-					continue
+				if queryErr != nil {
+					syncFail("查询任务失败", queryErr)
+					return
 				}
 
 				newVer := oldVer + 1
@@ -281,10 +298,10 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 					} else {
 						// 冲突：客户端想删除但服务器有更新
 						// 策略：软删除，记录冲突
-						deleteErr := db.SoftDeleteTaskWithVersion(id, newVer)
+						deleteErr := db.SoftDeleteTaskWithVersion(tx, userID, id, newVer)
 						if deleteErr != nil {
-							log.Printf("删除任务失败: %v", deleteErr)
-							syncFailed = true
+							syncFail("删除任务失败", deleteErr)
+							return
 						} else {
 							serverChanges = append(serverChanges, map[string]interface{}{
 								"id": id, "server_version": newVer, "is_deleted": true, "updated_at": now.Format(time.RFC3339),
@@ -304,10 +321,10 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 					}
 				} else {
 					// 正常删除
-					deleteErr := db.SoftDeleteTaskWithVersion(id, newVer)
+					deleteErr := db.SoftDeleteTaskWithVersion(tx, userID, id, newVer)
 					if deleteErr != nil {
-						log.Printf("删除任务失败: %v", deleteErr)
-						syncFailed = true
+						syncFail("删除任务失败", deleteErr)
+						return
 					} else {
 						serverChanges = append(serverChanges, map[string]interface{}{
 							"id": id, "server_version": newVer, "is_deleted": true, "updated_at": now.Format(time.RFC3339),
@@ -317,6 +334,11 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 						})
 					}
 				}
+			} else {
+				// payload 缺少服务端任务 ID：回执给客户端以便其清理滞留 delta
+				clientChanges = append(clientChanges, map[string]interface{}{
+					"local_id": c.LocalID, "server_id": int64(0), "op": op,
+				})
 			}
 		}
 	}
@@ -327,6 +349,7 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 		response.ErrorResponse(w, "同步失败", http.StatusInternalServerError)
 		return
 	}
+	committed = true
 
 	// 事务提交后统一记录冲突，避免事务内跨连接写 conflicts 表的锁竞争
 	for _, pc := range pendingConflicts {
@@ -334,9 +357,7 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 	}
 
 	// 发送同步结果通知
-	if syncFailed {
-		_, _ = sendNotificationToUser(userID, "sync_failed", "同步失败", "部分任务同步失败，请检查网络连接", "high", wsHub)
-	} else if len(conflicts) > 0 {
+	if len(conflicts) > 0 {
 		_, _ = sendNotificationToUser(userID, "sync_conflict", "同步完成但存在冲突", fmt.Sprintf("成功同步 %d 个任务，但检测到 %d 个冲突", len(clientChanges), len(conflicts)), "high", wsHub)
 	} else if len(clientChanges) > 0 {
 		_, _ = sendNotificationToUser(userID, "sync_success", "同步完成", fmt.Sprintf("成功同步 %d 个任务", len(clientChanges)), "normal", wsHub)
