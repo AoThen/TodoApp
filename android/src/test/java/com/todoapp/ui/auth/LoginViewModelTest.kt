@@ -1,6 +1,6 @@
 package com.todoapp.ui.auth
 
-import androidx.test.core.app.ApplicationProvider
+import android.content.Context
 import com.todoapp.data.remote.ApiService
 import com.todoapp.data.remote.LoginRequest
 import com.todoapp.data.remote.LoginResponse
@@ -51,7 +51,11 @@ class LoginViewModelTest {
         mockkObject(RetrofitClient)
         every { RetrofitClient.saveAccessToken(any(), any()) } returns Unit
         every { RetrofitClient.saveRefreshToken(any(), any()) } returns Unit
-        viewModel = LoginViewModel(ApplicationProvider.getApplicationContext(), apiService)
+        // mock getString，避免依赖 Robolectric 资源加载
+        val context = mockk<Context> {
+            every { getString(any<Int>()) } returns "校验提示"
+        }
+        viewModel = LoginViewModel(context, apiService)
     }
 
     @After
