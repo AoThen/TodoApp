@@ -1,7 +1,13 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
+import { webcrypto } from 'node:crypto';
 import { encrypt, decrypt, generateKey, setDeviceKey, clearDeviceKey, isEncryptionConfigured } from './crypto';
 
 const KEY_HEX = 'a'.repeat(64);
+
+// CI(Node20) 的 jsdom 环境下 crypto.subtle 与 Uint8Array 跨 realm，统一注入 Node webcrypto
+beforeAll(() => {
+  vi.stubGlobal('crypto', webcrypto);
+});
 
 describe('crypto (WebCrypto AES-GCM)', () => {
   beforeEach(() => {
