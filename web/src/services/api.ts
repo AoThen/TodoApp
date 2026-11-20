@@ -46,7 +46,14 @@ class ApiService {
         return response;
       },
       async (error: AxiosError) => {
-        const originalRequest = error.config as unknown as { _retry?: boolean; _retryCount?: number } & Record<string, unknown>;
+        const originalRequest = error.config as unknown as { _retry?: boolean; _retryCount?: number; url?: string } & Record<string, unknown>;
+
+        // 刷新请求自身 401：refresh cookie 已失效，直接终止，避免刷新递归死锁
+        if (error.response?.status === 401 && originalRequest.url?.includes('/auth/refresh')) {
+          this.clearTokens();
+          window.location.href = '/login';
+          throw new Error('Refresh token invalid');
+        }
 
         if (error.response?.status === 401 && !originalRequest._retry) {
           originalRequest._retry = true;
@@ -166,9 +173,9 @@ class ApiService {
   }
 
   async logout(): Promise<void> {
-    const refreshToken = this.getRefreshToken();
     try {
-      await this.client.post('/auth/logout', { refresh_token: refreshToken });
+      // refresh token 在 HttpOnly cookie 中，后端从 cookie 吊销并清除
+      await this.client.post('/auth/logout');
     } catch (error) {
       if (import.meta.env.DEV) {
         console.warn('Logout API call failed:', error);
@@ -278,7 +285,7 @@ class ApiService {
   }
 
   // Device operations
-  async getDevices(): Promise<{ data: { devices: Array<{
+  async getDevices(): Promise<{ devices: Array<{
     id: number;
     device_type: string;
     device_id: string;
@@ -286,7 +293,7 @@ class ApiService {
     paired_at: string;
     last_seen: string;
     is_active: boolean;
-  }> } }> {
+  }>; count?: number }> {
     const response = await this.client.get('/devices');
     return response.data;
   }
@@ -308,7 +315,7 @@ class ApiService {
     await this.client.post('/devices/pair', data);
   }
 
-  async regenerateKey(deviceId: string): Promise<{ data: { new_key: string } }> {
+  async regenerateKey(deviceId: string): Promise<{ new_key: string }> {
     const response = await this.client.post(`/devices/${deviceId}/regenerate`);
     return response.data;
   }

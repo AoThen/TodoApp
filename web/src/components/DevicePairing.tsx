@@ -85,7 +85,7 @@ const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
     try {
       setLoading(true);
       const response = await apiService.getDevices();
-      setDevices(response.data.devices);
+      setDevices(response.devices);
     } catch (err) {
       console.error('加载设备列表失败:', err);
     } finally {
@@ -174,7 +174,7 @@ const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
     try {
       setLoading(true);
       const response = await apiService.regenerateKey(deviceId);
-      setSuccess(`密钥已重新生成: ${response.data.new_key.substr(0, 16)}...`);
+      setSuccess(`密钥已重新生成: ${response.new_key.substr(0, 16)}...`);
       setTimeout(() => setSuccess(''), 5000);
       loadDevices();
     } catch (err: any) {
