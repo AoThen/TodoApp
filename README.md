@@ -291,8 +291,8 @@ todoapp/
 ```bash
 go run main.go                              # 开发服务器
 CGO_ENABLED=1 go build -o todoapp-server .  # 生产构建
-go test ./...                               # 运行测试
-go test -v ./internal/db -run TestInitDB    # 运行单个测试
+JWT_SECRET=test-secret-key-for-unit-tests-1234567890 go test ./...                                # 运行测试（auth 包需 JWT_SECRET）
+JWT_SECRET=test-secret-key-for-unit-tests-1234567890 go test -v ./internal/db -run TestInitDB    # 运行单个测试
 ```
 
 ### 前端 (React/TypeScript)
@@ -300,7 +300,7 @@ go test -v ./internal/db -run TestInitDB    # 运行单个测试
 cd web
 npm install && npm start                    # 开发服务器（Vite）
 npm run build                               # 生产构建
-# 测试体系待建（见 docs/ui_revamp_plan.md），落地后恢复 npm test
+npm test                                    # Vitest 单元/组件测试
 ```
 
 ### Android (Kotlin)
@@ -308,8 +308,9 @@ npm run build                               # 生产构建
 cd android
 ./gradlew assembleDebug                     # Debug APK
 ./gradlew assembleRelease                   # Release APK
-./gradlew test                              # 单元测试
-./gradlew connectedAndroidTest              # 集成测试
+./gradlew test                              # 单元测试（JUnit + Robolectric）
+./gradlew testDebugUnitTest                 # 单元测试（Debug 变体）
+./gradlew connectedAndroidTest              # 集成测试（需本地 KVM 模拟器环境）
 ```
 
 ### Docker

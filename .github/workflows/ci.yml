@@ -21,7 +21,30 @@ jobs:
         env:
           JWT_SECRET: test-secret-key-for-unit-tests-1234567890
           ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-        run: go test -v -count=1 -race ./...
+        run: go test -v -count=1 -race -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Upload Go coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage
+          path: coverage.out
+
+  go-lint:
+    name: Go 代码检查
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
 
   web-test:
     name: Web 单元测试
@@ -45,7 +68,14 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Run vitest
-        run: npm test
+        run: npm test -- --coverage
+
+      - name: Upload web coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-coverage
+          path: web/coverage/
 
   android-test:
     name: Android 单元测试
@@ -65,6 +95,9 @@ jobs:
 
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: Android lint
+        run: ./gradlew lint --no-daemon
 
   # 注：GitHub 托管 runner 当前无 KVM，且新版 emulator 禁止 x86_64 宿主上的
   # 软件仿真与跨架构（arm64）仿真，模拟器 instrumented 测试无法在托管 runner 执行。

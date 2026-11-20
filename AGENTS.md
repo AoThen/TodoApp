@@ -40,7 +40,7 @@ JWT_SECRET=test-secret-key-for-unit-tests-1234567890 go test -v -count=1 -race .
 cd web
 npm install && npm start                    # Dev server (Vite)
 npm run build                               # Production build
-# 测试体系待建（见 docs/ui_revamp_plan.md P2-1），落地后恢复 npm test
+npm test                                    # Vitest 单元/组件测试
 ```
 
 ### Android (Kotlin)
@@ -48,9 +48,9 @@ npm run build                               # Production build
 cd android
 ./gradlew assembleDebug                     # Debug APK
 ./gradlew assembleRelease                   # Release APK
-./gradlew test                              # Unit tests
-./gradlew connectedAndroidTest              # Instrumentation tests
-./gradlew test --tests "*.SomeTest"  # Specific test（测试目录待建，见 docs/ui_revamp_plan.md）
+./gradlew test                              # Unit tests（JUnit + Robolectric）
+./gradlew connectedAndroidTest              # Instrumentation tests（需本地 KVM 模拟器环境）
+./gradlew test --tests "*.SomeTest"  # Specific test
 ./gradlew clean                             # Clean build
 ./gradlew lint                              # Android lint
 ./gradlew check                             # Run all checks
@@ -162,8 +162,8 @@ docs/: 架构与流程文档（含 ui_revamp_plan.md UI 改版实施方案）
 
 ## Testing Conventions
 - Go: `*_test.go` files alongside source, use `testing` package
-- React: `*.test.tsx` or `*.test.ts` files, Vitest + React Testing Library（待建，见 docs/ui_revamp_plan.md）
-- Android: `src/test/` (unit), `src/androidTest/` (instrumentation)（目录待建，见 docs/ui_revamp_plan.md）
+- React: `*.test.tsx` or `*.test.ts` files, Vitest + React Testing Library
+- Android: `src/test/` (unit, JUnit + Robolectric), `src/androidTest/` (instrumentation)
 
 ## API Endpoints
 All endpoints under `/api/v1/`:
@@ -191,21 +191,21 @@ All endpoints under `/api/v1/`:
 ### Security
 - `ENCRYPTION_KEY` - AES-256-GCM encryption key (32-byte hex)
 - `RATE_LIMIT_PER_MINUTE` - Per-IP request rate limit (default: 600)
-- `MAX_LOGIN_ATTEMPTS` - Max failed login attempts (default: 5)（当前未生效：值硬编码于 main.go）
-- `LOGIN_ATTEMPT_WINDOW` - Failed attempt window (default: 15m)（当前未生效：值硬编码于 main.go）
-- `LOCKOUT_DURATION` - Account lockout duration (default: 30m)（当前未生效：值硬编码于 main.go）
+- `MAX_LOGIN_ATTEMPTS` - Max failed login attempts (default: 5)
+- `LOGIN_ATTEMPT_WINDOW` - Failed attempt window (default: 15m)
+- `LOCKOUT_DURATION` - Account lockout duration (default: 30m)
 
 ### Token Configuration
-- `ACCESS_TOKEN_DURATION` - Access token validity (default: 15m)（当前未生效：值硬编码于 main.go）
-- `REFRESH_TOKEN_DURATION` - Refresh token validity (default: 168h/7 days)（当前未生效：值硬编码于 main.go）
+- `ACCESS_TOKEN_DURATION` - Access token validity (default: 15m)
+- `REFRESH_TOKEN_DURATION` - Refresh token validity (default: 168h/7 days)
 
 ### Feature Flags
 - `ENVIRONMENT` - development | production
 - `SERVER_PORT` - Server port (default: 8080)
 - `ENFORCE_WS_ENCRYPTION` - Force encrypted WebSocket (default: true in production)
-- `AUTO_REDIRECT_HTTPS` - HTTPS redirect (production)（当前未生效）
-- `EXPORT_STREAMING_ENABLED` - Enable streaming export (default: true)（当前未生效）
-- `NOTIFICATION_RETENTION_DAYS` - Notification retention (default: 30)（当前未生效）
+- `AUTO_REDIRECT_HTTPS` - HTTPS redirect (production)
+- `EXPORT_STREAMING_ENABLED` - Enable streaming export (default: true)
+- `NOTIFICATION_RETENTION_DAYS` - Notification retention (default: 30)
 
 ## Docker Configuration
 - Multi-stage build (frontend-builder, backend-builder, runtime)
