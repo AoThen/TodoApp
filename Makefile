@@ -102,7 +102,7 @@ dev:
 # 测试
 test:
 	@echo "🧪 运行测试（需设置 JWT_SECRET）..."
-	JWT_SECRET=test-secret-key-for-unit-tests-1234567890 go test -race ./...
+	JWT_SECRET=test-secret-key-for-unit-tests-1234567890 go test -race -tags sqlite_fts5 ./...
 
 # 查看数据库
 db-shell:

@@ -159,3 +159,72 @@ func TestUpdateTaskFullDueAt(t *testing.T) {
 		t.Errorf("空串应清除 due_at, got %v", task["due_at"])
 	}
 }
+
+// TestGetTasksFilteredSearch 验证任务搜索：FTS 可用时走全文索引，否则走 LIKE，两者结果应一致
+func TestGetTasksFilteredSearch(t *testing.T) {
+	setupTestDB(t)
+
+	userID := createTestUser(t, "search@test.com", "user")
+	otherID := createTestUser(t, "search-other@test.com", "user")
+
+	if _, err := CreateTask(int(userID), "local-search-1", "购买牛奶"); err != nil {
+		t.Fatalf("创建任务失败: %v", err)
+	}
+	descID, err := CreateTask(int(userID), "local-search-2", "写周报")
+	if err != nil {
+		t.Fatalf("创建任务失败: %v", err)
+	}
+	// 描述中包含关键词，验证描述命中
+	if err := UpdateTaskFull(descID, int(userID), "", "午餐计划包含牛奶曲奇", "", "", "", false); err != nil {
+		t.Fatalf("更新描述失败: %v", err)
+	}
+	if _, err := CreateTask(int(userID), "local-search-3", "无关任务"); err != nil {
+		t.Fatalf("创建任务失败: %v", err)
+	}
+	if _, err := CreateTask(int(otherID), "local-search-4", "牛奶另一用户"); err != nil {
+		t.Fatalf("创建任务失败: %v", err)
+	}
+
+	// 标题+描述命中（2 字词短于 trigram 最小长度，自动退回 LIKE；FTS 可用时同样成立）
+	_, total, err := GetTasksFiltered(int(userID), 1, 20, "", "", "牛奶", "created_at", "desc")
+	if err != nil {
+		t.Fatalf("搜索失败: %v", err)
+	}
+	if total != 2 {
+		t.Errorf("搜索“牛奶”应命中 2 条(标题+描述), got %d (FTS可用=%v)", total, FTSAvailable())
+	}
+
+	// 标题命中
+	_, total, err = GetTasksFiltered(int(userID), 1, 20, "", "", "周报", "created_at", "desc")
+	if err != nil {
+		t.Fatalf("搜索失败: %v", err)
+	}
+	if total != 1 {
+		t.Errorf("搜索“周报”应命中 1 条, got %d", total)
+	}
+
+	// 无命中
+	_, total, err = GetTasksFiltered(int(userID), 1, 20, "", "", "不存在的关键词", "created_at", "desc")
+	if err != nil {
+		t.Fatalf("搜索失败: %v", err)
+	}
+	if total != 0 {
+		t.Errorf("搜索不存在的词应命中 0 条, got %d", total)
+	}
+
+	// 用户隔离：其他用户的同名任务不可见
+	_, total, err = GetTasksFiltered(int(otherID), 1, 20, "", "", "另一用户", "created_at", "desc")
+	if err != nil {
+		t.Fatalf("搜索失败: %v", err)
+	}
+	if total != 1 {
+		t.Errorf("用户隔离搜索应命中 1 条, got %d", total)
+	}
+	_, total, err = GetTasksFiltered(int(otherID), 1, 20, "", "", "写周报", "created_at", "desc")
+	if err != nil {
+		t.Fatalf("搜索失败: %v", err)
+	}
+	if total != 0 {
+		t.Errorf("其他用户不应搜到用户任务, got %d", total)
+	}
+}

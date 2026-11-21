@@ -72,6 +72,10 @@ func TestMain(m *testing.M) {
 	go wsHub.Run()
 	testWSHub = wsHub
 
+	// 测试不依赖本地是否恰好存在 web/build 构建产物：显式指向不存在的静态目录，
+	// 保证"未知 API 路径返回 404"的断言在任何环境下都成立
+	os.Setenv("STATIC_DIR", "/nonexistent-static-dir-for-tests")
+
 	testTS = httptest.NewServer(buildRouter(wsHub, false, "8080"))
 
 	resetRateLimitState()
@@ -111,7 +115,7 @@ func cleanTables(t *testing.T) {
 		"DELETE FROM tasks", "DELETE FROM notifications", "DELETE FROM conflicts",
 		"DELETE FROM delta_queue", "DELETE FROM tokens", "DELETE FROM devices",
 		"DELETE FROM login_logs", "DELETE FROM admin_logs", "DELETE FROM deleted_tasks",
-		"DELETE FROM system_config", "DELETE FROM sync_meta",
+		"DELETE FROM system_config", "DELETE FROM sync_meta", "DELETE FROM token_blacklist",
 		// 重置测试账户的失败计数与锁定，避免限流/锁定测试污染后续用例
 		"UPDATE users SET failed_attempts = 0, locked_until = NULL",
 	} {
@@ -125,7 +129,7 @@ func cleanTables(t *testing.T) {
 			"DELETE FROM tasks", "DELETE FROM notifications", "DELETE FROM conflicts",
 			"DELETE FROM delta_queue", "DELETE FROM tokens", "DELETE FROM devices",
 			"DELETE FROM login_logs", "DELETE FROM admin_logs", "DELETE FROM deleted_tasks",
-			"DELETE FROM system_config", "DELETE FROM sync_meta",
+			"DELETE FROM system_config", "DELETE FROM sync_meta", "DELETE FROM token_blacklist",
 		} {
 			_, _ = db.DB.Exec(q)
 		}

@@ -286,6 +286,7 @@ todoapp/
 - `RATE_LIMIT_PER_MINUTE` - 每IP每分钟请求限流（默认600）
 - `TRUSTED_PROXY` - 是否信任反向代理的 X-Forwarded-For（默认 false；仅部署于可信代理之后时开启，否则可被伪造绕过限流）
 - `WS_ALLOWED_ORIGINS` - WebSocket Origin 白名单（逗号分隔；生产环境必须配置以防跨站 WebSocket 劫持，留空仅限开发）
+- `ALLOWED_ORIGINS` - HTTP API 的 CORS 来源白名单（逗号分隔，如 https://todo.example.com,https://www.todo.example.com；留空时仅允许 localhost 开发来源）
 - `STATIC_DIR` - 前端静态资源目录（默认 web/build；后端直接提供 SPA 服务与 fallback）
 
 ## 开发命令

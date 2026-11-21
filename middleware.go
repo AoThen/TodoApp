@@ -227,6 +227,17 @@ func authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// 登出即失效：命中黑名单的访问令牌直接拒绝。
+		// 查询异常时放行（fail-open）并记录日志——令牌本身仍有较短有效期，避免数据库抖动导致全站不可用
+		blacklisted, err := db.IsTokenBlacklisted(token)
+		if err != nil {
+			log.Printf("Token blacklist check failed: %v", err)
+		}
+		if blacklisted {
+			http.Error(w, "token has been revoked", http.StatusUnauthorized)
+			return
+		}
+
 		// Get user role from database
 		role, err := db.GetUserRole(claims.UserID)
 		if err != nil {

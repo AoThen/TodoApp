@@ -34,8 +34,8 @@ RUN go mod download
 # 复制源代码
 COPY . .
 
-# 构建后端（静态链接，使用 upx 压缩）
-RUN CGO_ENABLED=1 go build \
+# 构建后端（静态链接，使用 upx 压缩）；sqlite_fts5 启用 SQLite 全文搜索
+RUN CGO_ENABLED=1 go build -tags sqlite_fts5 \
     -ldflags="-s -w -linkmode external -extldflags '-static'" \
     -o todoapp-server \
     .

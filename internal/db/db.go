@@ -94,6 +94,10 @@ func InitDB(dataSourceName string) error {
             revoked BOOLEAN,
             FOREIGN KEY(user_id) REFERENCES users(id)
         );`,
+		`CREATE TABLE IF NOT EXISTS token_blacklist (
+            token_hash TEXT PRIMARY KEY,
+            expires_at DATETIME
+        );`,
 		`CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
@@ -164,6 +168,7 @@ func InitDB(dataSourceName string) error {
 		`CREATE INDEX IF NOT EXISTS idx_tasks_local_id ON tasks(local_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_tokens_user_id ON tokens(user_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_tokens_expires_at ON tokens(expires_at);`,
+		`CREATE INDEX IF NOT EXISTS idx_token_blacklist_expires_at ON token_blacklist(expires_at);`,
 		`CREATE INDEX IF NOT EXISTS idx_login_logs_email ON login_logs(email);`,
 		`CREATE INDEX IF NOT EXISTS idx_login_logs_timestamp ON login_logs(timestamp);`,
 		`CREATE INDEX IF NOT EXISTS idx_conflicts_user_id ON conflicts(user_id);`,
@@ -202,6 +207,8 @@ func InitDB(dataSourceName string) error {
 	if _, err := DB.Exec("ALTER TABLE conflicts ADD COLUMN user_id INTEGER"); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 		return fmt.Errorf("迁移 conflicts.user_id 失败: %w", err)
 	}
+	// 初始化任务全文索引（FTS5 不可用时自动退回 LIKE）
+	InitFTS()
 	// Seed default data if empty
 	seedIfEmpty()
 	return nil
@@ -518,9 +525,21 @@ func GetTasksFiltered(userID int, page, pageSize int, status, priority, search, 
 		args = append(args, priority)
 	}
 	if search != "" {
-		whereClause += " AND (title LIKE ? OR description LIKE ?)"
-		searchPattern := "%" + search + "%"
-		args = append(args, searchPattern, searchPattern)
+		// 优先走全文索引（构建时启用 sqlite_fts5）；不可用或查询过短时退回 LIKE
+		if ftsAvailable {
+			if match := buildFTSQuery(search); match != "" {
+				whereClause += " AND id IN (SELECT rowid FROM tasks_fts WHERE tasks_fts MATCH ?)"
+				args = append(args, match)
+			} else {
+				whereClause += " AND (title LIKE ? OR description LIKE ?)"
+				searchPattern := "%" + search + "%"
+				args = append(args, searchPattern, searchPattern)
+			}
+		} else {
+			whereClause += " AND (title LIKE ? OR description LIKE ?)"
+			searchPattern := "%" + search + "%"
+			args = append(args, searchPattern, searchPattern)
+		}
 	}
 
 	var total int
@@ -730,8 +749,11 @@ func DeleteTask(taskID int64, userID int) error {
 
 // CleanupExpiredTokens 清理过期的令牌
 func CleanupExpiredTokens() error {
-	_, err := DB.Exec("DELETE FROM tokens WHERE expires_at < ?", time.Now().UTC())
-	return err
+	if _, err := DB.Exec("DELETE FROM tokens WHERE expires_at < ?", time.Now().UTC()); err != nil {
+		return err
+	}
+	// 同步清理已过期的黑名单记录
+	return cleanupExpiredBlacklistedTokens()
 }
 
 // CleanupOldLoginLogs 清理旧的登录日志（保留 30 天）

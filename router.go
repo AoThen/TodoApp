@@ -1,9 +1,11 @@
 package main
 
 import (
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
@@ -109,13 +111,33 @@ func buildRouter(wsHub *websocket.Hub, enforceWSEncryption bool, serverPort stri
 
 	// CORS handling for development
 	corsHandler := handlers.CORS(
-		handlers.AllowedOrigins([]string{"http://localhost:3000", "http://localhost:" + serverPort}),
+		handlers.AllowedOrigins(getAllowedOrigins(serverPort)),
 		handlers.AllowedMethods([]string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}),
 		handlers.AllowedHeaders([]string{"Content-Type", "Authorization", "X-User-ID", "X-Request-ID"}),
 		handlers.AllowCredentials(),
 	)(router)
 
 	return corsHandler
+}
+
+// getAllowedOrigins 读取 CORS 来源白名单。
+// 优先使用 ALLOWED_ORIGINS 环境变量（逗号分隔多个来源，如 https://a.com,https://b.com）；
+// 未配置时回退到本地开发默认值，保持既有行为不变。
+// 显式拒绝 "*"：本服务始终允许携带凭据，通配符会放行任意来源的跨站凭据请求。
+func getAllowedOrigins(serverPort string) []string {
+	if raw := os.Getenv("ALLOWED_ORIGINS"); raw != "" {
+		var origins []string
+		for _, o := range strings.Split(raw, ",") {
+			if o = strings.TrimSpace(o); o != "" && o != "*" {
+				origins = append(origins, o)
+			}
+		}
+		if len(origins) > 0 {
+			return origins
+		}
+		log.Println("警告: ALLOWED_ORIGINS 为空或仅含通配符，已忽略并回退到本地开发默认来源")
+	}
+	return []string{"http://localhost:3000", "http://localhost:" + serverPort}
 }
 
 // serveStaticHandler 提供前端构建产物（web/build）的静态文件服务与 SPA fallback：

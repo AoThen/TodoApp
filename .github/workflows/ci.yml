@@ -21,7 +21,7 @@ jobs:
         env:
           JWT_SECRET: test-secret-key-for-unit-tests-1234567890
           ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-        run: go test -v -count=1 -race -covermode=atomic -coverprofile=coverage.out ./...
+        run: go test -v -count=1 -race -tags sqlite_fts5 -covermode=atomic -coverprofile=coverage.out ./...
 
       - name: Upload Go coverage
         if: always()
@@ -123,7 +123,7 @@ jobs:
           INITIAL_ADMIN_PASSWORD: "E2eAdmin@2026"
           SERVER_PORT: "8080"
         run: |
-          go build -o /tmp/todoapp-server .
+          go build -tags sqlite_fts5 -o /tmp/todoapp-server .
           /tmp/todoapp-server &
           for i in $(seq 1 30); do
             curl -sf http://localhost:8080/api/v1/health && break

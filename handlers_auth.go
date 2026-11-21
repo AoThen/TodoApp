@@ -194,6 +194,22 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 将当前访问令牌加入黑名单：登出后立即失效，而非等待自然过期（至多 15 分钟）
+	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) == 2 && strings.EqualFold(parts[0], "bearer") {
+			if claims, err := auth.ValidateToken(parts[1]); err == nil && claims.TokenType == "access" {
+				expiry := time.Now().Add(accessTokenDuration)
+				if claims.ExpiresAt != nil {
+					expiry = claims.ExpiresAt.Time
+				}
+				if err := db.BlacklistToken(parts[1], expiry); err != nil {
+					log.Printf("加入令牌黑名单失败: %v", err)
+				}
+			}
+		}
+	}
+
 	// 从 cookie 获取刷新令牌
 	c, err := r.Cookie("refresh_token")
 	if err == nil {
