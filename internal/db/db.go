@@ -180,25 +180,6 @@ func InitDB(dataSourceName string) error {
             created_at DATETIME DEFAULT (datetime('now')),
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );`,
-		`CREATE TABLE IF NOT EXISTS notification_templates (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            type TEXT UNIQUE NOT NULL,
-            title_template TEXT NOT NULL,
-            content_template TEXT NOT NULL,
-            priority TEXT DEFAULT 'normal',
-            enabled BOOLEAN DEFAULT 1,
-            created_at DATETIME DEFAULT (datetime('now')),
-            updated_at DATETIME DEFAULT (datetime('now'))
-        );`,
-		`CREATE TABLE IF NOT EXISTS notification_settings (
-            user_id INTEGER PRIMARY KEY,
-            notification_type TEXT NOT NULL,
-            enabled BOOLEAN DEFAULT 1,
-            auto_clear_days INTEGER DEFAULT 30,
-            created_at DATETIME DEFAULT (datetime('now')),
-            updated_at DATETIME DEFAULT (datetime('now')),
-            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-        );`,
 		`CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read);`,
 		`CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);`,

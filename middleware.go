@@ -159,8 +159,6 @@ func getClientIP(r *http.Request) string {
 	return strings.Split(r.RemoteAddr, ":")[0]
 }
 
-// handleHealth 健康检查端点
-
 func securityMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Validate content type for POST/PUT/PATCH（导入接口使用 multipart 上传，需放行）

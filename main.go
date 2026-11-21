@@ -23,7 +23,6 @@ import (
 )
 
 const (
-	defaultJWTSecret   = "change-this-in-production-use-environment-variable"
 	maxRequestBodySize = 10 * 1024 * 1024 // 10MB
 	cookieSameSite     = http.SameSiteStrictMode
 )
@@ -61,8 +60,6 @@ func init() {
 	}
 	log.Println("加密模块已初始化")
 }
-
-// checkRateLimit 检查登录速率限制
 
 func init() {
 	go cleanupIPRequests()
@@ -196,8 +193,6 @@ func httpsRedirectMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// securityMiddleware adds security headers and request validation
-
 func startCleanupTasks() {
 	// 每小时清理一次过期通知和令牌
 	ticker := time.NewTicker(1 * time.Hour)
@@ -234,8 +229,6 @@ func startCleanupTasks() {
 		}
 	}()
 }
-
-// cleanupExpiredNotifications 清理过期通知
 
 func cleanupExpiredTokens() {
 	err := db.CleanupExpiredTokens()
