@@ -1,10 +1,14 @@
 name: "Publish Server Container Image"
 on:
   push:
-    paths:
-      - 'web/**'
-      - 'internal/**'
-      - '.github/workflows/docker.yml'
+    # 除文档/Android/原型外的改动均触发镜像构建（含根目录 Go 源码、go.mod、Dockerfile）
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'android/**'
+      - 'prototype/**'
+      - '.gitignore'
+      - 'LICENSE'
   workflow_dispatch: # 添加手动触发
 jobs:
   build-and-push:
