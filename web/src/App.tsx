@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { indexedDBService, Task } from './services/indexedDB';
 import { apiService } from './services/api';
 import { syncManager } from './services/syncManager';
@@ -21,6 +22,17 @@ import ConflictsModal from './components/tasks/ConflictsModal';
 import NotificationSystem from './components/NotificationSystem';
 import { toast } from 'react-toastify';
 import './App.css';
+
+// 服务端数据统一交由 React Query 管理拉取、缓存与重试
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+      staleTime: 10_000,
+    },
+  },
+});
 
 const AppContent: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -53,14 +65,13 @@ const AppContent: React.FC = () => {
     const initializeApp = async () => {
       try {
         await indexedDBService.init();
-        
+
         // Check for existing auth token
         const token = localStorage.getItem('access_token');
         if (token) {
           setAuthToken(token);
-          await loadTasks();
         }
-        
+
         // Start auto-sync
         syncManager.startAutoSync(30000);
       } catch (error) {
@@ -75,7 +86,7 @@ const AppContent: React.FC = () => {
     // Online/offline listeners
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
-    
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
@@ -83,37 +94,40 @@ const AppContent: React.FC = () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-}, []);
+  }, []);
+
+  // 服务端任务列表：随登录态、分页与筛选条件自动拉取
+  const tasksQuery = useQuery({
+    queryKey: ['tasks', authToken, page, filters],
+    queryFn: () => apiService.getTasks({
+      page,
+      page_size: PAGE_SIZE,
+      status: filters.status || undefined,
+      priority: filters.priority || undefined,
+      search: filters.search || undefined,
+      sort_by: filters.sortBy,
+      sort_order: filters.sortOrder,
+    }),
+    enabled: !!authToken,
+  });
 
   useEffect(() => {
-    if (authToken) {
-      loadTasks();
+    if (tasksQuery.error) {
+      console.error('Failed to load tasks:', tasksQuery.error);
     }
-  }, [page, filters, authToken]);
+  }, [tasksQuery.error]);
 
-  const loadTasks = async () => {
-  try {
-    if (authToken) {
-      const response = await apiService.getTasks({
-        page,
-        page_size: PAGE_SIZE,
-        status: filters.status || undefined,
-        priority: filters.priority || undefined,
-        search: filters.search || undefined,
-        sort_by: filters.sortBy,
-        sort_order: filters.sortOrder,
-      });
-      setTasks(response.tasks.filter((t: any) => !t.is_deleted));
-      setPagination(response.pagination || null);
-    } else {
-      const allTasks = await indexedDBService.getAllTasks();
-      setTasks(allTasks.filter(t => !t.is_deleted));
-      setPagination(null);
+  useEffect(() => {
+    if (authToken && tasksQuery.data) {
+      setTasks(tasksQuery.data.tasks.filter((t: Task) => !t.is_deleted));
+      setPagination(tasksQuery.data.pagination || null);
     }
-  } catch (error) {
-    console.error('Failed to load tasks:', error);
-  }
-};
+  }, [authToken, tasksQuery.data]);
+
+  // 服务器侧数据变更后刷新任务列表缓存（撤销/导入/手动同步等）
+  const refreshTasks = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['tasks'] });
+  }, []);
 
   // 筛选/搜索/排序变化时重置回第 1 页
   const handleFilterChange = (next: FilterState) => {
@@ -124,7 +138,6 @@ const AppContent: React.FC = () => {
   const handleLoginSuccess = async (token: string) => {
     setAuthToken(token);
     await checkAdminStatus();
-    await loadTasks();
     await syncManager.sync();
   };
 
@@ -300,7 +313,7 @@ const AppContent: React.FC = () => {
       await Promise.all(undoTaskIds.map(id => apiService.restoreTask(id)));
 
       // 撤销后刷新任务列表
-      await loadTasks();
+      refreshTasks();
 
       setUndoTaskIds([]);
     } catch (error) {
@@ -320,7 +333,7 @@ const AppContent: React.FC = () => {
     setIsSyncing(true);
     try {
       await syncManager.sync();
-      await loadTasks();
+      refreshTasks();
     } catch (error) {
       console.error('Sync failed:', error);
       alert('Sync failed. Please try again.');
@@ -384,25 +397,25 @@ const AppContent: React.FC = () => {
           />
         )}
 
-         <BatchActionBar
-           selectAll={selectAll}
-           selectedCount={selectedTasks.size}
-           isSyncing={isSyncing}
-           isOnline={isOnline}
-           onSelectAll={handleSelectAll}
-           onBatchDelete={() => setShowBatchConfirm(true)}
-           onManualSync={handleManualSync}
-         />
+        <BatchActionBar
+          selectAll={selectAll}
+          selectedCount={selectedTasks.size}
+          isSyncing={isSyncing}
+          isOnline={isOnline}
+          onSelectAll={handleSelectAll}
+          onBatchDelete={() => setShowBatchConfirm(true)}
+          onManualSync={handleManualSync}
+        />
 
-          <TaskList
-            tasks={tasks}
-            onDeleteTask={handleDeleteTask}
-            onToggleSelect={toggleTaskSelection}
-            onEditTask={setEditingTask}
-            onToggleStatus={handleToggleStatus}
-            selectedTasks={selectedTasks}
-          />
-        </main>
+        <TaskList
+          tasks={tasks}
+          onDeleteTask={handleDeleteTask}
+          onToggleSelect={toggleTaskSelection}
+          onEditTask={setEditingTask}
+          onToggleStatus={handleToggleStatus}
+          selectedTasks={selectedTasks}
+        />
+      </main>
 
       {editingTask && (
         <TaskEditModal
@@ -426,34 +439,36 @@ const AppContent: React.FC = () => {
       )}
 
       {undoTaskIds.length > 0 && (
-         <UndoToast
-           taskIds={undoTaskIds}
-           onClose={() => setUndoTaskIds([])}
-           onUndoComplete={async () => {
-             await loadTasks();
-             toast.success('已撤销删除');
-           }}
-         />
-       )}
+        <UndoToast
+          taskIds={undoTaskIds}
+          onClose={() => setUndoTaskIds([])}
+          onUndoComplete={async () => {
+            refreshTasks();
+            toast.success('已撤销删除');
+          }}
+        />
+      )}
 
-{showImport && (
-           <ImportDialog
-             isOpen={showImport}
-             onClose={() => setShowImport(false)}
-             onImportSuccess={loadTasks}
-           />
-         )}
-      </div>
-   );
+      {showImport && (
+        <ImportDialog
+          isOpen={showImport}
+          onClose={() => setShowImport(false)}
+          onImportSuccess={refreshTasks}
+        />
+      )}
+    </div>
+  );
 };
 
 const App: React.FC = () => {
   return (
-    <ErrorBoundary>
-      <AppContent />
-      {/* 常驻挂载：保证 syncManager 冲突监听在任意视图（含登录页/加载中）下都生效 */}
-      <ConflictsModal />
-    </ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <ErrorBoundary>
+        <AppContent />
+        {/* 常驻挂载：保证 syncManager 冲突监听在任意视图（含登录页/加载中）下都生效 */}
+        <ConflictsModal />
+      </ErrorBoundary>
+    </QueryClientProvider>
   );
 };
 
