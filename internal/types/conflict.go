@@ -53,12 +53,15 @@ const (
 	StatusArchived   StatusState = "archived"
 )
 
-// PrioritizeStatus 状态优先级排序（已完成 > 进行中 > 待办）
+// PrioritizeStatus 状态优先级排序（已完成 > 进行中 > 待办 > 归档）。
+// 归档视为弱状态：与任意活动状态冲突时保留活动状态，避免合并结果被静默隐藏；
+// 双方均为归档时保持归档。
 func PrioritizeStatus(s1, s2 string) string {
 	statusMap := map[string]int{
 		"done":        3,
 		"in_progress": 2,
 		"todo":        1,
+		"archived":    0,
 	}
 
 	p1, ok1 := statusMap[s1]
