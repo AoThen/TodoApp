@@ -95,6 +95,10 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE serverId = :serverId LIMIT 1")
     suspend fun getTaskByServerId(serverId: Long): Task?
 
+    /** 查询截止日期落在 [startIso, endIso] 区间内的未删除任务（dueAt 为 ISO-8601 UTC 字符串，可直接做字典序比较） */
+    @Query("SELECT * FROM tasks WHERE isDeleted = 0 AND dueAt IS NOT NULL AND dueAt >= :startIso AND dueAt <= :endIso ORDER BY dueAt ASC")
+    suspend fun getTasksDueBetween(startIso: String, endIso: String): List<Task>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTask(task: Task): Long
 

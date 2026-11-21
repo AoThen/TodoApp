@@ -96,6 +96,27 @@
     <string name="settings_auto_sync">自动同步</string>
     <string name="settings_sync_interval">同步间隔</string>
     <string name="settings_logout">退出登录</string>
+    <string name="settings_section_appearance">外观</string>
+    <string name="settings_dark_mode">深色模式</string>
+    <string name="settings_dark_mode_desc">切换应用的深色/浅色外观，保存后立即生效</string>
+    <string name="settings_section_connection">连接</string>
+    <string name="settings_server_url">服务器地址</string>
+    <string name="settings_version">版本号</string>
+    <string name="settings_re_pair">重新配对设备</string>
+
+    <!-- Calendar -->
+    <string name="calendar_month_format">%1$d年%2$d月</string>
+    <string name="calendar_prev_month">上个月</string>
+    <string name="calendar_next_month">下个月</string>
+    <string name="calendar_selected_day_format">%1$d月%2$d日 · %3$d 个任务</string>
+    <string name="calendar_no_due_tasks">当天没有带截止日期的任务</string>
+    <string name="calendar_weekday_mon">一</string>
+    <string name="calendar_weekday_tue">二</string>
+    <string name="calendar_weekday_wed">三</string>
+    <string name="calendar_weekday_thu">四</string>
+    <string name="calendar_weekday_fri">五</string>
+    <string name="calendar_weekday_sat">六</string>
+    <string name="calendar_weekday_sun">日</string>
     
     <!-- Notifications -->
     <string name="notifications_title">通知</string>

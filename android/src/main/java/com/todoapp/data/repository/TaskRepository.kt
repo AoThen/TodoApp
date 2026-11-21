@@ -63,6 +63,13 @@ class TaskRepository(
         }
     }
 
+    /** 按截止日期区间查询任务（日历视图使用） */
+    suspend fun getTasksDueBetween(startIso: String, endIso: String): Result<List<Task>> {
+        return Result.runCatching {
+            taskDao.getTasksDueBetween(startIso, endIso)
+        }
+    }
+
     suspend fun insertTask(task: Task): Result<Long> {
         return Result.runCatching {
             taskDao.insertTask(task)

@@ -5,6 +5,7 @@ import androidx.work.Configuration
 import com.todoapp.config.AppConfig
 import com.todoapp.data.crypto.KeyStorage
 import com.todoapp.data.remote.RetrofitClient
+import com.todoapp.utils.ThemeUtils
 import dagger.hilt.android.HiltAndroidApp
 
 @HiltAndroidApp
@@ -15,6 +16,7 @@ class TodoApp : Application(), Configuration.Provider {
 
         KeyStorage.init()
         AppConfig.initialize(this)
+        ThemeUtils.applySavedMode(this)
     }
 
     // WorkManager 2.9+ 的 Configuration.Provider 使用属性而非 getter 方法
