@@ -18,7 +18,7 @@ class CryptoInterceptor private constructor(context: Context) : Interceptor {
     private val context: Context = context.applicationContext
 
     init {
-        keyStorage.init(context)
+        keyStorage.init()
         refreshKey()
     }
 
