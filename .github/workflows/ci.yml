@@ -67,8 +67,8 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
-      - name: Run vitest
-        run: npm test -- --coverage
+      - name: Run vitest with coverage gate
+        run: npm run test:coverage
 
       - name: Upload web coverage
         if: always()

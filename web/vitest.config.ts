@@ -9,5 +9,17 @@ export default defineConfig({
     setupFiles: './src/test/setup.ts',
     css: false,
     exclude: [...configDefaults.exclude, 'e2e/**'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html'],
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['src/test/**', '**/*.test.{ts,tsx}', '**/*.d.ts', 'src/index.tsx'],
+      thresholds: {
+        lines: 80,
+        statements: 80,
+        branches: 88,
+        functions: 83,
+      },
+    },
   },
 });
