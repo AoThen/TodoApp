@@ -26,11 +26,28 @@ const ConflictsModal: React.FC = () => {
 
     try {
       if (resolution === 'local') {
-        await syncManager.enqueueLocalChange('update', {
-          id: conflict.server_id,
-          force: true,
-        }, 1);
-        toast.success('已保留本地版本');
+        // 保留本地：把本地完整字段作为一次正常更新入队。
+        // 冲突记录里的 local_id 是 delta 队列 ID（与任务 local_id 不同命名空间），
+        // 因此按 server_id 定位本地任务；CV 优先取冲突记录附带的 server_version（合并后版本）。
+        const localTask = conflict.server_id
+          ? await indexedDBService.getTaskByServerId(conflict.server_id)
+          : undefined;
+        if (!localTask || !conflict.server_id) {
+          toast.error('本地版本数据缺失，已保留服务器版本');
+          await indexedDBService.deleteConflict(conflict.local_id);
+        } else {
+          const clientVersion = conflict.server_version ?? localTask.server_version;
+          await syncManager.enqueueLocalChange('update', {
+            id: conflict.server_id,
+            title: localTask.title,
+            description: localTask.description,
+            status: localTask.status,
+            priority: localTask.priority,
+            due_at: localTask.due_at ?? '',
+          }, clientVersion);
+          await indexedDBService.deleteConflict(conflict.local_id);
+          toast.success('已保留本地版本');
+        }
       } else {
         await indexedDBService.deleteConflict(conflict.local_id);
         toast.success('已使用服务器版本');

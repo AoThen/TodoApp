@@ -1,171 +1,178 @@
-import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import ConflictsModal from './ConflictsModal';
+import * as syncModule from '../../services/syncManager';
 import { syncManager } from '../../services/syncManager';
 import { indexedDBService } from '../../services/indexedDB';
 import { toast } from 'react-toastify';
 
-vi.mock('../../services/syncManager', () => ({
-  syncManager: {
-    onConflicts: vi.fn(),
-    removeConflictListener: vi.fn(),
-    enqueueLocalChange: vi.fn(),
-  },
+vi.mock('react-toastify', () => ({
+  toast: { warning: vi.fn(), success: vi.fn(), error: vi.fn() },
 }));
+
+vi.mock('../../services/syncManager', () => {
+  const listeners: Array<(c: unknown[]) => void> = [];
+  return {
+    syncManager: {
+      onConflicts: (cb: (c: unknown[]) => void) => { listeners.push(cb); },
+      removeConflictListener: (cb: (c: unknown[]) => void) => {
+        const idx = listeners.indexOf(cb);
+        if (idx >= 0) listeners.splice(idx, 1);
+      },
+      enqueueLocalChange: vi.fn().mockResolvedValue(undefined),
+    },
+    __listeners: listeners,
+  };
+});
 
 vi.mock('../../services/indexedDB', () => ({
   indexedDBService: {
-    deleteConflict: vi.fn(),
+    getTaskByServerId: vi.fn(),
+    deleteConflict: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
-vi.mock('react-toastify', () => ({
-  toast: {
-    warning: vi.fn(),
-    success: vi.fn(),
-    error: vi.fn(),
-  },
-}));
+const listeners = (syncModule as unknown as { __listeners: Array<(c: unknown[]) => void> }).__listeners;
+const enqueueLocalChange = syncManager.enqueueLocalChange as ReturnType<typeof vi.fn>;
+const getTaskByServerId = indexedDBService.getTaskByServerId as ReturnType<typeof vi.fn>;
+const deleteConflict = indexedDBService.deleteConflict as ReturnType<typeof vi.fn>;
+const toastSuccess = toast.success as ReturnType<typeof vi.fn>;
+const toastError = toast.error as ReturnType<typeof vi.fn>;
 
-const mockedOnConflicts = vi.mocked(syncManager.onConflicts);
-const mockedRemoveListener = vi.mocked(syncManager.removeConflictListener);
-const mockedEnqueue = vi.mocked(syncManager.enqueueLocalChange);
-const mockedDeleteConflict = vi.mocked(indexedDBService.deleteConflict);
-
-const conflictA = { local_id: 'local-1', server_id: 'srv-1', reason: '本地与服务端均已修改' };
-const conflictB = { local_id: 'local-2', server_id: 'srv-2', reason: '服务端已删除' };
-
-const emitConflicts = (payload: any[]) => {
-  const handler = mockedOnConflicts.mock.calls.at(-1)?.[0];
-  act(() => {
-    handler?.(payload);
-  });
+// 模拟真实 ID 空间：conflict.local_id 是 delta 队列 ID，与任务 local_id 不同
+const sampleConflict = {
+  local_id: 'update-1763712-x9k2',
+  server_id: 42,
+  reason: 'intelligent_merge',
+  options: ['keep_server', 'keep_client', 'merge'],
+  server_version: 8,
+  created_at: '2026-11-21T00:00:00Z',
 };
 
+const localTask = {
+  local_id: 'local-1763711-ab',
+  server_id: 42,
+  user_id: 'u1',
+  server_version: 8,
+  title: '本地标题',
+  description: '本地描述',
+  status: 'in_progress' as const,
+  priority: 'high' as const,
+  due_at: '2026-12-01T00:00:00Z',
+  created_at: '2026-11-20T00:00:00Z',
+  updated_at: '2026-11-20T00:00:00Z',
+  is_deleted: false,
+  last_modified: '2026-11-20T00:00:00Z',
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  listeners.length = 0;
+});
+
+function renderWithConflict(conflict: unknown = sampleConflict) {
+  render(<ConflictsModal />);
+  act(() => {
+    listeners.forEach(cb => cb([conflict]));
+  });
+}
+
 describe('ConflictsModal', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockedEnqueue.mockResolvedValue(undefined);
-    mockedDeleteConflict.mockResolvedValue(undefined);
-  });
-
-  it('初始状态不渲染模态', () => {
-    const { container } = render(<ConflictsModal />);
-
-    expect(container.firstChild).toBeNull();
-    expect(mockedOnConflicts).toHaveBeenCalledTimes(1);
-  });
-
-  it('卸载时移除冲突监听器', () => {
-    const { unmount } = render(<ConflictsModal />);
-
-    unmount();
-
-    expect(mockedRemoveListener).toHaveBeenCalledTimes(1);
-  });
-
-  it('收到冲突通知后显示模态、弹出 warning 并渲染冲突项', () => {
-    render(<ConflictsModal />);
-
-    emitConflicts([conflictA]);
-
+  it('收到冲突通知后展示弹窗与冲突信息', () => {
+    renderWithConflict();
     expect(screen.getByText('冲突解决')).toBeInTheDocument();
-    expect(screen.getByText('冲突 #1')).toBeInTheDocument();
-    expect(screen.getByText(/本地与服务端均已修改/)).toBeInTheDocument();
-    expect(toast.warning).toHaveBeenCalledWith('检测到 1 个冲突需要解决');
-    expect(screen.getByRole('button', { name: '保留本地' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '使用服务器' })).toBeInTheDocument();
+    expect(screen.getByText(/intelligent_merge/)).toBeInTheDocument();
+    expect(screen.getByText('保留本地')).toBeInTheDocument();
+    expect(screen.getByText('使用服务器')).toBeInTheDocument();
   });
 
-  it('多次通知时冲突按序累加', () => {
+  it('无冲突时不渲染弹窗', () => {
     render(<ConflictsModal />);
-
-    emitConflicts([conflictA]);
-    emitConflicts([conflictB]);
-
-    expect(screen.getByText('冲突 #2')).toBeInTheDocument();
-    expect(screen.getByText(/服务端已删除/)).toBeInTheDocument();
-    expect(toast.warning).toHaveBeenLastCalledWith('检测到 1 个冲突需要解决');
+    expect(screen.queryByText('冲突解决')).not.toBeInTheDocument();
   });
 
-  it('保留本地：入队强制更新并提示成功', async () => {
-    const user = userEvent.setup();
-    render(<ConflictsModal />);
-    emitConflicts([conflictA]);
+  it('保留本地时按 server_id 取本地任务，并以冲突记录的版本号完整入队', async () => {
+    getTaskByServerId.mockResolvedValue(localTask);
+    renderWithConflict();
 
-    await user.click(screen.getByRole('button', { name: '保留本地' }));
-
-    await waitFor(() => {
-      expect(mockedEnqueue).toHaveBeenCalledWith('update', { id: 'srv-1', force: true }, 1);
+    await act(async () => {
+      fireEvent.click(screen.getByText('保留本地'));
     });
-    expect(toast.success).toHaveBeenCalledWith('已保留本地版本');
-    expect(mockedDeleteConflict).not.toHaveBeenCalled();
-  });
 
-  it('使用服务器：删除本地冲突记录并提示成功', async () => {
-    const user = userEvent.setup();
-    render(<ConflictsModal />);
-    emitConflicts([conflictA]);
-
-    await user.click(screen.getByRole('button', { name: '使用服务器' }));
-
-    await waitFor(() => {
-      expect(mockedDeleteConflict).toHaveBeenCalledWith('local-1');
+    expect(getTaskByServerId).toHaveBeenCalledWith(42);
+    expect(enqueueLocalChange).toHaveBeenCalledTimes(1);
+    const [op, payload, clientVersion] = enqueueLocalChange.mock.calls[0];
+    expect(op).toBe('update');
+    expect(payload).toMatchObject({
+      id: 42,
+      title: '本地标题',
+      description: '本地描述',
+      status: 'in_progress',
+      priority: 'high',
+      due_at: '2026-12-01T00:00:00Z',
     });
-    expect(toast.success).toHaveBeenCalledWith('已使用服务器版本');
-    expect(mockedEnqueue).not.toHaveBeenCalled();
+    expect(clientVersion).toBe(8);
+    expect(deleteConflict).toHaveBeenCalledWith(sampleConflict.local_id);
+    expect(toastSuccess).toHaveBeenCalledWith('已保留本地版本');
   });
 
-  it('解决失败时弹出错误提示且冲突保留', async () => {
-    const user = userEvent.setup();
-    mockedEnqueue.mockRejectedValueOnce(new Error('network down'));
-    render(<ConflictsModal />);
-    emitConflicts([conflictA]);
+  it('冲突记录缺少版本号时回退到本地任务的版本号', async () => {
+    getTaskByServerId.mockResolvedValue({ ...localTask, server_version: 5 });
+    renderWithConflict({ ...sampleConflict, server_version: undefined });
 
-    await user.click(screen.getByRole('button', { name: '保留本地' }));
-
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('解决冲突失败');
+    await act(async () => {
+      fireEvent.click(screen.getByText('保留本地'));
     });
-    expect(screen.getByText('冲突 #1')).toBeInTheDocument();
+
+    const [, , clientVersion] = enqueueLocalChange.mock.calls[0];
+    expect(clientVersion).toBe(5);
   });
 
-  it('多个冲突时解决其一后模态保持打开', async () => {
-    const user = userEvent.setup();
-    render(<ConflictsModal />);
-    emitConflicts([conflictA, conflictB]);
+  it('本地截止日期已清空时显式提交空串以同步清除', async () => {
+    getTaskByServerId.mockResolvedValue({ ...localTask, due_at: undefined });
+    renderWithConflict();
 
-    await user.click(screen.getAllByRole('button', { name: '保留本地' })[0]);
-
-    await waitFor(() => {
-      expect(toast.success).toHaveBeenCalledWith('已保留本地版本');
+    await act(async () => {
+      fireEvent.click(screen.getByText('保留本地'));
     });
-    expect(screen.getByText('冲突 #1')).toBeInTheDocument();
-    expect(screen.queryByText(/本地与服务端均已修改/)).not.toBeInTheDocument();
-    expect(screen.getByText(/服务端已删除/)).toBeInTheDocument();
+
+    const [, payload] = enqueueLocalChange.mock.calls[0];
+    expect(payload).toMatchObject({ due_at: '' });
   });
 
-  it('唯一冲突解决后模态自动关闭', async () => {
-    const user = userEvent.setup();
-    const { container } = render(<ConflictsModal />);
-    emitConflicts([conflictA]);
+  it('本地数据缺失时提示错误并回退为服务器版本', async () => {
+    getTaskByServerId.mockResolvedValue(undefined);
+    renderWithConflict();
 
-    await user.click(screen.getByRole('button', { name: '保留本地' }));
-
-    await waitFor(() => {
-      expect(container.firstChild).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByText('保留本地'));
     });
+
+    expect(enqueueLocalChange).not.toHaveBeenCalled();
+    expect(deleteConflict).toHaveBeenCalledWith(sampleConflict.local_id);
+    expect(toastError).toHaveBeenCalledWith('本地版本数据缺失，已保留服务器版本');
   });
 
-  it('点击关闭按钮清空并隐藏模态', () => {
-    const { container } = render(<ConflictsModal />);
-    emitConflicts([conflictA, conflictB]);
+  it('使用服务器版本时仅清理冲突记录', async () => {
+    renderWithConflict();
 
-    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    await act(async () => {
+      fireEvent.click(screen.getByText('使用服务器'));
+    });
 
-    expect(container.firstChild).toBeNull();
-    expect(mockedRemoveListener).not.toHaveBeenCalled();
+    expect(enqueueLocalChange).not.toHaveBeenCalled();
+    expect(deleteConflict).toHaveBeenCalledWith(sampleConflict.local_id);
+    expect(toastSuccess).toHaveBeenCalledWith('已使用服务器版本');
+  });
+
+  it('解决最后一个冲突后关闭弹窗', async () => {
+    getTaskByServerId.mockResolvedValue(localTask);
+    renderWithConflict();
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('使用服务器'));
+    });
+
+    expect(screen.queryByText('冲突解决')).not.toBeInTheDocument();
   });
 });

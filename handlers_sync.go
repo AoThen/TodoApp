@@ -111,6 +111,11 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 
 				if insertErr == nil {
 					if serverID, err2 := res.LastInsertId(); err2 == nil {
+						// 附带既有任务的当前版本号，供客户端"保留本地"时作为 CV 重放
+						existVer, _, _, _, _, verErr := db.GetTaskForSync(tx, userID, existingID)
+						if verErr != nil {
+							existVer = 0
+						}
 						serverChanges = append(serverChanges, map[string]interface{}{
 							"id": serverID, "server_version": 1, "title": newTitle, "updated_at": now.Format(time.RFC3339),
 							"description": description, "status": status, "priority": priority, "is_deleted": false,
@@ -122,9 +127,10 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 						// 记录冲突（事务提交后落库）
 						pendingConflicts = append(pendingConflicts, conflictRecord{localID: c.LocalID, serverID: existingID, reason: "duplicate_insert"})
 						conflicts = append(conflicts, map[string]interface{}{
-							"local_id":  c.LocalID,
-							"server_id": existingID,
-							"reason":    "duplicate_insert",
+							"local_id":       c.LocalID,
+							"server_id":      existingID,
+							"reason":         "duplicate_insert",
+							"server_version": existVer,
 						})
 					}
 				} else {
@@ -222,10 +228,11 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 						// 记录冲突（事务提交后落库）
 						pendingConflicts = append(pendingConflicts, conflictRecord{localID: c.LocalID, serverID: id, reason: "intelligent_merge"})
 						conflicts = append(conflicts, map[string]interface{}{
-							"local_id":   c.LocalID,
-							"server_id":  id,
-							"reason":     "intelligent_merge",
-							"resolution": "智能合并",
+							"local_id":       c.LocalID,
+							"server_id":      id,
+							"reason":         "intelligent_merge",
+							"server_version": newVer,
+							"resolution":     "智能合并",
 							"merged_data": map[string]interface{}{
 								"title":       mergedTitle,
 								"description": mergedDesc,
@@ -313,9 +320,10 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 							// 记录冲突：服务器被标记为删除（事务提交后落库）
 							pendingConflicts = append(pendingConflicts, conflictRecord{localID: c.LocalID, serverID: id, reason: "delete_while_modified"})
 							conflicts = append(conflicts, map[string]interface{}{
-								"local_id":  c.LocalID,
-								"server_id": id,
-								"reason":    "delete_while_modified",
+								"local_id":       c.LocalID,
+								"server_id":      id,
+								"reason":         "delete_while_modified",
+								"server_version": newVer,
 							})
 						}
 					}

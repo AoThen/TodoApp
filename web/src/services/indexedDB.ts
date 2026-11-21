@@ -38,6 +38,8 @@ interface Conflict {
   server_id: number;
   reason: string;
   options: string[];
+  /** 冲突发生时服务器端任务版本号，用于"保留本地"时作为 CV 重放 */
+  server_version?: number;
   created_at: string;
 }
 
@@ -142,6 +144,11 @@ class IndexedDBService {
 
   async getTaskByLocalId(localId: string): Promise<Task | undefined> {
     return this.db!.get('tasks', localId);
+  }
+
+  async getTaskByServerId(serverId: number): Promise<Task | undefined> {
+    const all = await this.db!.getAll('tasks');
+    return all.find(t => t.server_id === serverId);
   }
 
   async getAllTasks(): Promise<Task[]> {

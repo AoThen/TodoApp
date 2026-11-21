@@ -218,11 +218,6 @@ class ApiService {
     return response.data;
   }
 
-  async updateTask(id: number, updates: Partial<Task>): Promise<Task> {
-    const response = await this.client.patch(`/tasks/${id}`, updates);
-    return response.data;
-  }
-
   async deleteTask(id: number): Promise<void> {
     await this.client.delete(`/tasks/${id}`);
   }
@@ -247,6 +242,7 @@ class ApiService {
       server_id: number;
       reason: string;
       options: string[];
+      server_version?: number;
     }>;
   }> {
     const response = await this.client.post('/sync', {

@@ -11,7 +11,7 @@ vi.mock('./indexedDB', () => ({
   indexedDBService: {
     getPendingDeltas: vi.fn(),
     getSyncMeta: vi.fn(),
-    getTaskByLocalId: vi.fn(),
+    getTaskByServerId: vi.fn(),
     updateTask: vi.fn(),
     clearDelta: vi.fn(),
     addConflict: vi.fn(),
@@ -33,7 +33,7 @@ describe('syncManager', () => {
     mockedSync.mockResolvedValue({ server_changes: [], client_changes: [], conflicts: [], last_sync_at: '2026-01-01T00:00:00Z' });
     mockedDb.getPendingDeltas.mockResolvedValue([]);
     mockedDb.getSyncMeta.mockResolvedValue(undefined);
-    mockedDb.getTaskByLocalId.mockResolvedValue(undefined);
+    mockedDb.getTaskByServerId.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -71,10 +71,10 @@ describe('syncManager', () => {
     expect(mockedDb.addConflict).not.toHaveBeenCalled();
   });
 
-  it('服务端变更回写到本地任务', async () => {
+  it('服务端变更按 server_id 回写到本地任务并更新版本号', async () => {
     const d1 = makeDelta(1, 'local-a');
     mockedDb.getPendingDeltas.mockResolvedValue([d1]);
-    mockedDb.getTaskByLocalId.mockResolvedValue({ local_id: 'local-a', server_id: null, title: '旧' } as never);
+    mockedDb.getTaskByServerId.mockResolvedValue({ local_id: 'local-a', server_id: 99, server_version: 2, title: '旧' } as never);
     mockedSync.mockResolvedValue({
       server_changes: [{ id: 99, server_version: 3, title: '新标题', updated_at: '2026-01-02T01:00:00Z', is_deleted: false }],
       client_changes: [{ local_id: 'local-a', server_id: 99, op: 'update' }],
@@ -84,7 +84,7 @@ describe('syncManager', () => {
 
     await syncManager.sync();
 
-    expect(mockedDb.getTaskByLocalId).toHaveBeenCalledWith('99');
+    expect(mockedDb.getTaskByServerId).toHaveBeenCalledWith(99);
     expect(mockedDb.updateTask).toHaveBeenCalledWith('local-a', expect.objectContaining({
       server_id: 99,
       server_version: 3,

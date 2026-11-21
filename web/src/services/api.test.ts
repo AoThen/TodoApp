@@ -138,17 +138,14 @@ describe('apiService', () => {
     expect(getClient().get).toHaveBeenCalledWith('/tasks?');
   });
 
-  it('任务 CRUD：create/update/delete 请求转发', async () => {
+  it('任务 CRUD：create/delete 请求转发', async () => {
     getClient().post.mockResolvedValueOnce({ data: { id: 1, title: 't' } });
-    getClient().patch.mockResolvedValueOnce({ data: { id: 1, title: 't2' } });
     getClient().delete.mockResolvedValueOnce({ data: {} });
 
     await apiService.createTask({ title: 't' } as any);
-    await apiService.updateTask(1, { title: 't2' });
     await apiService.deleteTask(1);
 
     expect(getClient().post).toHaveBeenCalledWith('/tasks', { title: 't' });
-    expect(getClient().patch).toHaveBeenCalledWith('/tasks/1', { title: 't2' });
     expect(getClient().delete).toHaveBeenCalledWith('/tasks/1');
   });
 

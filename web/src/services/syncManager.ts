@@ -51,7 +51,8 @@ class SyncManager {
       const response = await apiService.sync(lastSyncAt, pendingDeltas);
 
       for (const serverChange of response.server_changes) {
-        const localTask = await indexedDBService.getTaskByLocalId(serverChange.id.toString());
+        // 按服务器 ID 匹配本地任务并回写最新版本号（local_id 与 delta ID 属不同命名空间，不可混用）
+        const localTask = await indexedDBService.getTaskByServerId(serverChange.id);
         if (localTask) {
           await indexedDBService.updateTask(localTask.local_id, {
             server_id: serverChange.id,
@@ -77,6 +78,7 @@ class SyncManager {
           server_id: conflict.server_id,
           reason: conflict.reason,
           options: conflict.options,
+          server_version: conflict.server_version,
           created_at: new Date().toISOString(),
         });
         conflicts.push({
@@ -84,6 +86,7 @@ class SyncManager {
           server_id: conflict.server_id,
           reason: conflict.reason,
           options: conflict.options,
+          server_version: conflict.server_version,
           created_at: new Date().toISOString(),
         } as Conflict);
       }
