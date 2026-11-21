@@ -13,7 +13,7 @@ class TodoApp : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
 
-        KeyStorage.init(this)
+        KeyStorage.init()
         AppConfig.initialize(this)
     }
 

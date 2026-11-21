@@ -173,7 +173,7 @@ class QRScannerActivity : AppCompatActivity() {
 
                             if (response.isSuccessful && response.body() != null) {
                                 // 服务器验证成功
-                                KeyStorage.init(this@QRScannerActivity)
+                                KeyStorage.init()
                                 KeyStorage.saveKey(this@QRScannerActivity, pairingData.key, pairingData.server)
 
                                 // 保存设备信息

@@ -57,31 +57,31 @@ class NotificationWebSocket(
             .build()
 
         webSocket = okHttpClient.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(ws: WebSocket, response: Response) {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
                 android.util.Log.d(Config.TAG, "WebSocket connected to $serverAddress")
                 reconnectAttempts = 0
                 sendHandshake()
             }
 
-            override fun onMessage(ws: WebSocket, text: String) {
+            override fun onMessage(webSocket: WebSocket, text: String) {
                 handleMessage(text, false)
             }
 
-            override fun onMessage(ws: WebSocket, bytes: ByteString) {
+            override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
                 handleMessage(bytes.toByteArray(), true)
             }
 
-            override fun onClosing(ws: WebSocket, code: Int, reason: String) {
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 android.util.Log.d(Config.TAG, "WebSocket closing: $code - $reason")
             }
 
-            override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 android.util.Log.d(Config.TAG, "WebSocket closed: $code - $reason")
                 ready = false
                 handleReconnect()
             }
 
-            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 android.util.Log.e(Config.TAG, "WebSocket error", t)
                 ready = false
                 handleReconnect()

@@ -214,21 +214,21 @@ abstract class AppDatabase : RoomDatabase() {
         private var INSTANCE: AppDatabase? = null
 
         private val MIGRATION_1_2 = object : Migration(VERSION_1, VERSION_2) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 // Version 1 to 2: Added indexes to notifications table for better query performance
-                database.execSQL("CREATE INDEX IF NOT EXISTS index_notifications_userId ON notifications(userId)")
-                database.execSQL("CREATE INDEX IF NOT EXISTS index_notifications_isRead ON notifications(isRead)")
-                database.execSQL("CREATE INDEX IF NOT EXISTS index_notifications_createdAt ON notifications(createdAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_notifications_userId ON notifications(userId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_notifications_isRead ON notifications(isRead)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_notifications_createdAt ON notifications(createdAt)")
             }
         }
 
         private val MIGRATION_2_3 = object : Migration(VERSION_2, VERSION_3) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 // Version 2 to 3: Added isArchived field to tasks for better task management
-                database.execSQL("ALTER TABLE tasks ADD COLUMN isArchived INTEGER NOT NULL DEFAULT 0")
-                database.execSQL("ALTER TABLE tasks ADD COLUMN archivedAt TEXT DEFAULT NULL")
-                database.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_userId ON tasks(userId)")
-                database.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_status ON tasks(status)")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN isArchived INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN archivedAt TEXT DEFAULT NULL")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_userId ON tasks(userId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_status ON tasks(status)")
             }
         }
 

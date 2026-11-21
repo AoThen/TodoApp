@@ -19,7 +19,7 @@ object KeyStorage {
 
     private var keyStore: KeyStore? = null
 
-    fun init(context: Context) {
+    fun init() {
         try {
             keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER).apply {
                 load(null)
