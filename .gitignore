@@ -52,4 +52,7 @@ node_modules/
 *.db
 *.db-shm
 *.db-wal
+# 本地环境变量文件（.env.docker / .env.example 为模板，保持跟踪）
+.env
+.env.local
 
