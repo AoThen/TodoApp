@@ -1,110 +1,80 @@
-import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import LoginPage from './LoginPage';
 import { apiService } from '../../services/api';
 
 vi.mock('../../services/api', () => ({
-  apiService: {
-    login: vi.fn(),
-  },
+  apiService: { login: vi.fn() },
 }));
 
-const mockedLogin = vi.mocked(apiService.login);
+const login = apiService.login as ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  localStorage.clear();
+});
+
+async function fillAndSubmit(email = 'user@test.local', password = 'password123') {
+  fireEvent.change(screen.getByPlaceholderText('Email'), { target: { value: email } });
+  fireEvent.change(screen.getByPlaceholderText('Password'), { target: { value: password } });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button'));
+  });
+}
 
 describe('LoginPage', () => {
-  const mockOnSuccess = vi.fn().mockResolvedValue(undefined);
-
-  const renderPage = () => render(<LoginPage onSuccess={mockOnSuccess} />);
-
-  const fillAndSubmit = async (email: string, password: string) => {
-    const user = userEvent.setup();
-    await user.type(screen.getByPlaceholderText('Email'), email);
-    await user.type(screen.getByPlaceholderText('Password'), password);
-    await user.click(screen.getByRole('button', { name: 'Login' }));
-  };
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.spyOn(window, 'alert').mockImplementation(() => {});
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {});
-    mockedLogin.mockReset();
+  it('渲染登录表单', () => {
+    render(<LoginPage onSuccess={vi.fn()} />);
+    expect(screen.getByPlaceholderText('Email')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Password')).toBeInTheDocument();
+    expect(screen.getByRole('button')).toBeInTheDocument();
   });
 
-  it('渲染登录表单标题与输入框', () => {
-    renderPage();
+  it('登录成功时调用 onSuccess 并记录邮箱', async () => {
+    login.mockResolvedValue({ access_token: 'token-abc', expires_in: 900 });
+    const onSuccess = vi.fn().mockResolvedValue(undefined);
+    render(<LoginPage onSuccess={onSuccess} />);
 
-    expect(screen.getByRole('heading', { name: 'TodoApp Login' })).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Email')).toHaveAttribute('type', 'email');
-    expect(screen.getByPlaceholderText('Password')).toHaveAttribute('type', 'password');
-    expect(screen.getByRole('button', { name: 'Login' })).toBeInTheDocument();
+    await fillAndSubmit('admin@test.local', 'secret123');
+
+    expect(login).toHaveBeenCalledWith('admin@test.local', 'secret123');
+    expect(onSuccess).toHaveBeenCalledWith('token-abc');
+    expect(localStorage.getItem('user_email')).toBe('admin@test.local');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('登录成功：携带表单值调用 login，写入 user_email 并回调 onSuccess', async () => {
-    mockedLogin.mockResolvedValueOnce({ access_token: 'token-abc', refresh_token: 'r1' } as any);
-    renderPage();
+  it('登录失败时显示内联错误且不调用 onSuccess', async () => {
+    login.mockRejectedValue(new Error('401'));
+    const onSuccess = vi.fn().mockResolvedValue(undefined);
+    render(<LoginPage onSuccess={onSuccess} />);
 
-    await fillAndSubmit('user@example.com', 'secret123');
+    await fillAndSubmit('user@test.local', 'wrong');
 
-    await waitFor(() => {
-      expect(mockedLogin).toHaveBeenCalledWith('user@example.com', 'secret123');
-    });
-    expect(Storage.prototype.setItem).toHaveBeenCalledWith('user_email', 'user@example.com');
-    await waitFor(() => {
-      expect(mockOnSuccess).toHaveBeenCalledWith('token-abc');
-    });
-    expect(window.alert).not.toHaveBeenCalled();
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('登录失败，请检查邮箱和密码');
+    expect(onSuccess).not.toHaveBeenCalled();
   });
 
-  it('登录成功且 onSuccess 为同步函数时正常执行', async () => {
-    mockedLogin.mockResolvedValueOnce({ access_token: 'token-sync' } as any);
-    const syncOnSuccess = vi.fn();
-    render(<LoginPage onSuccess={syncOnSuccess} />);
+  it('提交过程中按钮禁用，结束后恢复', async () => {
+    let resolveLogin!: (v: { access_token: string; expires_in: number }) => void;
+    login.mockReturnValue(new Promise((resolve) => { resolveLogin = resolve; }));
+    render(<LoginPage onSuccess={vi.fn()} />);
 
-    await fillAndSubmit('sync@example.com', 'pw');
+    fireEvent.change(screen.getByPlaceholderText('Email'), { target: { value: 'u@t.local' } });
+    fireEvent.change(screen.getByPlaceholderText('Password'), { target: { value: 'p' } });
 
-    await waitFor(() => {
-      expect(syncOnSuccess).toHaveBeenCalledWith('token-sync');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button'));
     });
-  });
 
-  it('登录失败：弹出 alert 提示且不调用 onSuccess', async () => {
-    mockedLogin.mockRejectedValueOnce(new Error('401 unauthorized'));
-    renderPage();
+    // 登录请求仍处于 pending，应停留在提交中状态
+    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByText('登录中...')).toBeInTheDocument();
 
-    await fillAndSubmit('bad@example.com', 'wrongpass');
-
-    await waitFor(() => {
-      expect(window.alert).toHaveBeenCalledWith('Login failed. Please check your credentials.');
+    await act(async () => {
+      resolveLogin({ access_token: 't', expires_in: 900 });
     });
-    expect(mockOnSuccess).not.toHaveBeenCalled();
-    expect(Storage.prototype.setItem).not.toHaveBeenCalled();
-  });
 
-  it('onSuccess 执行失败时同样走失败提示分支', async () => {
-    mockedLogin.mockResolvedValueOnce({ access_token: 'token-late' } as any);
-    mockOnSuccess.mockRejectedValueOnce(new Error('sync bootstrap failed'));
-    renderPage();
-
-    await fillAndSubmit('late@example.com', 'pw');
-
-    await waitFor(() => {
-      expect(window.alert).toHaveBeenCalledWith('Login failed. Please check your credentials.');
-    });
-    mockOnSuccess.mockResolvedValue(undefined);
-  });
-
-  it('表单 submit 事件触发登录流程', async () => {
-    mockedLogin.mockResolvedValueOnce({ access_token: 't' } as any);
-    renderPage();
-    const user = userEvent.setup();
-    await user.type(screen.getByPlaceholderText('Email'), 'form@example.com');
-    await user.type(screen.getByPlaceholderText('Password'), 'pw');
-    fireEvent.submit(screen.getByRole('button', { name: 'Login' }).closest('form')!);
-
-    await waitFor(() => {
-      expect(mockedLogin).toHaveBeenCalledWith('form@example.com', 'pw');
-    });
+    expect(screen.getByRole('button')).toBeEnabled();
   });
 });

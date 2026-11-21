@@ -40,7 +40,7 @@ const BatchActionBar: React.FC<BatchActionBarProps> = ({
             onClick={onManualSync}
             disabled={isSyncing || !isOnline}
           >
-            {isSyncing ? "同步中..." : "Sync Now"}
+            {isSyncing ? '同步中...' : '立即同步'}
           </button>
         </>
       )}

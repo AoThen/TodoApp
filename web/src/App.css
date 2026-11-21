@@ -146,6 +146,9 @@ body {
   border-radius: 4px;
   transition: all 0.2s;
   cursor: pointer;
+  /* 长列表性能：视口外的任务项跳过布局与绘制（零依赖虚拟化） */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 72px;
 }
 
 .task-item:hover {
@@ -267,6 +270,13 @@ body {
   font-size: 16px;
   background: var(--card);
   color: var(--text);
+}
+
+.login-error {
+  margin: 0;
+  color: var(--danger, #e53935);
+  font-size: 14px;
+  text-align: center;
 }
 
 .login-container button {
