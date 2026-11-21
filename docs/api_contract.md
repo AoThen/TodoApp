@@ -9,7 +9,7 @@ API Contract (High-Level)
   - Request: { last_sync_at, changes: [ { local_id, op, payload, client_version } ] }
   - Response: { server_changes, client_changes, last_sync_at, conflicts }
 - /api/v1/export
-  - Request: { type: 'tasks', format: 'json'|'csv' } with Authorization header
+  - Method: GET with query parameters `type` (`tasks`) and `format` (`json`|`csv`), requires Authorization header
   - Response: file content in requested format
 - /api/v1/import
   - Request: data payload in JSON/CSV; requires same schema as export

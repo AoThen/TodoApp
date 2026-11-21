@@ -144,7 +144,7 @@ response.ErrorResponse(w, "错误消息", http.StatusBadRequest)
 ### File Structure
 ```
 /: main.go, Makefile, docker-compose.yml, Dockerfile
-internal/: auth/, cache/, crypto/, db/, response/, types/, utils/, validator/, websocket/
+internal/: auth/, config/, crypto/, db/, response/, types/, utils/, validator/, websocket/
 web/: src/{components/{admin,common,layout,notifications,tasks},services/,utils/,App.tsx}
 android/: src/main/java/com/todoapp/{config/,data/,ui/}/
 prototype/: web-prototype.html, android-prototype.html (UI 视觉原型)

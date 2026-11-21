@@ -121,7 +121,7 @@ cd android
 |------|------|------|------|
 | POST | `/api/v1/auth/login` | 用户登录 | 否 |
 | POST | `/api/v1/auth/refresh` | 刷新令牌 | Cookie |
-| POST | `/api/v1/auth/logout` | 用户登出 | Cookie |
+| POST | `/api/v1/auth/logout` | 用户登出 | Bearer |
 
 ### 任务
 | 方法 | 端点 | 描述 | 认证 |
@@ -196,6 +196,7 @@ todoapp/
 ├── main.go                          # Go 后端入口
 ├── internal/
 │   ├── auth/                        # JWT 认证
+│   ├── config/                      # 环境变量解析
 │   ├── db/                          # 数据库操作
 │   ├── response/                    # 统一响应格式
 │   ├── types/                       # 类型与常量
@@ -340,6 +341,7 @@ TodoApp 使用 SQLite WAL 模式，具有以下表：
 | 表名 | 描述 | 关键字段 |
 |------|------|----------|
 | `delta_queue` | 离线更改队列 | user_id, local_id, op, payload |
+| `sync_meta` | 每用户同步游标 | user_id, last_sync_at, last_server_version |
 | `conflicts` | 同步冲突 | local_id, server_id, reason, resolved |
 | `tokens` | 刷新令牌 | user_id, token_hash, expires_at |
 | `login_logs` | 登录日志 | user_id, ip, success, attempt_count |
