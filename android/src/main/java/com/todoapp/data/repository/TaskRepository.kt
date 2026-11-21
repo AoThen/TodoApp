@@ -178,7 +178,7 @@ class TaskRepository(
             localId = task.localId,
             op = operation,
             payload = Gson().toJson(task),
-            clientVersion = (task.serverVersion ?: 0) + 1,
+            clientVersion = task.serverVersion + 1,
             timestamp = DateTimeUtils.getCurrentTimestamp()
         )
         deltaQueueDao.insertDelta(delta)

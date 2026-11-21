@@ -42,7 +42,7 @@ class AuthRepository @Inject constructor(
     suspend fun logout(): Result<Unit> {
         return withContext(Dispatchers.IO) {
             try {
-                val response = apiService.logout()
+                apiService.logout()
                 RetrofitClient.clearToken(context)
                 Result.success(Unit)
             } catch (e: Exception) {

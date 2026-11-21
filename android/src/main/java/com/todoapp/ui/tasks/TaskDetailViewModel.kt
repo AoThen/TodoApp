@@ -149,7 +149,7 @@ class TaskDetailViewModel @Inject constructor(
                 priority = currentPriority,
                 dueAt = if (currentDueDate.isNotBlank()) "${currentDueDate}T00:00:00Z" else task.dueAt,
                 updatedAt = DateTimeUtils.getCurrentTimestamp(),
-                serverVersion = (task.serverVersion ?: 0) + 1,
+                serverVersion = task.serverVersion + 1,
                 lastModified = DateTimeUtils.getCurrentTimestamp()
             )
 
@@ -185,7 +185,7 @@ class TaskDetailViewModel @Inject constructor(
         }
     }
 
-    fun revertChanges(context: android.content.Context) {
+    fun revertChanges() {
         originalTask?.let { task ->
             currentTitle = task.title
             currentDescription = task.description

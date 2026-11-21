@@ -39,7 +39,7 @@ class NotificationAdapter(
         fun bind(notification: NotificationEntity) {
             titleTextView.text = notification.title
             contentTextView.text = notification.content
-            timeTextView.text = DateTimeUtils.formatForDisplay(notification.createdAt ?: "")
+            timeTextView.text = DateTimeUtils.formatForDisplay(notification.createdAt)
 
             val priorityColorRes = when (notification.priority) {
                 "urgent" -> R.color.notification_priority_urgent

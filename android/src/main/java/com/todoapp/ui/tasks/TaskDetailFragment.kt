@@ -416,7 +416,7 @@ class TaskDetailFragment : Fragment(), DatePickerDialog.OnDateSetListener {
             .setTitle(getString(R.string.discard_changes))
             .setMessage(getString(R.string.discard_changes_message))
             .setPositiveButton(getString(R.string.discard_and_return)) { _, _ ->
-                viewModel.revertChanges(requireContext())
+                viewModel.revertChanges()
                 _isEditMode = false
                 setEditMode(false)
                 binding.layoutViewMode.visibility = View.VISIBLE
