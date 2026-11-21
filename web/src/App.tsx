@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { indexedDBService, Task } from './services/indexedDB';
 import { apiService } from './services/api';
 import { syncManager } from './services/syncManager';
@@ -10,11 +10,14 @@ import UndoToast from './components/UndoToast';
 import ImportDialog from './components/ImportDialog';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import Header from './components/layout/Header';
+import LoginPage from './components/auth/LoginPage';
 import TaskList from './components/tasks/TaskList';
 import TaskForm from './components/tasks/TaskForm';
 import TaskEditModal from './components/tasks/TaskEditModal';
 import TaskFilter, { FilterState } from './components/tasks/TaskFilter';
 import Pagination from './components/tasks/Pagination';
+import BatchActionBar from './components/tasks/BatchActionBar';
+import ConflictsModal from './components/tasks/ConflictsModal';
 import NotificationSystem from './components/NotificationSystem';
 import { toast } from 'react-toastify';
 import './App.css';
@@ -23,9 +26,6 @@ const AppContent: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [showConflicts, setShowConflicts] = useState(false);
-  const [conflicts, setConflicts] = useState<any[]>([]);
-  const [newTaskTitle, setNewTaskTitle] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -47,20 +47,6 @@ const AppContent: React.FC = () => {
     sortBy: 'created_at',
     sortOrder: 'desc',
   });
-
-  // Listen for conflicts from sync
-  useEffect(() => {
-    const handleConflicts = (newConflicts: any[]) => {
-      setConflicts(prev => [...prev, ...newConflicts]);
-      setShowConflicts(true);
-      toast.warning(`检测到 ${newConflicts.length} 个冲突需要解决`);
-    };
-    
-    syncManager.onConflicts(handleConflicts);
-    return () => {
-      syncManager.removeConflictListener(handleConflicts);
-    };
-  }, []);
 
   // Initialize IndexedDB and load data
   useEffect(() => {
@@ -135,22 +121,11 @@ const AppContent: React.FC = () => {
     setPage(1);
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const email = (e.target as HTMLFormElement).email.value;
-    const password = (e.target as HTMLFormElement).password.value;
-
-    try {
-      const { access_token } = await apiService.login(email, password);
-      setAuthToken(access_token);
-      localStorage.setItem('user_email', email);
-      await checkAdminStatus();
-      await loadTasks();
-      await syncManager.sync();
-    } catch (error) {
-      console.error('Login failed:', error);
-      alert('Login failed. Please check your credentials.');
-    }
+  const handleLoginSuccess = async (token: string) => {
+    setAuthToken(token);
+    await checkAdminStatus();
+    await loadTasks();
+    await syncManager.sync();
   };
 
   const checkAdminStatus = async () => {
@@ -193,42 +168,6 @@ const AppContent: React.FC = () => {
       }, 1);
     }
   }, [authToken]);
-
-  const handleAddTask = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTaskTitle.trim()) return;
-
-    const now = new Date().toISOString();
-    const tempId = `local-${Date.now()}`;
-    
-    // Create local task
-    const localTask = {
-      local_id: tempId,
-      user_id: 'current-user',
-      server_version: 0,
-      title: newTaskTitle,
-      description: '',
-      status: 'todo' as const,
-      priority: 'medium' as const,
-      is_deleted: false,
-      last_modified: now,
-    };
-
-    // Save to IndexedDB
-    await indexedDBService.addTask(localTask);
-    setTasks(prev => [...prev, localTask as Task]);
-    setNewTaskTitle('');
-
-    // Enqueue sync
-    if (authToken) {
-      await syncManager.enqueueLocalChange('insert', {
-        title: newTaskTitle,
-        description: '',
-        status: 'todo',
-        priority: 'medium',
-      }, 1);
-    }
-  };
 
   const handleToggleStatus = async (task: Task) => {
     const newStatus = task.status === 'done' ? 'todo' : 'done';
@@ -355,33 +294,6 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const resolveConflict = async (index: number, resolution: 'local' | 'server') => {
-    const conflict = conflicts[index];
-    if (!conflict) return;
-
-    try {
-      if (resolution === 'local') {
-        await syncManager.enqueueLocalChange('update', {
-          id: conflict.server_id,
-          force: true,
-        }, 1);
-        toast.success('已保留本地版本');
-      } else {
-        await indexedDBService.deleteConflict(conflict.local_id);
-        toast.success('已使用服务器版本');
-      }
-
-      setConflicts(prev => prev.filter((_, i) => i !== index));
-      
-      if (conflicts.length <= 1) {
-        setShowConflicts(false);
-      }
-    } catch (error) {
-      console.error('Resolve conflict failed:', error);
-      toast.error('解决冲突失败');
-    }
-  };
-
   const handleUndo = async () => {
     try {
       setIsLoading(true);
@@ -417,21 +329,6 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const handleExport = async (format: 'json' | 'csv') => {
-    try {
-      const blob = await apiService.exportTasks(format);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `tasks.${format}`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Export failed:', error);
-      alert('Export failed');
-    }
-  };
-
   const handleImport = async () => {
     if (!authToken) {
       alert('Please login first');
@@ -458,16 +355,7 @@ const AppContent: React.FC = () => {
   }
 
   if (!authToken) {
-    return (
-      <div className="login-container">
-        <h1>TodoApp Login</h1>
-        <form onSubmit={handleLogin}>
-          <input type="email" name="email" placeholder="Email" required />
-          <input type="password" name="password" placeholder="Password" required />
-          <button type="submit">Login</button>
-        </form>
-      </div>
-    );
+    return <LoginPage onSuccess={handleLoginSuccess} />;
   }
 
   return (
@@ -496,32 +384,15 @@ const AppContent: React.FC = () => {
           />
         )}
 
-         {/* 批量操作工具栏 */}
-         <div className="batch-actions-bar">
-           <input
-             type="checkbox"
-             checked={selectAll}
-             onChange={(e) => handleSelectAll(e.target.checked)}
-           />
-           <span>已选择 <strong>{selectedTasks.size}</strong> 个任务</span>
-           {selectedTasks.size > 0 && (
-             <>
-               <button
-                 className="btn btn-danger"
-                 onClick={() => setShowBatchConfirm(true)}
-               >
-                 批量删除 ({selectedTasks.size})
-               </button>
-               <button
-                 className="btn btn-secondary"
-                 onClick={handleManualSync}
-                 disabled={isSyncing || !isOnline}
-               >
-                 {isSyncing ? "同步中..." : "Sync Now"}
-               </button>
-             </>
-           )}
-          </div>
+         <BatchActionBar
+           selectAll={selectAll}
+           selectedCount={selectedTasks.size}
+           isSyncing={isSyncing}
+           isOnline={isOnline}
+           onSelectAll={handleSelectAll}
+           onBatchDelete={() => setShowBatchConfirm(true)}
+           onManualSync={handleManualSync}
+         />
 
           <TaskList
             tasks={tasks}
@@ -539,31 +410,6 @@ const AppContent: React.FC = () => {
           onSave={handleSaveTask}
           onClose={() => setEditingTask(null)}
         />
-      )}
-
-      {showConflicts && (
-        <div className="conflicts-modal">
-          <div className="conflicts-content">
-            <h2>冲突解决</h2>
-            {conflicts.length === 0 ? (
-              <p>没有待解决的冲突</p>
-            ) : (
-              <div className="conflicts-list">
-                {conflicts.map((conflict, index) => (
-                  <div key={index} className="conflict-item">
-                    <p><strong>冲突 #{index + 1}</strong></p>
-                    <p>原因: {conflict.reason}</p>
-                    <div className="conflict-options">
-                      <button onClick={() => resolveConflict(index, 'local')}>保留本地</button>
-                      <button onClick={() => resolveConflict(index, 'server')}>使用服务器</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <button onClick={() => { setShowConflicts(false); setConflicts([]); }}>关闭</button>
-          </div>
-        </div>
       )}
 
       {showPairing && (
@@ -605,6 +451,8 @@ const App: React.FC = () => {
   return (
     <ErrorBoundary>
       <AppContent />
+      {/* 常驻挂载：保证 syncManager 冲突监听在任意视图（含登录页/加载中）下都生效 */}
+      <ConflictsModal />
     </ErrorBoundary>
   );
 };
