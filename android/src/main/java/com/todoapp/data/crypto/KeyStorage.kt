@@ -112,6 +112,8 @@ object KeyStorage {
 
             deleteKeyFromKeystore()
         } catch (e: Exception) {
+            // 清理失败不影响调用方语义：本地 prefs 已清除，Keystore 残留项下次配对时覆盖
+            android.util.Log.d("KeyStorage", "clearKey: keystore cleanup skipped", e)
         }
     }
 
@@ -149,6 +151,8 @@ object KeyStorage {
             keyGenerator.init(keyGenSpec)
             keyGenerator.generateKey()
         } catch (e: Exception) {
+            // Keystore 不可用时静默降级：saveKey 会回退为明文存储
+            android.util.Log.d("KeyStorage", "createKeyInKeystore failed, fallback to plaintext", e)
         }
     }
 
@@ -156,11 +160,13 @@ object KeyStorage {
         try {
             keyStore?.deleteEntry(KEY_ALIAS)
         } catch (e: Exception) {
+            android.util.Log.d("KeyStorage", "deleteKeyFromKeystore failed", e)
         }
     }
 
     private fun encryptWithKeystore(plaintext: String): String {
-        val secretKey = keyStore?.getKey(KEY_ALIAS, null) as SecretKey
+        val secretKey = keyStore?.getKey(KEY_ALIAS, null) as? SecretKey
+            ?: throw IllegalStateException("Keystore 密钥不可用")
         val cipher = Cipher.getInstance(IV_TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, secretKey)
 
@@ -176,7 +182,8 @@ object KeyStorage {
 
     private fun decryptWithKeystore(encryptedBase64: String): String {
         val combined = android.util.Base64.decode(encryptedBase64, android.util.Base64.NO_WRAP)
-        val secretKey = keyStore?.getKey(KEY_ALIAS, null) as SecretKey
+        val secretKey = keyStore?.getKey(KEY_ALIAS, null) as? SecretKey
+            ?: throw IllegalStateException("Keystore 密钥不可用")
 
         val iv = combined.copyOfRange(0, 12)
         val ciphertext = combined.copyOfRange(12, combined.size)

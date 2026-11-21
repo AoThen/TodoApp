@@ -57,10 +57,10 @@ class PairingViewModel @Inject constructor() : ViewModel() {
                     val response = RetrofitClient.getApiService(context)
                         .initPairing(InitPairingRequest("android", null))
                     
-                    if (response.isSuccessful && response.body() != null) {
-                        val initResponse = response.body()!!
-                        finalKey = initResponse.key
-                        serverUrl = initResponse.serverUrl
+                    val initBody = response.body()
+                    if (response.isSuccessful && initBody != null) {
+                        finalKey = initBody.key
+                        serverUrl = initBody.serverUrl
                     } else {
                         _pairingState.value = PairingState.Error(
                             context.getString(R.string.pairing_failed) + ": 无法获取配对密钥"

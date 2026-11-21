@@ -134,9 +134,9 @@ object RetrofitClient {
                 }
             }
 
-            if (response.isSuccessful && response.body() != null) {
-                val refreshResponse = response.body()!!
-                saveAccessToken(context, refreshResponse.accessToken)
+            val refreshedBody = response.body()
+            if (response.isSuccessful && refreshedBody != null) {
+                saveAccessToken(context, refreshedBody.accessToken)
                 android.util.Log.d("RetrofitClient", "Token refreshed successfully")
                 true
             } else {

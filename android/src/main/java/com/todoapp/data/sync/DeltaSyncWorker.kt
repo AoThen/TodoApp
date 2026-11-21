@@ -66,11 +66,11 @@ class DeltaSyncWorker(
             val request = SyncRequest(lastSyncAt, changes)
             val response = apiService.sync(request)
 
-            if (!response.isSuccessful || response.body() == null) {
+            val syncBody = response.body()
+            if (!response.isSuccessful || syncBody == null) {
                 return@withContext Result.retry()
             }
-
-            val syncResponse = response.body()!!
+            val syncResponse = syncBody
 
             // 先处理已确认的客户端变更：清理 delta 队列，并为 insert 回填服务端 ID
             for (clientChange in syncResponse.clientChanges) {

@@ -60,7 +60,7 @@ class TaskListViewModel @Inject constructor(
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .build()
 
-        networkCallback = object : ConnectivityManager.NetworkCallback() {
+        val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 _connectionState.value = true
             }
@@ -80,7 +80,8 @@ class TaskListViewModel @Inject constructor(
             }
         }
 
-        connectivityManager.registerNetworkCallback(networkRequest, networkCallback!!)
+        networkCallback = callback
+        connectivityManager.registerNetworkCallback(networkRequest, callback)
         updateConnectionStatus()
     }
 

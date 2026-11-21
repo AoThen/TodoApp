@@ -20,16 +20,15 @@ class AuthRepository @Inject constructor(
                 val request = LoginRequest(email, password)
                 val response = apiService.login(request)
                 
-                if (response.isSuccessful && response.body() != null) {
-                    val loginResponse = response.body()!!
-                    
+                val loginBody = response.body()
+                if (response.isSuccessful && loginBody != null) {
                     // Save tokens using RetrofitClient
-                    RetrofitClient.saveAccessToken(context, loginResponse.accessToken)
-                    loginResponse.refreshToken?.let { token ->
+                    RetrofitClient.saveAccessToken(context, loginBody.accessToken)
+                    loginBody.refreshToken?.let { token ->
                         RetrofitClient.saveRefreshToken(context, token)
                     }
-                    
-                    Result.success(loginResponse)
+
+                    Result.success(loginBody)
                 } else {
                     Result.failure(Exception("Login failed: ${response.code()}"))
                 }
@@ -56,10 +55,10 @@ class AuthRepository @Inject constructor(
             try {
                 val response = apiService.refreshToken()
                 
-                if (response.isSuccessful && response.body() != null) {
-                    val refreshResponse = response.body()!!
-                    RetrofitClient.saveAccessToken(context, refreshResponse.accessToken)
-                    Result.success(refreshResponse)
+                val refreshBody = response.body()
+                if (response.isSuccessful && refreshBody != null) {
+                    RetrofitClient.saveAccessToken(context, refreshBody.accessToken)
+                    Result.success(refreshBody)
                 } else {
                     Result.failure(Exception("Token refresh failed: ${response.code()}"))
                 }

@@ -102,7 +102,8 @@ class NotificationWebSocket(
         scope.launch {
             try {
                 val jsonString = if (isEncrypted) {
-                    val bytes = data as ByteArray
+                    val bytes = data as? ByteArray
+                        ?: throw IllegalArgumentException("加密消息载荷类型异常")
                     // 解密接收到的数据
                     try {
                         val key = KeyStorage.getKey(context.applicationContext)
@@ -116,7 +117,8 @@ class NotificationWebSocket(
                         throw e
                     }
                 } else {
-                    data as String
+                    data as? String
+                        ?: throw IllegalArgumentException("明文消息载荷类型异常")
                 }
 
                 val json = JSONObject(jsonString)
