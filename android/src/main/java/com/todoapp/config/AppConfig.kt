@@ -7,6 +7,7 @@ object AppConfig {
     private const val PREFS_NAME = "app_config"
     private const val KEY_BASE_URL = "base_url"
     private const val KEY_IS_FIRST_LAUNCH = "is_first_launch"
+    private const val KEY_USER_EMAIL = "user_email"
 
     // 默认服务端地址来自构建时注入的 BuildConfig.SERVER_URL（可用 -PSERVER_URL 覆盖）
     val DEFAULT_BASE_URL = BuildConfig.SERVER_URL
@@ -19,6 +20,18 @@ object AppConfig {
     }
 
     fun getBaseUrl(): String = baseUrl
+
+    /** 当前登录用户邮箱（登录成功时写入，用于首页问候语展示） */
+    fun getUserEmail(context: Context): String =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_USER_EMAIL, "") ?: ""
+
+    fun setUserEmail(context: Context, email: String) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_USER_EMAIL, email)
+            .apply()
+    }
 
     fun setBaseUrl(context: Context, url: String) {
         baseUrl = if (url.endsWith("/")) {

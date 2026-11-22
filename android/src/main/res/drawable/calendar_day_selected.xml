@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 日历「今天」高亮：品牌渐变圆（原型 .day.today） -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="oval">
-    <solid android:color="?attr/colorPrimary" />
+    <gradient
+        android:angle="315"
+        android:startColor="@color/gradient_start"
+        android:endColor="@color/gradient_end"
+        android:type="linear" />
 </shape>

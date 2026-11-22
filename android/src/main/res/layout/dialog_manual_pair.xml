@@ -10,7 +10,7 @@
     <com.google.android.material.textview.MaterialTextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="请输入配对代码"
+        android:text="@string/pairing_code_hint"
         android:textAppearance="?attr/textAppearanceBodyMedium"
         android:layout_marginBottom="16dp" />
 

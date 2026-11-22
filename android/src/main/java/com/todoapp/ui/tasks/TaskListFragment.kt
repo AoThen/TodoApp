@@ -1,6 +1,9 @@
 package com.todoapp.ui.tasks
 
+import android.content.res.ColorStateList
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -13,13 +16,14 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.todoapp.R
+import com.todoapp.config.AppConfig
 import com.todoapp.data.local.Task
 import com.todoapp.data.sync.DeltaSyncWorker
 import com.todoapp.databinding.FragmentTaskListBinding
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 @AndroidEntryPoint
 class TaskListFragment : Fragment() {
@@ -44,6 +48,7 @@ class TaskListFragment : Fragment() {
         
         setupRecyclerView()
         setupClickListeners()
+        setupSearch()
         setupObservers()
 
         // 进入主页面即确保周期同步已调度（KEEP 策略下重复调用无副作用）
@@ -53,7 +58,7 @@ class TaskListFragment : Fragment() {
     private fun setupRecyclerView() {
         taskAdapter = TaskAdapter(
             onTaskClick = { task: Task ->
-                // 点卡片直接打开编辑底部弹层
+                // 点卡片直接打开编辑底部弹层（删除入口在弹层内）
                 val sheet = TaskEditBottomSheet().apply {
                     arguments = Bundle().apply {
                         putString(TaskEditBottomSheet.ARG_TASK_ID, task.localId)
@@ -63,9 +68,6 @@ class TaskListFragment : Fragment() {
             },
             onTaskComplete = { task: Task ->
                 viewModel.toggleTaskCompletion(task)
-            },
-            onTaskDelete = { task: Task ->
-                showDeleteTaskDialog(task)
             }
         )
         
@@ -90,7 +92,8 @@ class TaskListFragment : Fragment() {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.tasks.collect { tasks: List<Task> ->
                     taskAdapter.submitList(tasks)
-                    updateEmptyState(tasks.isEmpty())
+                    updateEmptyState(tasks.isEmpty(), viewModel.searchQuery.value.isNotBlank())
+                    updateGreeting(tasks)
                 }
             }
         }
@@ -102,19 +105,27 @@ class TaskListFragment : Fragment() {
                         is SyncState.Idle -> {
                             binding.progressBarSync.visibility = View.GONE
                             binding.btnSyncNow.isEnabled = true
+                            refreshSyncChip()
                         }
                         is SyncState.Syncing -> {
                             binding.progressBarSync.visibility = View.VISIBLE
                             binding.btnSyncNow.isEnabled = false
+                            updateSyncChip(
+                                getString(R.string.sync_status_syncing),
+                                R.color.warning,
+                                R.color.warning_container
+                            )
                         }
                         is SyncState.Success -> {
                             binding.progressBarSync.visibility = View.GONE
                             binding.btnSyncNow.isEnabled = true
+                            refreshSyncChip()
                             Toast.makeText(requireContext(), R.string.sync_success, Toast.LENGTH_SHORT).show()
                         }
                         is SyncState.Error -> {
                             binding.progressBarSync.visibility = View.GONE
                             binding.btnSyncNow.isEnabled = true
+                            refreshSyncChip()
                             Toast.makeText(requireContext(), state.message, Toast.LENGTH_LONG).show()
                         }
                     }
@@ -131,10 +142,66 @@ class TaskListFragment : Fragment() {
         }
     }
 
-    private fun updateEmptyState(isEmpty: Boolean) {
+    private fun setupSearch() {
+        binding.etSearch.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                viewModel.setSearchQuery(s?.toString() ?: "")
+            }
+        })
+    }
+
+    /** 问候区：时段问候 + 登录邮箱前缀 + 未完成任务数（原型 .greet） */
+    private fun updateGreeting(tasks: List<Task>) {
+        val email = AppConfig.getUserEmail(requireContext())
+        val displayName = email.substringBefore("@").ifBlank { getString(R.string.app_name) }
+        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        val greetingRes = when (hour) {
+            in 6..11 -> R.string.greeting_morning
+            in 12..17 -> R.string.greeting_afternoon
+            else -> R.string.greeting_evening
+        }
+        binding.tvGreeting.text = getString(greetingRes) + "，" + displayName
+        binding.tvGreetingSub.text =
+            getString(R.string.greeting_task_summary, tasks.count { it.status != "done" })
+        binding.tvAvatar.text = displayName.take(1).uppercase(Locale.ROOT)
+    }
+
+    /** 同步 chip：文案 + 文字/底色（原型 .sync-chip：绿=已同步，琥珀=同步中，红=离线） */
+    private fun updateSyncChip(text: String, textColorRes: Int, bgColorRes: Int) {
+        binding.tvSyncChip.text = text
+        binding.tvSyncChip.setTextColor(ContextCompat.getColor(requireContext(), textColorRes))
+        binding.tvSyncChip.backgroundTintList =
+            ColorStateList.valueOf(ContextCompat.getColor(requireContext(), bgColorRes))
+    }
+
+    /** 按当前连接状态复位同步 chip（手动同步结束后调用，避免停留在「同步中」） */
+    private fun refreshSyncChip() {
+        if (viewModel.connectionState.value) {
+            updateSyncChip(
+                getString(R.string.sync_synced),
+                R.color.success,
+                R.color.success_container
+            )
+        } else {
+            updateSyncChip(
+                getString(R.string.sync_status_offline),
+                R.color.danger,
+                R.color.muted_container
+            )
+        }
+    }
+
+    private fun updateEmptyState(isEmpty: Boolean, isSearching: Boolean = false) {
         if (isEmpty) {
             binding.recyclerViewTasks.visibility = View.GONE
             binding.layoutEmptyState.visibility = View.VISIBLE
+            // 区分「暂无任务」与「搜索无结果」
+            binding.tvEmptyTitle.text =
+                getString(if (isSearching) R.string.tasks_no_match else R.string.tasks_empty)
+            binding.tvEmptyHint.text =
+                getString(if (isSearching) R.string.tasks_no_match_hint else R.string.tasks_empty_hint)
         } else {
             binding.recyclerViewTasks.visibility = View.VISIBLE
             binding.layoutEmptyState.visibility = View.GONE
@@ -157,21 +224,24 @@ class TaskListFragment : Fragment() {
         }
         
         binding.tvSyncStatus.setTextColor(statusColor)
+
+        if (isConnected) {
+            updateSyncChip(
+                getString(R.string.sync_synced),
+                R.color.success,
+                R.color.success_container
+            )
+        } else {
+            updateSyncChip(
+                getString(R.string.sync_status_offline),
+                R.color.danger,
+                R.color.muted_container
+            )
+        }
     }
 
     private fun navigateToAddTask() {
         findNavController().navigate(R.id.action_taskListFragment_to_addTaskFragment)
-    }
-
-    private fun showDeleteTaskDialog(task: Task) {
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(getString(R.string.confirm_delete))
-            .setMessage(getString(R.string.confirm_delete_task_message, task.title))
-            .setPositiveButton(getString(R.string.delete)) { _, _ ->
-                viewModel.deleteTask(task)
-            }
-            .setNegativeButton(getString(R.string.cancel), null)
-            .show()
     }
 
     override fun onDestroyView() {

@@ -12,6 +12,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.todoapp.R
 import com.todoapp.databinding.FragmentTaskEditBottomSheetBinding
 import dagger.hilt.android.AndroidEntryPoint
@@ -36,6 +37,9 @@ class TaskEditBottomSheet : BottomSheetDialogFragment(), DatePickerDialog.OnDate
     // 首次 Success 为加载完成（回填表单），其后 Success 为保存成功（关闭弹层）
     private var loaded = false
 
+    // 删除成功后 uiState 同样走 Success，用该标记区分提示文案
+    private var isDeleting = false
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -49,6 +53,10 @@ class TaskEditBottomSheet : BottomSheetDialogFragment(), DatePickerDialog.OnDate
         super.onViewCreated(view, savedInstanceState)
         setupClickListeners()
         setupObservers()
+        // 仅编辑已有任务时提供删除入口
+        if (taskId == null) {
+            binding.btnDeleteTask.visibility = View.GONE
+        }
         taskId?.let { viewModel.loadTask(it, requireContext()) }
     }
 
@@ -56,6 +64,19 @@ class TaskEditBottomSheet : BottomSheetDialogFragment(), DatePickerDialog.OnDate
         binding.btnCancel.setOnClickListener { dismiss() }
         binding.btnSave.setOnClickListener {
             viewModel.updateTask(requireContext())
+        }
+
+        binding.btnDeleteTask.setOnClickListener {
+            val task = viewModel.getCurrentTask() ?: return@setOnClickListener
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.confirm_delete)
+                .setMessage(R.string.confirm_delete_task_message, task.title)
+                .setPositiveButton(R.string.delete) { _, _ ->
+                    isDeleting = true
+                    viewModel.deleteTask(requireContext())
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
         }
 
         binding.tilDueDate.setOnClickListener { showDatePicker() }
@@ -90,6 +111,8 @@ class TaskEditBottomSheet : BottomSheetDialogFragment(), DatePickerDialog.OnDate
                         }
                         is TaskDetailState.Error -> {
                             binding.progressBar.visibility = View.GONE
+                            // 删除/保存失败后复位标记，避免下次保存成功误报「已删除」
+                            isDeleting = false
                             Toast.makeText(requireContext(), state.message, Toast.LENGTH_LONG).show()
                         }
                         is TaskDetailState.Success -> {
@@ -100,7 +123,7 @@ class TaskEditBottomSheet : BottomSheetDialogFragment(), DatePickerDialog.OnDate
                             } else {
                                 Toast.makeText(
                                     requireContext(),
-                                    R.string.task_update_success,
+                                    if (isDeleting) R.string.task_delete_success else R.string.task_update_success,
                                     Toast.LENGTH_SHORT
                                 ).show()
                                 dismissAllowingStateLoss()

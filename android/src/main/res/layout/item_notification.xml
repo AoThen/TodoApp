@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 通知卡片：对齐原型 .n-card（圆角 16dp、未读左侧主色竖条） -->
 <androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_margin="8dp"
-    app:cardCornerRadius="8dp"
-    app:cardElevation="2dp">
+    app:cardCornerRadius="16dp"
+    app:cardElevation="1dp"
+    app:cardBackgroundColor="?attr/colorSurface">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -19,7 +22,7 @@
             android:layout_width="4dp"
             android:layout_height="match_parent"
             android:layout_marginEnd="12dp"
-            android:background="#FF3B30" />
+            android:background="@color/danger" />
 
         <!-- Content -->
         <LinearLayout
@@ -40,21 +43,21 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="通知标题"
                     android:textSize="14sp"
                     android:textStyle="bold"
-                    android:textColor="#333333"
+                    android:textColor="@color/text_primary"
                     android:ellipsize="end"
-                    android:maxLines="1" />
+                    android:maxLines="1"
+                    tools:text="同步完成" />
 
                 <TextView
                     android:id="@+id/notificationTime"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="8dp"
-                    android:text="10:30"
                     android:textSize="12sp"
-                    android:textColor="#999999" />
+                    android:textColor="@color/text_muted"
+                    tools:text="刚刚" />
             </LinearLayout>
 
             <!-- Content -->
@@ -63,11 +66,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:text="通知内容"
                 android:textSize="13sp"
-                android:textColor="#666666"
+                android:textColor="@color/text_muted"
                 android:ellipsize="end"
-                android:maxLines="2" />
+                android:maxLines="2"
+                tools:text="6 条变更已推送到云端" />
 
             <!-- Actions -->
             <LinearLayout
@@ -82,18 +85,21 @@
                     android:layout_width="wrap_content"
                     android:layout_height="28dp"
                     android:layout_marginEnd="8dp"
-                    android:text="标记已读"
+                    android:text="@string/notification_mark_read"
                     android:textSize="11sp"
+                    android:textColor="@color/md_theme_light_onPrimary"
                     android:visibility="gone"
-                    android:backgroundTint="#007AFF" />
+                    android:backgroundTint="?attr/colorPrimary"
+                    tools:visibility="visible" />
 
                 <Button
                     android:id="@+id/btnDelete"
                     android:layout_width="wrap_content"
                     android:layout_height="28dp"
-                    android:text="删除"
+                    android:text="@string/delete"
                     android:textSize="11sp"
-                    android:backgroundTint="#FF3B30" />
+                    android:textColor="@color/md_theme_light_onPrimary"
+                    android:backgroundTint="@color/danger" />
             </LinearLayout>
         </LinearLayout>
 
@@ -103,9 +109,9 @@
             android:layout_width="8dp"
             android:layout_height="8dp"
             android:layout_marginStart="8dp"
-            android:background="@drawable/ic_launcher_foreground"
-            android:backgroundTint="#FF3B30"
-            android:visibility="gone" />
+            android:background="@drawable/shape_unread_dot"
+            android:visibility="gone"
+            tools:visibility="visible" />
 
     </LinearLayout>
 

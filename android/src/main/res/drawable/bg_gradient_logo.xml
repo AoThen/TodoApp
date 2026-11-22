@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 登录 Logo 容器：渐变 + 18dp 圆角（原型 .login .logo） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <corners android:radius="18dp" />
+    <gradient
+        android:angle="315"
+        android:startColor="@color/gradient_start"
+        android:endColor="@color/gradient_end"
+        android:type="linear" />
+</shape>

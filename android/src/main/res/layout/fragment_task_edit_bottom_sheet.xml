@@ -27,7 +27,7 @@
         android:id="@+id/tilTitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="标题 *"
+        android:hint="@string/task_title_hint"
         android:layout_marginTop="16dp"
         style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
         app:errorEnabled="true">
@@ -45,7 +45,7 @@
         android:id="@+id/tilDescription"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="备注"
+        android:hint="@string/task_description_hint"
         android:layout_marginTop="16dp"
         style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
         app:errorEnabled="true"
@@ -66,7 +66,7 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="状态"
+        android:text="@string/label_status"
         android:textStyle="bold"
         android:layout_marginTop="16dp" />
 
@@ -82,7 +82,7 @@
             style="@style/Widget.MaterialComponents.Chip.Choice"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="待办"
+            android:text="@string/task_status_todo"
             android:checked="true" />
 
         <com.google.android.material.chip.Chip
@@ -90,27 +90,27 @@
             style="@style/Widget.MaterialComponents.Chip.Choice"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="进行中" />
+            android:text="@string/task_status_in_progress" />
 
         <com.google.android.material.chip.Chip
             android:id="@+id/chipStatusDone"
             style="@style/Widget.MaterialComponents.Chip.Choice"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="已完成" />
+            android:text="@string/task_status_completed" />
 
         <com.google.android.material.chip.Chip
             android:id="@+id/chipStatusArchived"
             style="@style/Widget.MaterialComponents.Chip.Choice"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="已归档" />
+            android:text="@string/task_status_archived" />
     </com.google.android.material.chip.ChipGroup>
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="优先级"
+        android:text="@string/label_priority"
         android:textStyle="bold"
         android:layout_marginTop="16dp" />
 
@@ -126,14 +126,14 @@
             style="@style/Widget.MaterialComponents.Chip.Choice"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="低" />
+            android:text="@string/task_priority_low" />
 
         <com.google.android.material.chip.Chip
             android:id="@+id/chipPriorityMedium"
             style="@style/Widget.MaterialComponents.Chip.Choice"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="中"
+            android:text="@string/task_priority_medium"
             android:checked="true" />
 
         <com.google.android.material.chip.Chip
@@ -141,14 +141,14 @@
             style="@style/Widget.MaterialComponents.Chip.Choice"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="高" />
+            android:text="@string/task_priority_high" />
     </com.google.android.material.chip.ChipGroup>
 
     <com.google.android.material.textfield.TextInputLayout
         android:id="@+id/tilDueDate"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="截止日期 (可选)"
+        android:hint="@string/task_due_date_hint"
         style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
         android:clickable="true"
         android:focusable="false"
@@ -188,5 +188,16 @@
             android:layout_weight="1"
             android:text="@string/save" />
     </LinearLayout>
+
+    <!-- 删除任务（原型 .del-line）：仅编辑已有任务时可见 -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnDeleteTask"
+        style="@style/Widget.MaterialComponents.Button.TextButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/task_delete"
+        android:textColor="@color/danger"
+        android:textStyle="bold" />
 
 </LinearLayout>

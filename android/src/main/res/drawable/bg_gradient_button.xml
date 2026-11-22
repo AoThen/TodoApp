@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 主操作按钮：渐变 + 14dp 圆角（原型 .a-btn） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <corners android:radius="14dp" />
+    <gradient
+        android:angle="315"
+        android:startColor="@color/gradient_start"
+        android:endColor="@color/gradient_end"
+        android:type="linear" />
+</shape>

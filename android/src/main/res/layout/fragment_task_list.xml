@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout 
+<androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -7,17 +7,132 @@
     android:layout_height="match_parent"
     tools:context=".ui.tasks.TaskListFragment">
 
-    <!-- Sync Status Bar -->
+    <!-- 问候区（原型 .greet）：时段问候 + 待办摘要 + 同步 chip + 头像 -->
+    <LinearLayout
+        android:id="@+id/layoutGreet"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="22dp"
+        android:paddingEnd="22dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="4dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <com.google.android.material.textview.MaterialTextView
+                android:id="@+id/tvGreeting"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textAppearance="?attr/textAppearanceTitleLarge"
+                android:textColor="@color/text_primary"
+                android:textStyle="bold"
+                tools:text="早上好，Demo" />
+
+            <com.google.android.material.textview.MaterialTextView
+                android:id="@+id/tvGreetingSub"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="@color/text_muted"
+                tools:text="今天有 3 个任务等待处理" />
+        </LinearLayout>
+
+        <!-- 同步状态 chip（原型 .sync-chip） -->
+        <TextView
+            android:id="@+id/tvSyncChip"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/shape_chip_rounded"
+            android:backgroundTint="@color/success_container"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="5dp"
+            android:paddingBottom="5dp"
+            android:text="@string/sync_synced"
+            android:textColor="@color/success"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:contentDescription="@string/cd_sync_status" />
+
+        <!-- 用户头像（原型 .avatar：渐变圆底 + 首字母） -->
+        <TextView
+            android:id="@+id/tvAvatar"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_gradient_circle"
+            android:gravity="center"
+            android:textColor="@color/md_theme_light_onPrimary"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:contentDescription="@string/cd_avatar"
+            tools:text="D" />
+    </LinearLayout>
+
+    <!-- 搜索框（原型 .search） -->
+    <LinearLayout
+        android:id="@+id/layoutSearch"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="22dp"
+        android:layout_marginEnd="22dp"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/shape_search_box"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="15dp"
+        android:paddingEnd="15dp"
+        android:paddingTop="11dp"
+        android:paddingBottom="11dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/layoutGreet">
+
+        <ImageView
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_marginEnd="8dp"
+            android:contentDescription="@string/search_hint"
+            android:src="@drawable/ic_search" />
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/etSearch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@android:color/transparent"
+            android:hint="@string/search_hint"
+            android:imeOptions="actionSearch"
+            android:inputType="text"
+            android:maxLines="1"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_muted" />
+    </LinearLayout>
+
+    <!-- 同步操作行 -->
     <LinearLayout
         android:id="@+id/layoutSyncStatus"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:padding="16dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent">
+        app:layout_constraintTop_toBottomOf="@id/layoutSearch">
 
         <TextView
             android:id="@+id/tvSyncStatus"
@@ -83,6 +198,7 @@
             app:tint="?attr/colorOnSurfaceVariant" />
 
         <TextView
+            android:id="@+id/tvEmptyTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
@@ -92,17 +208,18 @@
             android:gravity="center" />
 
         <TextView
+            android:id="@+id/tvEmptyHint"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="点击右下角的按钮添加您的第一个任务"
+            android:text="@string/tasks_empty_hint"
             android:textAppearance="?attr/textAppearanceBodyMedium"
             android:textColor="?attr/colorOnSurfaceVariant"
             android:gravity="center" />
 
     </LinearLayout>
 
-    <!-- Floating Action Button -->
+    <!-- Floating Action Button：方形圆角 + 品牌色（原型 .fab） -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/fabAddTask"
         android:layout_width="wrap_content"
@@ -110,6 +227,8 @@
         android:layout_margin="16dp"
         android:contentDescription="@string/tasks_add"
         android:src="@drawable/ic_add"
+        app:backgroundTint="@color/brand_primary"
+        app:shapeAppearanceOverlay="@style/ShapeAppearanceOverlay.TodoApp.Fab"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 

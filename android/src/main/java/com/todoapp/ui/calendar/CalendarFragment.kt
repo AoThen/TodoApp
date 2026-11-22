@@ -56,7 +56,7 @@ class CalendarFragment : Fragment() {
 
         taskAdapter = TaskAdapter(
             onTaskClick = { task ->
-                // 与任务列表一致：点击卡片打开编辑底部弹层
+                // 与任务列表一致：点击卡片打开编辑底部弹层（删除入口在弹层内）
                 val sheet = TaskEditBottomSheet().apply {
                     arguments = Bundle().apply {
                         putString(TaskEditBottomSheet.ARG_TASK_ID, task.localId)
@@ -66,9 +66,6 @@ class CalendarFragment : Fragment() {
             },
             onTaskComplete = { task ->
                 viewModel.toggleTaskCompletion(task)
-            },
-            onTaskDelete = { task ->
-                viewModel.deleteTask(task)
             }
         )
         binding.rvDayTasks.apply {

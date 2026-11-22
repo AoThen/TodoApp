@@ -29,7 +29,7 @@
         android:layout_marginTop="32dp"
         android:background="#80000000"
         android:padding="16dp"
-        android:text="将二维码放入框内进行扫描"
+        android:text="@string/pairing_instructions"
         android:textColor="#FFFFFF"
         android:textSize="16sp"
         app:layout_constraintEnd_toEndOf="parent"

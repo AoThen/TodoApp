@@ -27,6 +27,8 @@
     <string name="pairing_invalid_key_message">二维码中的密钥格式无效。</string>
     <string name="pairing_verification_failed">配对验证失败</string>
     <string name="pairing_device_success">设备配对成功</string>
+    <string name="pairing_code_hint">请输入配对代码</string>
+    <string name="pairing_guide">请扫描二维码或手动输入配对代码以连接到服务器</string>
     
     <!-- Authentication -->
     <string name="login_title">登录</string>
@@ -43,14 +45,20 @@
     <string name="login_password_short">密码至少需要6个字符</string>
     <string name="login_response_empty">登录响应为空</string>
     <string name="login_network_error">网络错误: %1$s</string>
+    <string name="login_subtitle">跨平台任务管理 · 离线优先 · 实时同步</string>
+    <string name="login_hint">WorkManager 后台同步 · Room 本地存储</string>
     
     <!-- Tasks -->
     <string name="tasks_title">任务列表</string>
     <string name="tasks_empty">暂无任务</string>
+    <string name="tasks_empty_hint">点击右下角的按钮添加您的第一个任务</string>
+    <string name="tasks_no_match">没有匹配的任务</string>
+    <string name="tasks_no_match_hint">换个关键词试试</string>
     <string name="tasks_add">添加任务</string>
     <string name="task_title_hint">任务标题</string>
     <string name="task_description_hint">任务描述</string>
     <string name="task_create">创建</string>
+    <string name="task_create_action">创建任务</string>
     <string name="task_update">更新</string>
     <string name="task_delete">删除</string>
     <string name="task_complete">完成</string>
@@ -60,6 +68,7 @@
     <string name="task_status_todo">待办</string>
     <string name="task_status_in_progress">进行中</string>
     <string name="task_status_completed">已完成</string>
+    <string name="task_status_archived">已归档</string>
     
     <!-- Task Validation -->
     <string name="task_title_empty">标题不能为空</string>
@@ -71,9 +80,13 @@
     <string name="task_update_failed">更新失败: %1$s</string>
     <string name="task_update_success">任务已更新</string>
     <string name="task_delete_failed">删除失败: %1$s</string>
+    <string name="task_delete_success">任务已删除</string>
     <string name="task_create_success">任务创建成功</string>
     <string name="task_create_failed">创建任务失败: %1$s</string>
     <string name="task_fix_form_errors">请修正表单中的错误</string>
+    <string name="label_status">状态</string>
+    <string name="label_priority">优先级</string>
+    <string name="task_due_date_hint">截止日期 (可选)</string>
     
     <!-- Sync -->
     <string name="sync_status_syncing">同步中...</string>
@@ -120,6 +133,8 @@
     
     <!-- Notifications -->
     <string name="notifications_title">通知</string>
+    <string name="notification_center">通知中心</string>
+    <string name="notification_mark_read">标记已读</string>
     <string name="notifications_empty">暂无通知</string>
     <string name="notifications_mark_all_read">全部已读</string>
     <string name="notifications_clear_all">清空通知</string>
@@ -176,4 +191,17 @@
     <!-- Task detail titles -->
     <string name="add_task_title">添加任务</string>
     <string name="edit_task_title">编辑任务</string>
+
+    <!-- Home greeting & search（原型首页顶部） -->
+    <string name="greeting_morning">早上好</string>
+    <string name="greeting_afternoon">下午好</string>
+    <string name="greeting_evening">晚上好</string>
+    <string name="greeting_task_summary">今天有 %1$d 个任务等待处理</string>
+    <string name="search_hint">搜索任务…</string>
+    <string name="cd_avatar">用户头像</string>
+    <string name="cd_priority_bar">优先级色条</string>
+    <string name="sync_synced">已同步</string>
+    <string name="due_today">今天</string>
+    <string name="tasks_section_today">今日任务 · 点击卡片可编辑</string>
+    <string name="tasks_section_upcoming">即将到来</string>
 </resources>

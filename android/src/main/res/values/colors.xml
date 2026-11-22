@@ -1,75 +1,97 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
+    <!--
+      色彩系统对齐 prototype/android-prototype.html：
+      品牌色 #6366f1→#8b5cf6 渐变；success #10b981 / warning #f59e0b /
+      danger #ef4444 / info #3b82f6；亮背景 #f6f7fb，暗背景 #101320。
+    -->
     <!-- Light theme colors -->
-    <color name="md_theme_light_primary">#0061a4</color>
+    <color name="md_theme_light_primary">#6366f1</color>
     <color name="md_theme_light_onPrimary">#ffffff</color>
-    <color name="md_theme_light_primaryContainer">#d1e4ff</color>
-    <color name="md_theme_light_onPrimaryContainer">#001d36</color>
-    <color name="md_theme_light_secondary">#535f70</color>
+    <color name="md_theme_light_primaryContainer">#e0e7ff</color>
+    <color name="md_theme_light_onPrimaryContainer">#1e1b4b</color>
+    <color name="md_theme_light_secondary">#6b7280</color>
     <color name="md_theme_light_onSecondary">#ffffff</color>
-    <color name="md_theme_light_secondaryContainer">#d7e3f7</color>
-    <color name="md_theme_light_onSecondaryContainer">#101c2b</color>
-    <color name="md_theme_light_tertiary">#6b5778</color>
+    <color name="md_theme_light_secondaryContainer">#eef0f6</color>
+    <color name="md_theme_light_onSecondaryContainer">#191c26</color>
+    <color name="md_theme_light_tertiary">#8b5cf6</color>
     <color name="md_theme_light_onTertiary">#ffffff</color>
-    <color name="md_theme_light_tertiaryContainer">#f2daff</color>
-    <color name="md_theme_light_onTertiaryContainer">#251431</color>
-    <color name="md_theme_light_error">#ba1a1a</color>
+    <color name="md_theme_light_tertiaryContainer">#ede9fe</color>
+    <color name="md_theme_light_onTertiaryContainer">#2e1065</color>
+    <color name="md_theme_light_error">#ef4444</color>
     <color name="md_theme_light_onError">#ffffff</color>
-    <color name="md_theme_light_errorContainer">#ffdad6</color>
-    <color name="md_theme_light_onErrorContainer">#410002</color>
-    <color name="md_theme_light_background">#fdfbff</color>
-    <color name="md_theme_light_onBackground">#1a1b1e</color>
-    <color name="md_theme_light_surface">#fdfbff</color>
-    <color name="md_theme_light_onSurface">#1a1b1e</color>
-    <color name="md_theme_light_surfaceVariant">#dfe2eb</color>
-    <color name="md_theme_light_onSurfaceVariant">#43474e</color>
-    <color name="md_theme_light_outline">#73777f</color>
-    <color name="md_theme_light_outlineVariant">#c3c7cf</color>
+    <color name="md_theme_light_errorContainer">#fee2e2</color>
+    <color name="md_theme_light_onErrorContainer">#7f1d1d</color>
+    <color name="md_theme_light_background">#f6f7fb</color>
+    <color name="md_theme_light_onBackground">#191c26</color>
+    <color name="md_theme_light_surface">#ffffff</color>
+    <color name="md_theme_light_onSurface">#191c26</color>
+    <color name="md_theme_light_surfaceVariant">#eef0f6</color>
+    <color name="md_theme_light_onSurfaceVariant">#6b7280</color>
+    <color name="md_theme_light_outline">#d8ddeb</color>
+    <color name="md_theme_light_outlineVariant">#e7eaf3</color>
     <color name="md_theme_light_scrim">#000000</color>
     <color name="md_theme_light_inverseSurface">#2f3033</color>
     <color name="md_theme_light_inverseOnSurface">#f0f0f3</color>
-    <color name="md_theme_light_inversePrimary">#a0cafd</color>
-    
-    <!-- Dark theme colors -->
-    <color name="md_theme_dark_primary">#a0cafd</color>
-    <color name="md_theme_dark_onPrimary">#003258</color>
-    <color name="md_theme_dark_primaryContainer">#00497d</color>
-    <color name="md_theme_dark_onPrimaryContainer">#d1e4ff</color>
-    <color name="md_theme_dark_secondary">#bbc7db</color>
-    <color name="md_theme_dark_onSecondary">#253140</color>
-    <color name="md_theme_dark_secondaryContainer">#3b4858</color>
-    <color name="md_theme_dark_onSecondaryContainer">#d7e3f7</color>
-    <color name="md_theme_dark_tertiary">#d6bee4</color>
-    <color name="md_theme_dark_onTertiary">#3a2947</color>
-    <color name="md_theme_dark_tertiaryContainer">#513f5e</color>
-    <color name="md_theme_dark_onTertiaryContainer">#f2daff</color>
-    <color name="md_theme_dark_error">#ffb4ab</color>
-    <color name="md_theme_dark_onError">#690005</color>
-    <color name="md_theme_dark_errorContainer">#93000a</color>
-    <color name="md_theme_dark_onErrorContainer">#ffdad6</color>
-    <color name="md_theme_dark_background">#1a1b1e</color>
-    <color name="md_theme_dark_onBackground">#e3e2e6</color>
-    <color name="md_theme_dark_surface">#1a1b1e</color>
-    <color name="md_theme_dark_onSurface">#e3e2e6</color>
-    <color name="md_theme_dark_surfaceVariant">#43474e</color>
-    <color name="md_theme_dark_onSurfaceVariant">#c3c7cf</color>
-    <color name="md_theme_dark_outline">#8d9199</color>
-    <color name="md_theme_dark_outlineVariant">#43474e</color>
+    <color name="md_theme_light_inversePrimary">#4f46e5</color>
+
+    <!-- Dark theme colors（与 values-night 的 md_theme_light_* 覆盖保持一致） -->
+    <color name="md_theme_dark_primary">#6366f1</color>
+    <color name="md_theme_dark_onPrimary">#ffffff</color>
+    <color name="md_theme_dark_primaryContainer">#312e81</color>
+    <color name="md_theme_dark_onPrimaryContainer">#e0e7ff</color>
+    <color name="md_theme_dark_secondary">#9aa1b5</color>
+    <color name="md_theme_dark_onSecondary">#101320</color>
+    <color name="md_theme_dark_secondaryContainer">#1e2333</color>
+    <color name="md_theme_dark_onSecondaryContainer">#e8eaf2</color>
+    <color name="md_theme_dark_tertiary">#a78bfa</color>
+    <color name="md_theme_dark_onTertiary">#1e1b4b</color>
+    <color name="md_theme_dark_tertiaryContainer">#2e1065</color>
+    <color name="md_theme_dark_onTertiaryContainer">#ede9fe</color>
+    <color name="md_theme_dark_error">#f87171</color>
+    <color name="md_theme_dark_onError">#450a0a</color>
+    <color name="md_theme_dark_errorContainer">#7f1d1d</color>
+    <color name="md_theme_dark_onErrorContainer">#fee2e2</color>
+    <color name="md_theme_dark_background">#101320</color>
+    <color name="md_theme_dark_onBackground">#e8eaf2</color>
+    <color name="md_theme_dark_surface">#191d2b</color>
+    <color name="md_theme_dark_onSurface">#e8eaf2</color>
+    <color name="md_theme_dark_surfaceVariant">#1e2333</color>
+    <color name="md_theme_dark_onSurfaceVariant">#9aa1b5</color>
+    <color name="md_theme_dark_outline">#2b3148</color>
+    <color name="md_theme_dark_outlineVariant">#232839</color>
     <color name="md_theme_dark_scrim">#000000</color>
-    <color name="md_theme_dark_inverseSurface">#e3e2e6</color>
-    <color name="md_theme_dark_inverseOnSurface">#1a1b1e</color>
-    <color name="md_theme_dark_inversePrimary">#0061a4</color>
-    
+    <color name="md_theme_dark_inverseSurface">#e8eaf2</color>
+    <color name="md_theme_dark_inverseOnSurface">#101320</color>
+    <color name="md_theme_dark_inversePrimary">#818cf8</color>
+
+    <!-- Brand gradient & semantic colors（原型语义色） -->
+    <color name="brand_primary">#6366f1</color>
+    <color name="gradient_start">#6366f1</color>
+    <color name="gradient_end">#8b5cf6</color>
+    <color name="success">#10b981</color>
+    <color name="warning">#f59e0b</color>
+    <color name="danger">#ef4444</color>
+    <color name="info">#3b82f6</color>
+    <!-- 半透明容器色（原型 chip 背景：12%~15% 透明度） -->
+    <color name="success_container">#1F10B981</color>
+    <color name="warning_container">#26F59E0B</color>
+    <color name="info_container">#213B82F6</color>
+    <color name="muted_container">#246B7280</color>
+
+    <!-- 跟随日夜切换的通用色（values-night 中有暗色覆盖） -->
+    <color name="text_primary">#191c26</color>
+    <color name="text_muted">#6b7280</color>
+    <color name="card_background">#ffffff</color>
+    <color name="app_border">#e7eaf3</color>
+
     <!-- Additional app colors -->
-    <color name="seed">#0061a4</color>
-    <color name="task_status_todo">#757575</color>
-    <color name="task_status_in_progress">#ff9800</color>
-    <color name="task_status_completed">#4caf50</color>
-    
-    <!-- Task Priority colors -->
-    <color name="priority_low">#4caf50</color>
-    <color name="priority_medium">#ff9800</color>
-    <color name="priority_high">#f44336</color>
+    <color name="seed">#6366f1</color>
+
+    <!-- Task Priority colors（原型左侧色条：高红 / 中黄 / 低绿） -->
+    <color name="priority_low">#10b981</color>
+    <color name="priority_medium">#f59e0b</color>
+    <color name="priority_high">#ef4444</color>
 
     <!-- Notification Priority colors -->
     <color name="notification_priority_urgent">#FF0000</color>
@@ -77,7 +99,7 @@
     <color name="notification_priority_normal">#0080FF</color>
     <color name="notification_priority_low">#00FF00</color>
     <color name="notification_priority_default">#CCCCCC</color>
-    
+
     <!-- Legacy colors for compatibility -->
     <color name="purple_200">#FFBB86FC</color>
     <color name="purple_500">#FF6200EE</color>

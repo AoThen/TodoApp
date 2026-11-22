@@ -14,6 +14,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.todoapp.R
+import com.todoapp.data.local.Task
 import com.todoapp.data.repository.TaskRepository
 import com.todoapp.data.sync.DeltaSyncWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -22,6 +23,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import java.util.UUID
 import javax.inject.Inject
@@ -39,7 +41,19 @@ class TaskListViewModel @Inject constructor(
     private val taskRepository: TaskRepository
 ) : ViewModel() {
 
-    val tasks = taskRepository.allTasks
+    private val _searchQuery = MutableStateFlow("")
+
+    /** 当前搜索词（供界面区分「暂无任务」与「无匹配结果」） */
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    /** 任务流：按搜索词过滤标题/描述（空词返回全量） */
+    val tasks = combine(taskRepository.allTasks, _searchQuery) { list, query ->
+        filterTasks(list, query)
+    }
+
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query.trim()
+    }
 
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
@@ -96,23 +110,12 @@ class TaskListViewModel @Inject constructor(
         ) == true
     }
 
-    fun toggleTaskCompletion(task: com.todoapp.data.local.Task) {
+    fun toggleTaskCompletion(task: Task) {
         viewModelScope.launch {
             taskRepository.toggleTaskCompletion(task)
                 .onError { e ->
                     _syncState.value = SyncState.Error(
                         context.getString(R.string.sync_update_failed, e.message)
-                    )
-                }
-        }
-    }
-
-    fun deleteTask(task: com.todoapp.data.local.Task) {
-        viewModelScope.launch {
-            taskRepository.deleteTask(task)
-                .onError { e ->
-                    _syncState.value = SyncState.Error(
-                        context.getString(R.string.sync_delete_failed, e.message)
                     )
                 }
         }
@@ -182,5 +185,16 @@ class TaskListViewModel @Inject constructor(
         networkCallback = null
         syncObservationJob?.cancel()
         syncObservationJob = null
+    }
+
+    companion object {
+        /** 搜索过滤：空词返回全量；命中标题或描述（忽略大小写） */
+        fun filterTasks(list: List<Task>, query: String): List<Task> {
+            if (query.isBlank()) return list
+            return list.filter { task ->
+                task.title.contains(query, ignoreCase = true) ||
+                    task.description.contains(query, ignoreCase = true)
+            }
+        }
     }
 }

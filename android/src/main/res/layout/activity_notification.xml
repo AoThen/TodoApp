@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#F5F5F5">
+    android:background="?android:attr/colorBackground">
 
     <!-- Header -->
     <LinearLayout
@@ -12,35 +12,37 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="16dp"
-        android:background="#FFFFFF"
+        android:background="?attr/colorSurface"
         android:elevation="2dp">
 
         <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="通知中心"
+            android:text="@string/notification_center"
             android:textSize="20sp"
             android:textStyle="bold"
             android:layout_gravity="center_vertical"
-            android:textColor="#333333" />
+            android:textColor="@color/text_primary" />
 
         <Button
             android:id="@+id/btnMarkAllRead"
             android:layout_width="wrap_content"
             android:layout_height="36dp"
             android:layout_marginEnd="8dp"
-            android:text="全部已读"
+            android:text="@string/notifications_mark_all_read"
             android:textSize="12sp"
-            android:backgroundTint="#007AFF" />
+            android:textColor="@color/md_theme_light_onPrimary"
+            android:backgroundTint="?attr/colorPrimary" />
 
         <Button
             android:id="@+id/btnClearAll"
             android:layout_width="wrap_content"
             android:layout_height="36dp"
-            android:text="清空"
+            android:text="@string/notifications_clear"
             android:textSize="12sp"
-            android:backgroundTint="#FF3B30" />
+            android:textColor="@color/md_theme_light_onPrimary"
+            android:backgroundTint="@color/danger" />
     </LinearLayout>
 
     <!-- Notification List -->

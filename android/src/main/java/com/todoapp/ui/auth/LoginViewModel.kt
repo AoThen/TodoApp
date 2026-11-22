@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.todoapp.R
+import com.todoapp.config.AppConfig
 import com.todoapp.data.remote.ApiService
 import com.todoapp.data.remote.LoginRequest
 import com.todoapp.data.remote.RetrofitClient
@@ -66,6 +67,8 @@ class LoginViewModel @Inject constructor(
                 loginResponse.refreshToken?.let { refreshToken ->
                     RetrofitClient.saveRefreshToken(context, refreshToken)
                 }
+                // 记录登录邮箱，供首页问候语展示
+                AppConfig.setUserEmail(context, email)
 
                 loginResponse.accessToken
             }

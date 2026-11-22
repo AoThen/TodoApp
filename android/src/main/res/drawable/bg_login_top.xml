@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 登录页顶部淡靛渐变（原型 .login: linear-gradient(180deg, rgba(99,102,241,.14), transparent 40%)） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="#246366F1"
+        android:endColor="#006366F1"
+        android:type="linear" />
+</shape>

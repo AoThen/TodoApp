@@ -1,33 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- 深色模式：将浅色命名的颜色重定义为深色色板值，
-         使引用 R.color.md_theme_light_* 的代码在夜间模式下自动取深色 -->
-    <color name="md_theme_light_primary">#a0cafd</color>
-    <color name="md_theme_light_onPrimary">#003258</color>
-    <color name="md_theme_light_primaryContainer">#00497d</color>
-    <color name="md_theme_light_onPrimaryContainer">#d1e4ff</color>
-    <color name="md_theme_light_secondary">#bbc7db</color>
-    <color name="md_theme_light_onSecondary">#253140</color>
-    <color name="md_theme_light_secondaryContainer">#3b4858</color>
-    <color name="md_theme_light_onSecondaryContainer">#d7e3f7</color>
-    <color name="md_theme_light_tertiary">#d6bee4</color>
-    <color name="md_theme_light_onTertiary">#3a2947</color>
-    <color name="md_theme_light_tertiaryContainer">#513f5e</color>
-    <color name="md_theme_light_onTertiaryContainer">#f2daff</color>
-    <color name="md_theme_light_error">#ffb4ab</color>
-    <color name="md_theme_light_onError">#690005</color>
-    <color name="md_theme_light_errorContainer">#93000a</color>
-    <color name="md_theme_light_onErrorContainer">#ffdad6</color>
-    <color name="md_theme_light_background">#1a1b1e</color>
-    <color name="md_theme_light_onBackground">#e3e2e6</color>
-    <color name="md_theme_light_surface">#1a1b1e</color>
-    <color name="md_theme_light_onSurface">#e3e2e6</color>
-    <color name="md_theme_light_surfaceVariant">#43474e</color>
-    <color name="md_theme_light_onSurfaceVariant">#c3c7cf</color>
-    <color name="md_theme_light_outline">#8d9199</color>
-    <color name="md_theme_light_outlineVariant">#43474e</color>
+         使引用 R.color.md_theme_light_* 的代码在夜间模式下自动取深色。
+         色板对齐 prototype/android-prototype.html 的 html.dark 变量。 -->
+    <color name="md_theme_light_primary">#6366f1</color>
+    <color name="md_theme_light_onPrimary">#ffffff</color>
+    <color name="md_theme_light_primaryContainer">#312e81</color>
+    <color name="md_theme_light_onPrimaryContainer">#e0e7ff</color>
+    <color name="md_theme_light_secondary">#9aa1b5</color>
+    <color name="md_theme_light_onSecondary">#101320</color>
+    <color name="md_theme_light_secondaryContainer">#1e2333</color>
+    <color name="md_theme_light_onSecondaryContainer">#e8eaf2</color>
+    <color name="md_theme_light_tertiary">#a78bfa</color>
+    <color name="md_theme_light_onTertiary">#1e1b4b</color>
+    <color name="md_theme_light_tertiaryContainer">#2e1065</color>
+    <color name="md_theme_light_onTertiaryContainer">#ede9fe</color>
+    <color name="md_theme_light_error">#f87171</color>
+    <color name="md_theme_light_onError">#450a0a</color>
+    <color name="md_theme_light_errorContainer">#7f1d1d</color>
+    <color name="md_theme_light_onErrorContainer">#fee2e2</color>
+    <color name="md_theme_light_background">#101320</color>
+    <color name="md_theme_light_onBackground">#e8eaf2</color>
+    <color name="md_theme_light_surface">#191d2b</color>
+    <color name="md_theme_light_onSurface">#e8eaf2</color>
+    <color name="md_theme_light_surfaceVariant">#1e2333</color>
+    <color name="md_theme_light_onSurfaceVariant">#9aa1b5</color>
+    <color name="md_theme_light_outline">#2b3148</color>
+    <color name="md_theme_light_outlineVariant">#232839</color>
     <color name="md_theme_light_scrim">#000000</color>
-    <color name="md_theme_light_inverseSurface">#e3e2e6</color>
-    <color name="md_theme_light_inverseOnSurface">#1a1b1e</color>
-    <color name="md_theme_light_inversePrimary">#0061a4</color>
+    <color name="md_theme_light_inverseSurface">#e8eaf2</color>
+    <color name="md_theme_light_inverseOnSurface">#101320</color>
+    <color name="md_theme_light_inversePrimary">#818cf8</color>
+
+    <!-- 跟随日夜切换的通用色（暗色值） -->
+    <color name="text_primary">#e8eaf2</color>
+    <color name="text_muted">#9aa1b5</color>
+    <color name="card_background">#1e2333</color>
+    <color name="app_border">#2b3148</color>
 </resources>

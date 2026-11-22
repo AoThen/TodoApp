@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 圆形头像/圆形渐变背景（原型 .avatar） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <gradient
+        android:angle="315"
+        android:startColor="@color/gradient_start"
+        android:endColor="@color/gradient_end"
+        android:type="linear" />
+</shape>

@@ -93,4 +93,9 @@
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:fitsSystemWindows">false</item>
     </style>
+
+    <!-- FAB 方形圆角（原型 .fab：58px、圆角 19px） -->
+    <style name="ShapeAppearanceOverlay.TodoApp.Fab" parent="">
+        <item name="cornerSize">20dp</item>
+    </style>
 </resources>
