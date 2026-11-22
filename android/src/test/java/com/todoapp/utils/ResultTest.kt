@@ -114,7 +114,8 @@ class ResultTest {
         assertEquals(20, result.getOrNull())
 
         val ex = IllegalStateException("x")
-        val failed = Result.Error<Int>(ex).flatMap { Result.Success(it * 10) }
+        val error: Result<Int> = Result.Error(ex)
+        val failed = error.flatMap { Result.Success(it * 10) }
         assertSame(ex, failed.exceptionOrNull())
 
         val loading = Result.Loading.flatMap { Result.Success(it) }
@@ -124,7 +125,8 @@ class ResultTest {
     @Test
     fun `getOrDefault 返回默认值`() {
         assertEquals(5, Result.Success(1).getOrDefault(5))
-        assertEquals(5, Result.Error<Int>(IllegalStateException("x")).getOrDefault(5))
+        val error: Result<Int> = Result.Error(IllegalStateException("x"))
+        assertEquals(5, error.getOrDefault(5))
         assertEquals(5, Result.Loading.getOrDefault(5))
     }
 
@@ -136,8 +138,9 @@ class ResultTest {
     @Test
     fun `getOrThrow Error 抛出原始异常`() {
         val ex = IllegalStateException("boom")
+        val error: Result<Int> = Result.Error(ex)
         try {
-            Result.Error<Int>(ex).getOrThrow()
+            error.getOrThrow()
             fail("应当抛出原始异常")
         } catch (e: IllegalStateException) {
             assertSame(ex, e)

@@ -94,15 +94,7 @@ describe('ImportDialog 模板下载', () => {
     const createSpy = vi.fn(() => 'blob:template-url');
     const revokeSpy = vi.fn();
     vi.stubGlobal('URL', { ...URL, createObjectURL: createSpy, revokeObjectURL: revokeSpy });
-    const clickSpy = vi.fn();
-    const origCreate = document.createElement.bind(document);
-    vi.spyOn(document, 'createElement').mockImplementation(((tag: string, ...rest: unknown[]) => {
-      const el = origCreate(tag, ...rest);
-      if (tag === 'a') {
-        (el as HTMLAnchorElement).click = clickSpy;
-      }
-      return el;
-    }) as never);
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
 
     render(<ImportDialog isOpen={true} onClose={vi.fn()} onImportSuccess={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: '下载导入模板' }));
@@ -110,7 +102,7 @@ describe('ImportDialog 模板下载', () => {
     expect(createSpy).toHaveBeenCalled();
     expect(clickSpy).toHaveBeenCalled();
     expect(revokeSpy).toHaveBeenCalledWith('blob:template-url');
-    vi.restoreAllMocks();
+    clickSpy.mockRestore();
     vi.unstubAllGlobals();
   });
 });
