@@ -131,8 +131,9 @@ class CryptoInterceptorTest {
             contentType?.contains("octet-stream") == true
         )
 
-        val sentBytes = Buffer().also { body!!.writeTo(it) }.readByteArray()
-        val decrypted = String(AesGcmManager.decryptBytes(sentBytes, keyHex), Charsets.UTF_8)
+        val sentBase64 = Buffer().also { body!!.writeTo(it) }.readUtf8()
+        // 与服务端 internal/crypto 中间件语义一致：请求体是 Base64 文本
+        val decrypted = AesGcmManager.decrypt(sentBase64, keyHex)
         assertEquals(original, decrypted)
     }
 
