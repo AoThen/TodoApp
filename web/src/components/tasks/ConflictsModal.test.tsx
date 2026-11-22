@@ -86,6 +86,23 @@ describe('ConflictsModal', () => {
     expect(screen.getByText('使用服务器')).toBeInTheDocument();
   });
 
+  it('展示字段级冲突明细（服务器值 vs 本地值），未登记字段名回退原名', () => {
+    renderWithConflict({
+      ...sampleConflict,
+      conflicts: [
+        { field_name: 'title', server_value: '服务器标题', client_value: '客户端标题' },
+        { field_name: 'unknown_field', server_value: 1, client_value: 2 },
+      ],
+    });
+    expect(screen.getByText(/标题：服务器「服务器标题」 vs 本地「客户端标题」/)).toBeInTheDocument();
+    expect(screen.getByText(/unknown_field：服务器「1」 vs 本地「2」/)).toBeInTheDocument();
+  });
+
+  it('无字段级明细时不渲染明细区块', () => {
+    renderWithConflict();
+    expect(screen.queryByText(/服务器「/)).not.toBeInTheDocument();
+  });
+
   it('无冲突时不渲染弹窗', () => {
     render(<ConflictsModal />);
     expect(screen.queryByText('冲突解决')).not.toBeInTheDocument();

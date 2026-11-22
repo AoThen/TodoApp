@@ -117,7 +117,11 @@ describe('syncManager', () => {
     mockedSync.mockResolvedValue({
       server_changes: [],
       client_changes: [{ local_id: 'local-c', server_id: 7, op: 'update' }],
-      conflicts: [{ local_id: 'local-c', server_id: 7, reason: 'intelligent_merge', options: ['keep_server', 'keep_client', 'merge'] }],
+      conflicts: [{
+        local_id: 'local-c', server_id: 7, reason: 'intelligent_merge',
+        options: ['keep_server', 'keep_client', 'merge'],
+        conflicts: [{ field_name: 'title', server_value: '服务端标题', client_value: '客户端标题' }],
+      }],
       last_sync_at: '2026-01-02T02:00:00Z',
     });
 
@@ -129,10 +133,15 @@ describe('syncManager', () => {
         local_id: 'local-c',
         server_id: 7,
         reason: 'intelligent_merge',
+        options: ['keep_server', 'keep_client', 'merge'],
+        conflicts: [{ field_name: 'title', server_value: '服务端标题', client_value: '客户端标题' }],
       }));
       expect(listener).toHaveBeenCalledTimes(1);
       expect(listener.mock.calls[0][0]).toHaveLength(1);
       expect(listener.mock.calls[0][0][0].local_id).toBe('local-c');
+      expect(listener.mock.calls[0][0][0].conflicts).toEqual([
+        { field_name: 'title', server_value: '服务端标题', client_value: '客户端标题' },
+      ]);
     } finally {
       syncManager.removeConflictListener(listener);
     }

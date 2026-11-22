@@ -60,7 +60,7 @@ func TestPairingExpiryLifecycle(t *testing.T) {
 	// 存量行无过期时间（NULL）：按已过期处理，且应被清理
 	if _, err := DB.Exec(
 		"INSERT INTO devices (user_id, device_type, pairing_key, server_url, paired_at, last_seen, is_active) VALUES (?, 'web', 'legacy-key', '', ?, ?, 0)",
-		time.Now().UTC(), time.Now().UTC(),
+		userID, time.Now().UTC(), time.Now().UTC(),
 	); err != nil {
 		t.Fatalf("插入存量待配对行失败: %v", err)
 	}
