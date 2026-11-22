@@ -88,6 +88,8 @@ class DeltaSyncWorkerTest {
         every { RetrofitClient.getAccessToken(any()) } returns validJwt()
 
         coEvery { mockDeltaDao.getAllDeltas() } returns emptyList()
+        // relaxed mock 对可空返回值默认返回非 null mock，会误导幽灵合并分支；默认无幽灵任务
+        coEvery { mockTaskDao.getUnsyncedTaskByTitle(any()) } returns null
     }
 
     @After
@@ -269,6 +271,48 @@ class DeltaSyncWorkerTest {
 
         // 本地不存在的删除变更：不产生任何写入
         coVerify(exactly = 0) { mockTaskDao.softDeleteTask(any(), any()) }
+    }
+
+    @Test
+    fun success_mergesLocalGhostTaskForServerCreatedTask() {
+        coEvery { mockDeltaDao.getAllDeltas() } returns listOf(pendingDelta)
+        val ghost = Task(
+            id = 9,
+            localId = "local-ghost",
+            userId = "42",
+            title = "其他设备新建",
+            createdAt = "t0",
+            updatedAt = "t0",
+            lastModified = "t0"
+        )
+        coEvery { mockTaskDao.getTaskByServerId(300L) } returns null
+        coEvery { mockTaskDao.getUnsyncedTaskByTitle("其他设备新建") } returns ghost
+        stubSync(
+            Response.success(
+                syncResponse(
+                    serverChanges = listOf(
+                        ServerChange(
+                            id = 300,
+                            serverVersion = 1,
+                            title = "其他设备新建",
+                            status = "todo",
+                            updatedAt = "2026-11-20T02:00:00Z",
+                            isDeleted = false
+                        )
+                    )
+                )
+            )
+        )
+
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+
+        // 同名本地未同步任务被合并：采用服务端身份，而不是重复插入
+        val merged = slot<Task>()
+        coVerify(exactly = 1) { mockTaskDao.updateTask(capture(merged)) }
+        assertEquals("local-ghost", merged.captured.localId)
+        assertEquals(300L, merged.captured.serverId)
+        assertEquals(1, merged.captured.serverVersion)
+        coVerify(exactly = 0) { mockTaskDao.insertTask(any()) }
     }
 
     @Test
