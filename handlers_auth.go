@@ -47,7 +47,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	// 获取客户端 IP 并检查速率限制
 	ip := getClientIP(r)
-	if !checkRateLimit(ip) {
+	if !loginAllowed(ip) {
 		response.ErrorResponse(w, "登录尝试次数过多，请稍后再试", http.StatusTooManyRequests)
 		return
 	}
@@ -57,7 +57,8 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("登录失败 %s: %v", maskEmail(req.Email), err)
 
-		// 记录失败的登录尝试
+		// 记录失败的登录尝试（仅失败消耗 IP 限额，成功登录不计数）
+		recordLoginFailure(ip)
 		if err := db.RecordFailedLogin(req.Email, maxLoginAttempts, lockoutDuration); err != nil {
 			log.Printf("记录失败登录尝试错误: %v", err)
 		}
@@ -144,22 +145,22 @@ func handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 轮换令牌
-	newAccess, err := auth.GenerateAccessToken(claims.UserID, claims.Email, 15*time.Minute)
+	// 轮换令牌（时长与登录接口一致，均来自可配置环境变量）
+	newAccess, err := auth.GenerateAccessToken(claims.UserID, claims.Email, accessTokenDuration)
 	if err != nil {
 		log.Printf("生成访问令牌失败: %v", err)
 		response.ErrorResponse(w, "内部服务器错误", http.StatusInternalServerError)
 		return
 	}
 
-	newRefresh, err := auth.GenerateRefreshToken(claims.UserID, 7*24*time.Hour)
+	newRefresh, err := auth.GenerateRefreshToken(claims.UserID, refreshTokenDuration)
 	if err != nil {
 		log.Printf("生成刷新令牌失败: %v", err)
 		response.ErrorResponse(w, "内部服务器错误", http.StatusInternalServerError)
 		return
 	}
 
-	expiresAt := time.Now().Add(7 * 24 * time.Hour)
+	expiresAt := time.Now().Add(refreshTokenDuration)
 	if err := db.SaveRefreshToken(claims.UserID, newRefresh, expiresAt); err != nil {
 		log.Printf("保存刷新令牌失败: %v", err)
 	}
@@ -177,7 +178,7 @@ func handleRefresh(w http.ResponseWriter, r *http.Request) {
 
 	response.SuccessResponse(w, map[string]interface{}{
 		"access_token": newAccess,
-		"expires_in":   900,
+		"expires_in":   int(accessTokenDuration.Seconds()),
 	}, http.StatusOK)
 }
 

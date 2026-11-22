@@ -21,20 +21,28 @@ func resetRateLimitState() {
 	ipMutex.Unlock()
 }
 
-func TestCheckRateLimitWithinWindow(t *testing.T) {
+func TestLoginAllowedWithinWindow(t *testing.T) {
 	resetRateLimitState()
 	ip := "1.2.3.4"
 	for i := 0; i < maxLoginAttempts; i++ {
-		if !checkRateLimit(ip) {
-			t.Fatalf("第 %d 次尝试不应被限流", i+1)
+		if !loginAllowed(ip) {
+			t.Fatalf("第 %d 次失败尝试不应被限流", i+1)
 		}
+		recordLoginFailure(ip)
 	}
-	if checkRateLimit(ip) {
-		t.Error("超过 maxLoginAttempts 后应当被限流")
+	if loginAllowed(ip) {
+		t.Error("超过 maxLoginAttempts 次失败后应当被限流")
+	}
+	// 成功登录不记录失败：不应消耗额度
+	resetRateLimitState()
+	for i := 0; i < maxLoginAttempts; i++ {
+		if !loginAllowed(ip) {
+			t.Fatalf("仅检查不记录时第 %d 次不应被限流", i+1)
+		}
 	}
 }
 
-func TestCheckRateLimitWindowExpiry(t *testing.T) {
+func TestLoginAllowedWindowExpiry(t *testing.T) {
 	resetRateLimitState()
 	ip := "5.6.7.8"
 	// 注入窗口外的旧尝试记录
@@ -45,17 +53,17 @@ func TestCheckRateLimitWindowExpiry(t *testing.T) {
 	}
 	attemptsMutex.Unlock()
 
-	if !checkRateLimit(ip) {
+	if !loginAllowed(ip) {
 		t.Error("窗口外的旧记录不应导致限流")
 	}
 }
 
-func TestCheckRateLimitIsolationByIP(t *testing.T) {
+func TestLoginRateLimitIsolationByIP(t *testing.T) {
 	resetRateLimitState()
 	for i := 0; i < maxLoginAttempts; i++ {
-		checkRateLimit("9.9.9.9")
+		recordLoginFailure("9.9.9.9")
 	}
-	if !checkRateLimit("8.8.8.8") {
+	if !loginAllowed("8.8.8.8") {
 		t.Error("不同 IP 不应被连带限流")
 	}
 }

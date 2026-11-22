@@ -27,7 +27,8 @@ const (
 	ctxKeyRole   contextKey = "role"
 )
 
-func checkRateLimit(ip string) bool {
+// loginAllowed 检查该 IP 在窗口期内是否还有登录尝试额度（只检查不记录，成功登录不消耗额度）
+func loginAllowed(ip string) bool {
 	attemptsMutex.Lock()
 	defer attemptsMutex.Unlock()
 
@@ -40,13 +41,16 @@ func checkRateLimit(ip string) bool {
 			validAttempts = append(validAttempts, t)
 		}
 	}
+	loginAttempts[ip] = validAttempts
 
-	if len(validAttempts) >= maxLoginAttempts {
-		return false
-	}
+	return len(validAttempts) < maxLoginAttempts
+}
 
-	loginAttempts[ip] = append(validAttempts, now)
-	return true
+// recordLoginFailure 记录一次失败的登录尝试（占用该 IP 的登录额度）
+func recordLoginFailure(ip string) {
+	attemptsMutex.Lock()
+	defer attemptsMutex.Unlock()
+	loginAttempts[ip] = append(loginAttempts[ip], time.Now())
 }
 
 // Global rate limiting structures
