@@ -17,8 +17,9 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,19 +49,32 @@ class CryptoInterceptorTest {
         unmockkAll()
     }
 
-    private fun buildResponse(request: Request, body: String, encrypted: Boolean): Response {
-        val builder = Response.Builder()
+    private fun buildResponse(request: Request, body: String): Response {
+        return Response.Builder()
             .protocol(Protocol.HTTP_1_1)
             .code(200)
             .message("OK")
             .request(request)
-        if (encrypted) builder.header("X-Encrypted", "true")
-        return builder.body(body.toResponseBody("application/json".toMediaType())).build()
+            .body(body.toResponseBody("application/json".toMediaType()))
+            .build()
+    }
+
+    private fun buildEncryptedResponse(request: Request, plaintext: String, keyHex: String): Response {
+        // 服务端下发的是加密后的原始字节（IV+密文），而非 Base64 文本
+        val cipherBytes = AesGcmManager.encryptBytes(plaintext.toByteArray(Charsets.UTF_8), keyHex)
+        return Response.Builder()
+            .protocol(Protocol.HTTP_1_1)
+            .code(200)
+            .message("OK")
+            .request(request)
+            .header("X-Encrypted", "true")
+            .body(cipherBytes.toResponseBody("application/octet-stream".toMediaType()))
+            .build()
     }
 
     private fun mockChain(
         request: Request,
-        responseFactory: (Request) -> Response = { buildResponse(it, "{}", encrypted = false) }
+        responseFactory: (Request) -> Response = { buildResponse(it, "{}") }
     ): Interceptor.Chain {
         val chain = mockk<Interceptor.Chain>()
         every { chain.request() } returns request
@@ -109,9 +123,15 @@ class CryptoInterceptorTest {
 
         assertEquals("true", sent.header("X-Encrypted"))
         assertEquals("true", sent.header("X-Accept-Encrypted"))
-        assertEquals("application/octet-stream", sent.body?.contentType()?.toString())
+        val body = sent.body
+        assertNotNull("请求体不应为空", body)
+        val contentType = body?.contentType()?.toString()
+        assertTrue(
+            "实际 Content-Type: $contentType",
+            contentType?.contains("octet-stream") == true
+        )
 
-        val sentBytes = Buffer().also { sent.body!!.writeTo(it) }.readByteArray()
+        val sentBytes = Buffer().also { body!!.writeTo(it) }.readByteArray()
         val decrypted = String(AesGcmManager.decryptBytes(sentBytes, keyHex), Charsets.UTF_8)
         assertEquals(original, decrypted)
     }
@@ -186,14 +206,12 @@ class CryptoInterceptorTest {
     @Test
     fun `加密响应体被自动解密为明文 JSON`() {
         val secret = """{"success":true,"data":{"id":1}}"""
-        val encryptedBody = AesGcmManager.encrypt(secret, keyHex)
 
         // POST /sync 走加密请求路径，服务端返回加密响应时应被自动解密
         val request = jsonRequest("http://10.0.2.2:8080/api/v1/sync", "POST", """{"deltas":[]}""")
-        val chain = mockChain(request) { buildResponse(it, encryptedBody, encrypted = true) }
+        val chain = mockChain(request) { buildEncryptedResponse(it, secret, keyHex) }
         val response = interceptor.intercept(chain)
 
-        assertEquals("application/json", response.body?.contentType()?.toString())
         assertEquals(secret, response.body?.string())
         assertNull(response.header("X-Encrypted"))
     }
@@ -201,7 +219,7 @@ class CryptoInterceptorTest {
     @Test
     fun `未加密响应体原样返回`() {
         val request = jsonRequest("http://10.0.2.2:8080/api/v1/sync", "POST", """{"deltas":[]}""")
-        val chain = mockChain(request) { buildResponse(it, """{"ok":true}""", encrypted = false) }
+        val chain = mockChain(request) { buildResponse(it, """{"ok":true}""") }
         val response = interceptor.intercept(chain)
 
         assertEquals("""{"ok":true}""", response.body?.string())

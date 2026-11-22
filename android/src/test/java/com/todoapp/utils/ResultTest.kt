@@ -124,7 +124,7 @@ class ResultTest {
 
     @Test
     fun `getOrDefault 返回默认值`() {
-        assertEquals(5, Result.Success(1).getOrDefault(5))
+        assertEquals(1, Result.Success(1).getOrDefault(5))
         val error: Result<Int> = Result.Error(IllegalStateException("x"))
         assertEquals(5, error.getOrDefault(5))
         assertEquals(5, Result.Loading.getOrDefault(5))
