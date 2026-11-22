@@ -80,11 +80,17 @@ android {
 }
 
 // release 构建必须显式指定正式服务端地址，防止把模拟器占位地址打进生产包
-// 注意：不能在 onVariants 配置阶段抛错（assembleDebug 也会实例化 release 变体），
-// 改在任务图就绪时按"是否真的要执行 release 任务"判定
+// 注意：不能在 onVariants 配置阶段抛错（assembleDebug 也会实例化 release 变体）；
+// ./gradlew test 会聚合 testReleaseUnitTest，也不能按名称笼统匹配 Release，
+// 这里只拦截真正产出 release 制品的任务
 gradle.taskGraph.whenReady {
-    val buildsRelease = allTasks.any { it.name.contains("Release") }
-    if (buildsRelease && project.findProperty("SERVER_URL") == null) {
+    val buildsReleaseArtifact = allTasks.any {
+        it.name.startsWith("assembleRelease") ||
+            it.name.startsWith("bundleRelease") ||
+            it.name.startsWith("connectedRelease") ||
+            it.name == "lintVitalRelease"
+    }
+    if (buildsReleaseArtifact && project.findProperty("SERVER_URL") == null) {
         throw GradleException(
             "release 构建需要通过 -PSERVER_URL=https://your-host/api/v1/ 指定正式服务端地址"
         )
