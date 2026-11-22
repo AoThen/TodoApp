@@ -220,6 +220,8 @@ class AddTaskFragment : Fragment(), DatePickerDialog.OnDateSetListener {
     }
 
     override fun onDateSet(view: DatePicker?, year: Int, month: Int, day: Int) {
+        // DatePicker 回调可能晚于 onDestroyView，先判空防止 NPE
+        val binding = _binding ?: return
         val date = String.format(Locale.US, "%04d-%02d-%02d", year, month + 1, day)
         binding.etDueDate.setText(date)
         viewModel.validateDueDate(date)

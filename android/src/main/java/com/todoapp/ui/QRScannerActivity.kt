@@ -131,6 +131,12 @@ class QRScannerActivity : AppCompatActivity() {
                     return@runOnUiThread
                 }
 
+                // 校验服务端地址：release 强制 https，防止恶意二维码把后续流量（含配对密钥）导向任意主机
+                if (!isAcceptableServerUrl(pairingData.server)) {
+                    showInvalidQRCodeDialog()
+                    return@runOnUiThread
+                }
+
                 // 验证配对凭据格式
                 if (!AesGcmManager.isValidKey(pairingData.key)) {
                     showInvalidKeyDialog()
@@ -263,12 +269,30 @@ class QRScannerActivity : AppCompatActivity() {
         }
     }
 
+    private fun isAcceptableServerUrl(url: String): Boolean {
+        val normalized = url.trim()
+        if (normalized.startsWith("https://")) return true
+        // debug 构建允许明文 http（本地/模拟器调试）；release 强制 https
+        return com.todoapp.BuildConfig.DEBUG && normalized.startsWith("http://")
+    }
+
+    private var loadingDialog: AlertDialog? = null
+
     private fun showLoading() {
-        // 可以实现一个加载对话框
+        if (loadingDialog?.isShowing == true) return
+        val progress = android.widget.ProgressBar(this)
+        loadingDialog = AlertDialog.Builder(this)
+            .setTitle("配对中")
+            .setMessage("正在验证配对信息，请稍候…")
+            .setView(progress)
+            .setCancelable(false)
+            .create()
+        loadingDialog?.show()
     }
 
     private fun dismissLoading() {
-        // 关闭加载对话框
+        loadingDialog?.dismiss()
+        loadingDialog = null
     }
 
     private fun showExpiredDialog() {

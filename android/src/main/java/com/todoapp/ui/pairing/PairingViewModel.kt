@@ -117,8 +117,16 @@ class PairingViewModel @Inject constructor() : ViewModel() {
         if (data.type != "todoapp-pairing" || data.v != 1) {
             return false
         }
-        
+
         if (data.server.isBlank()) {
+            return false
+        }
+
+        // 服务端地址校验：release 强制 https，防止恶意二维码把流量导向任意主机；
+        // debug 构建放行 http 以便本地/模拟器调试
+        val serverOk = data.server.startsWith("https://") ||
+            (com.todoapp.BuildConfig.DEBUG && data.server.startsWith("http://"))
+        if (!serverOk) {
             return false
         }
 

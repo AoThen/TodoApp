@@ -86,6 +86,9 @@ class AddTaskViewModel @Inject constructor(
     }
 
     fun createTask(context: android.content.Context) {
+        // 防止快速连击：上一次创建仍在进行时直接忽略本次点击
+        if (_uiState.value is AddTaskState.Loading) return
+
         viewModelScope.launch {
             _uiState.value = AddTaskState.Loading
 

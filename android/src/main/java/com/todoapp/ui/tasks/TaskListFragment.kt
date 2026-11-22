@@ -8,7 +8,9 @@ import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -85,40 +87,46 @@ class TaskListFragment : Fragment() {
 
     private fun setupObservers() {
         viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.tasks.collect { tasks: List<Task> ->
-                taskAdapter.submitList(tasks)
-                updateEmptyState(tasks.isEmpty())
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.tasks.collect { tasks: List<Task> ->
+                    taskAdapter.submitList(tasks)
+                    updateEmptyState(tasks.isEmpty())
+                }
             }
         }
-        
+
         viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.syncState.collect { state ->
-                when (state) {
-                    is SyncState.Idle -> {
-                        binding.progressBarSync.visibility = View.GONE
-                        binding.btnSyncNow.isEnabled = true
-                    }
-                    is SyncState.Syncing -> {
-                        binding.progressBarSync.visibility = View.VISIBLE
-                        binding.btnSyncNow.isEnabled = false
-                    }
-                    is SyncState.Success -> {
-                        binding.progressBarSync.visibility = View.GONE
-                        binding.btnSyncNow.isEnabled = true
-                        Toast.makeText(requireContext(), R.string.sync_success, Toast.LENGTH_SHORT).show()
-                    }
-                    is SyncState.Error -> {
-                        binding.progressBarSync.visibility = View.GONE
-                        binding.btnSyncNow.isEnabled = true
-                        Toast.makeText(requireContext(), state.message, Toast.LENGTH_LONG).show()
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.syncState.collect { state ->
+                    when (state) {
+                        is SyncState.Idle -> {
+                            binding.progressBarSync.visibility = View.GONE
+                            binding.btnSyncNow.isEnabled = true
+                        }
+                        is SyncState.Syncing -> {
+                            binding.progressBarSync.visibility = View.VISIBLE
+                            binding.btnSyncNow.isEnabled = false
+                        }
+                        is SyncState.Success -> {
+                            binding.progressBarSync.visibility = View.GONE
+                            binding.btnSyncNow.isEnabled = true
+                            Toast.makeText(requireContext(), R.string.sync_success, Toast.LENGTH_SHORT).show()
+                        }
+                        is SyncState.Error -> {
+                            binding.progressBarSync.visibility = View.GONE
+                            binding.btnSyncNow.isEnabled = true
+                            Toast.makeText(requireContext(), state.message, Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
             }
         }
-        
+
         viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.connectionState.collect { isConnected: Boolean ->
-                updateSyncStatus(isConnected)
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.connectionState.collect { isConnected: Boolean ->
+                    updateSyncStatus(isConnected)
+                }
             }
         }
     }

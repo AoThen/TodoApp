@@ -6,7 +6,9 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.todoapp.R
@@ -82,23 +84,25 @@ class CalendarFragment : Fragment() {
 
     private fun setupObservers() {
         viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.uiState.collect { state ->
-                binding.tvMonthLabel.text = getString(
-                    R.string.calendar_month_format,
-                    state.yearMonth.year,
-                    state.yearMonth.monthValue
-                )
-                dayAdapter.submitList(state.days)
-                binding.tvSelectedDayLabel.text = getString(
-                    R.string.calendar_selected_day_format,
-                    state.selectedDate.monthValue,
-                    state.selectedDate.dayOfMonth,
-                    state.dayTasks.size
-                )
-                taskAdapter.submitList(state.dayTasks)
-                val isEmpty = state.dayTasks.isEmpty()
-                binding.tvDayTasksEmpty.visibility = if (isEmpty) View.VISIBLE else View.GONE
-                binding.rvDayTasks.visibility = if (isEmpty) View.GONE else View.VISIBLE
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.uiState.collect { state ->
+                    binding.tvMonthLabel.text = getString(
+                        R.string.calendar_month_format,
+                        state.yearMonth.year,
+                        state.yearMonth.monthValue
+                    )
+                    dayAdapter.submitList(state.days)
+                    binding.tvSelectedDayLabel.text = getString(
+                        R.string.calendar_selected_day_format,
+                        state.selectedDate.monthValue,
+                        state.selectedDate.dayOfMonth,
+                        state.dayTasks.size
+                    )
+                    taskAdapter.submitList(state.dayTasks)
+                    val isEmpty = state.dayTasks.isEmpty()
+                    binding.tvDayTasksEmpty.visibility = if (isEmpty) View.VISIBLE else View.GONE
+                    binding.rvDayTasks.visibility = if (isEmpty) View.GONE else View.VISIBLE
+                }
             }
         }
     }
