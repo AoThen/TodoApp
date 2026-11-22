@@ -56,3 +56,8 @@ node_modules/
 .env
 .env.local
 
+# Playwright 与前端测试产物
+web/test-results/
+web/playwright-report/
+web/coverage/
+coverage/
