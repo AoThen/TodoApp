@@ -16,6 +16,12 @@
             app:destination="@id/loginFragment"
             app:popUpTo="@id/pairingFragment"
             app:popUpToInclusive="true" />
+
+        <action
+            android:id="@+id/action_pairingFragment_to_taskListFragment"
+            app:destination="@id/taskListFragment"
+            app:popUpTo="@id/pairingFragment"
+            app:popUpToInclusive="true" />
     </fragment>
 
     <!-- Login Fragment -->

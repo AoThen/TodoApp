@@ -16,6 +16,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.todoapp.R
+import com.todoapp.TodoApp
 import com.todoapp.databinding.FragmentPairingBinding
 import com.todoapp.ui.QRScannerActivity
 import dagger.hilt.android.AndroidEntryPoint
@@ -57,11 +58,24 @@ class PairingFragment : Fragment() {
 
     private fun setupClickListeners() {
         binding.btnScanQR.setOnClickListener {
-            checkCameraPermissionAndScan()
+            ensureLoggedInThen { checkCameraPermissionAndScan() }
         }
         
         binding.btnManualPair.setOnClickListener {
-            showManualPairDialog()
+            ensureLoggedInThen { showManualPairDialog() }
+        }
+    }
+
+    /**
+     * 设备配对接口需要登录态（服务端鉴权路由），未登录时先引导登录
+     */
+    private fun ensureLoggedInThen(action: () -> Unit) {
+        val app = requireActivity().application as TodoApp
+        if (app.isUserLoggedIn()) {
+            action()
+        } else {
+            Toast.makeText(requireContext(), R.string.pairing_login_required_message, Toast.LENGTH_LONG).show()
+            findNavController().navigate(R.id.loginFragment)
         }
     }
 
@@ -82,7 +96,13 @@ class PairingFragment : Fragment() {
                     is PairingState.Success -> {
                         binding.progressBar.visibility = View.GONE
                         Toast.makeText(requireContext(), R.string.pairing_success, Toast.LENGTH_SHORT).show()
-                        navigateToLogin()
+                        val app = requireActivity().application as TodoApp
+                        if (app.isUserLoggedIn()) {
+                            // 已登录：配对完成后直接进入主界面
+                            findNavController().navigate(R.id.action_pairingFragment_to_taskListFragment)
+                        } else {
+                            navigateToLogin()
+                        }
                     }
                     is PairingState.Error -> {
                         binding.progressBar.visibility = View.GONE
@@ -120,7 +140,8 @@ class PairingFragment : Fragment() {
     private val qrScannerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == android.app.Activity.RESULT_OK) {
+        // 扫码页以自定义 RESULT_SUCCESS(1001) 表示配对码获取成功
+        if (result.resultCode == QRScannerActivity.RESULT_SUCCESS) {
             val qrData = result.data?.getStringExtra(QRScannerActivity.EXTRA_QR_RESULT)
             if (!qrData.isNullOrEmpty()) {
                 viewModel.pairDevice(qrData, requireContext())

@@ -183,6 +183,9 @@ class QRScannerActivity : AppCompatActivity() {
                                     .putString("server_url", pairingData.server)
                                     .apply()
 
+                                // 同步更新 AppConfig，保证登录/业务通道与同步通道指向同一服务器
+                                com.todoapp.config.AppConfig.setBaseUrl(applicationContext, pairingData.server)
+
                                 Log.d(TAG, "设备配对成功: $deviceId")
                                 showSuccessDialog(pairingData.server)
                             } else {

@@ -14,6 +14,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.todoapp.R
 import com.todoapp.data.local.Task
+import com.todoapp.data.sync.DeltaSyncWorker
 import com.todoapp.databinding.FragmentTaskListBinding
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -42,6 +43,9 @@ class TaskListFragment : Fragment() {
         setupRecyclerView()
         setupClickListeners()
         setupObservers()
+
+        // 进入主页面即确保周期同步已调度（KEEP 策略下重复调用无副作用）
+        DeltaSyncWorker.schedule(requireContext())
     }
 
     private fun setupRecyclerView() {

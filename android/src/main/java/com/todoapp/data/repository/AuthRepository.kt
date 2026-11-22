@@ -42,11 +42,14 @@ class AuthRepository @Inject constructor(
         return withContext(Dispatchers.IO) {
             try {
                 apiService.logout()
-                RetrofitClient.clearToken(context)
-                Result.success(Unit)
             } catch (e: Exception) {
-                Result.failure(e)
+                // 离线或会话已失效时也允许本地登出
+                android.util.Log.w("AuthRepository", "Server logout failed, clearing local session anyway", e)
+            } finally {
+                // 无论服务端登出是否成功，本地会话都必须清除
+                RetrofitClient.clearToken(context)
             }
+            Result.success(Unit)
         }
     }
     

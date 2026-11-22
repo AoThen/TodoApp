@@ -5,6 +5,8 @@
 # 保留 Room 实体和DAO
 -keep @androidx.room.Entity class *
 -keep @androidx.room.Dao class *
+# 保留实体字段名：Gson 序列化 delta payload 依赖原始字段名，混淆会导致服务端解析失败
+-keepclassmembers @androidx.room.Entity class * { <fields>; }
 -dontwarn com.todoapp.data.entities.**
 -dontwarn com.todoapp.data.dao.**
 -dontwarn com.todoapp.data.database.**

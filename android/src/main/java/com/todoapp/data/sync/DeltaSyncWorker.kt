@@ -8,6 +8,8 @@ import com.todoapp.data.local.Task
 import com.todoapp.data.remote.DeltaChangeRequest
 import com.todoapp.data.remote.RetrofitClient
 import com.todoapp.data.remote.SyncRequest
+import com.todoapp.config.SyncConfig
+import com.todoapp.utils.JwtUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.UUID
@@ -26,20 +28,20 @@ class DeltaSyncWorker(
             // 简化验证：只做格式和过期检查
             // 真正的签名验证由服务器完成
             val token = RetrofitClient.getAccessToken(applicationContext)
-            val validationResult = validateToken(token)
+            val validationResult = JwtUtils.validateAccessToken(token)
             
             when (validationResult) {
-                is TokenValidationResult.Expired -> {
+                is JwtUtils.TokenValidation.Expired -> {
                     android.util.Log.w("DeltaSyncWorker", "Token expired, cannot sync")
                     return@withContext Result.failure()
                 }
-                is TokenValidationResult.InvalidFormat,
-                is TokenValidationResult.InvalidType,
-                is TokenValidationResult.Error -> {
+                is JwtUtils.TokenValidation.InvalidFormat,
+                is JwtUtils.TokenValidation.InvalidType,
+                is JwtUtils.TokenValidation.Error -> {
                     android.util.Log.e("DeltaSyncWorker", "Token validation failed: $validationResult")
                     return@withContext Result.failure()
                 }
-                is TokenValidationResult.Valid -> {
+                is JwtUtils.TokenValidation.Valid -> {
                     // Token有效，继续同步
                 }
             }
@@ -162,79 +164,13 @@ class DeltaSyncWorker(
             // Extract user ID from access token (JWT payload)
             val token = RetrofitClient.getAccessToken(applicationContext)
             if (token.isNotEmpty()) {
-                parseUserIdFromToken(token)
+                JwtUtils.parseUserId(token)
             } else {
-                "default-user"
+                "unknown-user"
             }
         } catch (e: Exception) {
-            "default-user"
+            "unknown-user"
         }
-    }
-
-    private fun parseUserIdFromToken(token: String): String {
-        return try {
-            val parts = token.split(".")
-            if (parts.size == 3) {
-                val payload = android.util.Base64.decode(parts[1], android.util.Base64.DEFAULT)
-                    .toString(Charsets.UTF_8)
-                val json = org.json.JSONObject(payload)
-                json.optString("user_id", json.optString("sub", "default-user"))
-            } else {
-                "default-user"
-            }
-        } catch (e: Exception) {
-            "default-user"
-        }
-    }
-
-    /**
-     * 简化的Token验证
-     * 注意：由于Android没有jwtSecret，无法验证签名
-     * 真正的签名验证由服务器完成（authMiddleware）
-     * 此函数只做格式检查和过期预检查，避免无效的API请求
-     */
-    private fun validateToken(token: String): TokenValidationResult {
-        return try {
-            val parts = token.split(".")
-            if (parts.size != 3) {
-                android.util.Log.w("DeltaSyncWorker", "Invalid token format: not a valid JWT")
-                return TokenValidationResult.InvalidFormat
-            }
-            
-            val payload = android.util.Base64.decode(parts[1], android.util.Base64.NO_WRAP)
-                .toString(Charsets.UTF_8)
-            val json = org.json.JSONObject(payload)
-            
-            // 检查过期时间 - 可以提前知道token是否过期
-            val exp = json.optLong("exp", 0)
-            if (exp > 0) {
-                val currentTime = System.currentTimeMillis() / 1000
-                if (exp < currentTime) {
-                    android.util.Log.w("DeltaSyncWorker", "Token expired")
-                    return TokenValidationResult.Expired
-                }
-            }
-            
-            // 检查token类型（必须是access类型）
-            val tokenType = json.optString("token_type", "")
-            if (tokenType.isNotEmpty() && tokenType != "access") {
-                android.util.Log.w("DeltaSyncWorker", "Token is not an access token")
-                return TokenValidationResult.InvalidType
-            }
-            
-            TokenValidationResult.Valid
-        } catch (e: Exception) {
-            android.util.Log.e("DeltaSyncWorker", "Token validation error", e)
-            TokenValidationResult.Error
-        }
-    }
-
-    sealed class TokenValidationResult {
-        object Valid : TokenValidationResult()
-        object Expired : TokenValidationResult()
-        object InvalidFormat : TokenValidationResult()
-        object InvalidType : TokenValidationResult()
-        object Error : TokenValidationResult()
     }
 
     companion object {
@@ -245,9 +181,10 @@ class DeltaSyncWorker(
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
 
-val request = PeriodicWorkRequestBuilder<DeltaSyncWorker>(
-        5, TimeUnit.MINUTES
-      )
+            // WorkManager 周期任务下限为 15 分钟
+            val request = PeriodicWorkRequestBuilder<DeltaSyncWorker>(
+                SyncConfig.SYNC_INTERVAL_MINUTES, TimeUnit.MINUTES
+            )
                 .setConstraints(constraints)
                 .setBackoffCriteria(
                     BackoffPolicy.EXPONENTIAL,

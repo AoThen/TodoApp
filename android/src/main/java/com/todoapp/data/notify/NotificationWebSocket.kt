@@ -51,7 +51,9 @@ class NotificationWebSocket(
     fun connect() {
         val serverAddress = getServerAddress()
         val encryptionParam = if (encryptionEnabled) "&encryption=true" else ""
-        val url = "ws://$serverAddress/ws?token=$token$encryptionParam"
+        // 与服务端协议保持一致：https 用 wss，http 用 ws
+        val wsProtocol = if (com.todoapp.data.remote.RetrofitClient.getBaseUrl().startsWith("https")) "wss://" else "ws://"
+        val url = "$wsProtocol$serverAddress/ws?token=$token$encryptionParam"
         val request = Request.Builder()
             .url(url)
             .build()

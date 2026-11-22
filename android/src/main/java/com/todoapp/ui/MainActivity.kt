@@ -2,6 +2,7 @@ package com.todoapp.ui
 
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
+import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.setupActionBarWithNavController
@@ -9,7 +10,9 @@ import androidx.navigation.ui.setupWithNavController
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.todoapp.R
 import com.todoapp.TodoApp
+import dagger.hilt.android.AndroidEntryPoint
 
+@AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -50,14 +53,20 @@ class MainActivity : AppCompatActivity() {
 
         when {
             !app.isUserPaired() -> {
-                navController.navigate(R.id.pairingFragment)
+                navigateIfNotCurrent(navController, R.id.pairingFragment)
             }
             !app.isUserLoggedIn() -> {
-                navController.navigate(R.id.loginFragment)
+                navigateIfNotCurrent(navController, R.id.loginFragment)
             }
             else -> {
-                navController.navigate(R.id.taskListFragment)
+                navigateIfNotCurrent(navController, R.id.taskListFragment)
             }
+        }
+    }
+
+    private fun navigateIfNotCurrent(navController: NavController, destinationId: Int) {
+        if (navController.currentDestination?.id != destinationId) {
+            navController.navigate(destinationId)
         }
     }
 

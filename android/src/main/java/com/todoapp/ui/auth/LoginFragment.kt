@@ -12,6 +12,7 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import com.todoapp.R
+import com.todoapp.TodoApp
 import com.todoapp.databinding.FragmentLoginBinding
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -68,7 +69,13 @@ class LoginFragment : Fragment() {
                         binding.progressBar.visibility = View.GONE
                         binding.btnLogin.isEnabled = true
                         Toast.makeText(requireContext(), R.string.login_success, Toast.LENGTH_SHORT).show()
-                        navigateToMainApp()
+                        val app = requireActivity().application as TodoApp
+                        if (app.isUserPaired()) {
+                            navigateToMainApp()
+                        } else {
+                            // 未配对：返回配对页完成设备配对
+                            findNavController().navigate(R.id.pairingFragment)
+                        }
                     }
                     is LoginState.Error -> {
                         binding.progressBar.visibility = View.GONE

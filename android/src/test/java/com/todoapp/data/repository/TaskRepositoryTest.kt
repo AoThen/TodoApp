@@ -31,7 +31,8 @@ class TaskRepositoryTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 
     private fun fakeJwt(userId: String = "42"): String {
-        val payload = java.util.Base64.getEncoder().encodeToString(
+        // 真实 JWT payload 是 Base64URL 编码（无 padding），与 JwtUtils 的解码方式保持一致
+        val payload = java.util.Base64.getUrlEncoder().encodeToString(
             """{"user_id":"$userId","token_type":"access","exp":${System.currentTimeMillis() / 1000 + 3600}}""".toByteArray()
         )
         return "header.$payload.signature"

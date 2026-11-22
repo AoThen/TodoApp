@@ -9,6 +9,7 @@ import com.todoapp.data.local.Task
 import com.todoapp.data.local.TaskDao
 import com.todoapp.data.remote.RetrofitClient
 import com.todoapp.utils.DateTimeUtils
+import com.todoapp.utils.JwtUtils
 import com.todoapp.utils.Result
 import com.google.gson.Gson
 import kotlinx.coroutines.flow.Flow
@@ -26,23 +27,7 @@ class TaskRepository(
         return try {
             val token = RetrofitClient.getAccessToken(context)
             if (token.isNotEmpty()) {
-                parseUserIdFromToken(token)
-            } else {
-                "unknown-user"
-            }
-        } catch (e: Exception) {
-            "unknown-user"
-        }
-    }
-
-    private fun parseUserIdFromToken(token: String): String {
-        return try {
-            val parts = token.split(".")
-            if (parts.size == 3) {
-                val payload = android.util.Base64.decode(parts[1], android.util.Base64.DEFAULT)
-                    .toString(Charsets.UTF_8)
-                val json = org.json.JSONObject(payload)
-                json.optString("user_id", json.optString("sub", "unknown-user"))
+                JwtUtils.parseUserId(token)
             } else {
                 "unknown-user"
             }
@@ -78,8 +63,14 @@ class TaskRepository(
 
     suspend fun updateTask(task: Task): Result<Unit> {
         return Result.runCatching {
-            val updatedTask = task.copy(updatedAt = DateTimeUtils.getCurrentTimestamp())
+            val updatedTask = task.copy(
+                updatedAt = DateTimeUtils.getCurrentTimestamp(),
+                lastModified = DateTimeUtils.getCurrentTimestamp()
+            )
             taskDao.updateTask(updatedTask)
+
+            // 编辑同样进入同步队列，避免服务器变更下发时用旧值覆盖本地编辑
+            addToDeltaQueue("update", updatedTask)
         }
     }
 

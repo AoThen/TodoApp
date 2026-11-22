@@ -49,7 +49,8 @@ class DeltaSyncWorkerTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 
     private fun jwt(payloadJson: String): String {
-        val payload = java.util.Base64.getEncoder().encodeToString(payloadJson.toByteArray())
+        // 真实 JWT payload 是 Base64URL 编码（无 padding），与 JwtUtils 的解码方式保持一致
+        val payload = java.util.Base64.getUrlEncoder().encodeToString(payloadJson.toByteArray())
         return "header.$payload.signature"
     }
 

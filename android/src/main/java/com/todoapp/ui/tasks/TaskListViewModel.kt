@@ -17,6 +17,7 @@ import com.todoapp.data.repository.TaskRepository
 import com.todoapp.data.sync.DeltaSyncWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -50,6 +51,7 @@ class TaskListViewModel @Inject constructor(
     }
 
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var syncObservationJob: Job? = null
 
     init {
         startNetworkMonitoring()
@@ -128,6 +130,7 @@ class TaskListViewModel @Inject constructor(
                 .build()
 
             WorkManager.getInstance(context).enqueue(workRequest)
+            observeSyncWork(workRequest.id)
             workRequest.id
         } catch (e: Exception) {
             _syncState.value = SyncState.Error(
@@ -137,11 +140,39 @@ class TaskListViewModel @Inject constructor(
         }
     }
 
+    /** 观察同步任务状态，结束时回写 syncState，避免进度条永久转动 */
+    private fun observeSyncWork(workId: UUID) {
+        syncObservationJob?.cancel()
+        syncObservationJob = viewModelScope.launch {
+            WorkManager.getInstance(context)
+                .getWorkInfoByIdFlow(workId)
+                .collect { info ->
+                    when (info?.state) {
+                        WorkInfo.State.SUCCEEDED -> {
+                            _syncState.value = SyncState.Success
+                            syncObservationJob?.cancel()
+                        }
+                        WorkInfo.State.FAILED -> {
+                            _syncState.value = SyncState.Error(
+                                context.getString(R.string.sync_failed, "同步失败")
+                            )
+                            syncObservationJob?.cancel()
+                        }
+                        else -> {
+                            // ENQUEUED / RUNNING 保持 Syncing
+                        }
+                    }
+                }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         networkCallback?.let {
             connectivityManager.unregisterNetworkCallback(it)
         }
         networkCallback = null
+        syncObservationJob?.cancel()
+        syncObservationJob = null
     }
 }

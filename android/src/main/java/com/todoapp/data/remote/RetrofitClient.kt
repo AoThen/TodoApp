@@ -33,6 +33,12 @@ object RetrofitClient {
     @Volatile
     private var refreshRetrofit: Retrofit? = null
 
+    @Volatile
+    private var cachedPrefs: SharedPreferences? = null
+
+    @Volatile
+    private var cookieJar: PersistentCookieJar? = null
+
     private val refreshLock = Any()
 
     fun getApiService(context: Context): ApiService {
@@ -56,6 +62,7 @@ object RetrofitClient {
 
     private fun createOkHttpClient(context: Context): OkHttpClient {
         return OkHttpClient.Builder()
+            .cookieJar(getCookieJar(context.applicationContext))
             .addInterceptor(createAuthInterceptor(context))
             .addInterceptor(createLoggingInterceptor())
             .connectTimeout(CONNECT_TIMEOUT, TimeUnit.SECONDS)
@@ -63,6 +70,12 @@ object RetrofitClient {
             .writeTimeout(WRITE_TIMEOUT, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .build()
+    }
+
+    private fun getCookieJar(appContext: Context): PersistentCookieJar {
+        return cookieJar ?: synchronized(this) {
+            cookieJar ?: PersistentCookieJar(appContext).also { cookieJar = it }
+        }
     }
 
     private fun createAuthInterceptor(context: Context): Interceptor {
@@ -82,47 +95,44 @@ object RetrofitClient {
 
             val response = chain.proceed(requestWithAuth)
 
-            if (response.code == 401) {
-                response.close()
-
-                synchronized(refreshLock) {
-                    val currentToken = prefs.getString(ACCESS_TOKEN_KEY, null)
-                    if (currentToken == token && tryRefreshToken(context)) {
-                        val newToken = prefs.getString(ACCESS_TOKEN_KEY, null)
-                        val retryRequest = originalRequest.newBuilder().apply {
-                            addHeader("Accept", "application/json")
-                            addHeader("Content-Type", "application/json")
-                            newToken?.let {
-                                addHeader("Authorization", "Bearer $it")
-                            }
-                        }.build()
-
-                        return@Interceptor chain.proceed(retryRequest)
-                    }
-                }
-
-                android.util.Log.e("RetrofitClient", "Token refresh failed, user needs to re-login")
+            // 登录接口的 401 表示凭据错误，直接透传给调用方展示
+            val isLoginRequest = originalRequest.url.encodedPath.endsWith("/auth/login")
+            if (response.code != 401 || isLoginRequest) {
+                return@Interceptor response
             }
 
+            synchronized(refreshLock) {
+                val currentToken = prefs.getString(ACCESS_TOKEN_KEY, null)
+                if (currentToken == token && tryRefreshToken(context)) {
+                    response.close()
+                    val newToken = prefs.getString(ACCESS_TOKEN_KEY, null)
+                    val retryRequest = originalRequest.newBuilder().apply {
+                        addHeader("Accept", "application/json")
+                        addHeader("Content-Type", "application/json")
+                        newToken?.let {
+                            addHeader("Authorization", "Bearer $it")
+                        }
+                    }.build()
+
+                    return@Interceptor chain.proceed(retryRequest)
+                }
+            }
+
+            // 刷新失败：保留原始响应（不能 close 后再返回，否则调用方读取错误体时报 closed）
+            android.util.Log.e("RetrofitClient", "Token refresh failed, user needs to re-login")
             response
         }
     }
 
     private fun tryRefreshToken(context: Context): Boolean {
         return try {
-            val prefs = getEncryptedPrefs(context)
-            val refreshToken = prefs.getString(REFRESH_TOKEN_KEY, null)
-
-            if (refreshToken.isNullOrEmpty()) {
-                return false
-            }
-
-            // 使用缓存的 refreshRetrofit 单例
+            // refresh token 由服务端通过 HttpOnly Cookie 下发，随 CookieJar 自动携带；
+            // 无 Cookie 时服务端返回 401，本方法返回 false
             // 注意：elvis 表达式必须加括号后再调用 create，否则公共类型退化为 Any
             val refreshApiService = (refreshRetrofit ?: synchronized(this) {
                 refreshRetrofit ?: Retrofit.Builder()
                     .baseUrl(BASE_URL)
-                    .client(createRefreshOkHttpClient())
+                    .client(createRefreshOkHttpClient(context.applicationContext))
                     .addConverterFactory(GsonConverterFactory.create())
                     .build()
                     .also { refreshRetrofit = it }
@@ -149,8 +159,9 @@ object RetrofitClient {
         }
     }
 
-    private fun createRefreshOkHttpClient(): OkHttpClient {
+    private fun createRefreshOkHttpClient(appContext: Context): OkHttpClient {
         return OkHttpClient.Builder()
+            .cookieJar(getCookieJar(appContext))
             .addInterceptor(createLoggingInterceptor())
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
@@ -169,19 +180,26 @@ object RetrofitClient {
     }
 
     private fun getEncryptedPrefs(context: Context): SharedPreferences {
-        return try {
-            val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+        cachedPrefs?.let { return it }
+        return synchronized(this) {
+            cachedPrefs?.let { return it }
+            val appContext = context.applicationContext
+            val prefs = try {
+                val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
 
-            EncryptedSharedPreferences.create(
-                PREFS_NAME,
-                masterKeyAlias,
-                context,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-        } catch (e: Exception) {
-            android.util.Log.e("RetrofitClient", "Failed to create EncryptedSharedPreferences, falling back to plain text", e)
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                EncryptedSharedPreferences.create(
+                    PREFS_NAME,
+                    masterKeyAlias,
+                    appContext,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("RetrofitClient", "Failed to create EncryptedSharedPreferences, falling back to plain text", e)
+                appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            }
+            cachedPrefs = prefs
+            prefs
         }
     }
 
@@ -210,6 +228,7 @@ object RetrofitClient {
                 .remove(ACCESS_TOKEN_KEY)
                 .remove(REFRESH_TOKEN_KEY)
                 .apply()
+            cookieJar?.clear()
         } catch (e: Exception) {
             android.util.Log.e("RetrofitClient", "Failed to clear tokens", e)
         }

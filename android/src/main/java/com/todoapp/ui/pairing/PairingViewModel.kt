@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.todoapp.R
+import com.todoapp.config.AppConfig
 import com.todoapp.data.crypto.KeyStorage
 import com.todoapp.data.remote.InitPairingRequest
 import com.todoapp.data.remote.RetrofitClient
@@ -71,6 +72,8 @@ class PairingViewModel @Inject constructor() : ViewModel() {
 
                 KeyStorage.saveKey(context, finalKey, serverUrl)
                 RetrofitClient.setBaseUrl(serverUrl)
+                // 同步更新并持久化到 AppConfig，保证 Hilt 注入的登录/业务通道与同步通道指向同一服务器
+                AppConfig.setBaseUrl(context.applicationContext, serverUrl)
 
                 _pairingState.value = PairingState.Success(
                     context.getString(R.string.pairing_success)
