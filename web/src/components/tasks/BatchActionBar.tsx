@@ -28,22 +28,20 @@ const BatchActionBar: React.FC<BatchActionBarProps> = ({
       />
       <span>已选择 <strong>{selectedCount}</strong> 个任务</span>
       {selectedCount > 0 && (
-        <>
-          <button
-            className="btn btn-danger"
-            onClick={onBatchDelete}
-          >
-            批量删除 ({selectedCount})
-          </button>
-          <button
-            className="btn btn-secondary"
-            onClick={onManualSync}
-            disabled={isSyncing || !isOnline}
-          >
-            {isSyncing ? '同步中...' : '立即同步'}
-          </button>
-        </>
+        <button
+          className="btn btn-danger"
+          onClick={onBatchDelete}
+        >
+          批量删除 ({selectedCount})
+        </button>
       )}
+      <button
+        className="btn btn-secondary"
+        onClick={onManualSync}
+        disabled={isSyncing || !isOnline}
+      >
+        {isSyncing ? '同步中...' : '立即同步'}
+      </button>
     </div>
   );
 };

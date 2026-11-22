@@ -13,10 +13,11 @@ const baseProps = {
 };
 
 describe('BatchActionBar', () => {
-  it('未选择任务时只显示全选框与计数', () => {
+  it('未选择任务时显示全选框、计数与立即同步（同步不依赖勾选）', () => {
     render(<BatchActionBar {...baseProps} />);
     expect(screen.getByText(/已选择/)).toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByText('立即同步')).toBeInTheDocument();
+    expect(screen.queryByText(/批量删除/)).not.toBeInTheDocument();
   });
 
   it('全选勾选触发 onSelectAll(true)', () => {
