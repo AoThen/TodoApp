@@ -182,7 +182,7 @@ class QRScannerActivity : AppCompatActivity() {
                                 // 服务器验证成功
                                 KeyStorage.init()
                                 // 保存通道加密密钥（而非一次性配对凭据），加密通道才能真正建立
-                                KeyStorage.saveKey(this@QRScannerActivity, channelKey, pairingData.server)
+                                val keyProtected = KeyStorage.saveKey(this@QRScannerActivity, channelKey, pairingData.server)
                                 // 同步刷新加密拦截器的内存密钥缓存，使后续请求立即启用加密通道
                                 com.todoapp.data.crypto.CryptoInterceptor.getInstance(applicationContext).refreshKey()
 
@@ -197,7 +197,7 @@ class QRScannerActivity : AppCompatActivity() {
                                 com.todoapp.config.AppConfig.setBaseUrl(applicationContext, pairingData.server)
 
                                 Log.d(TAG, "设备配对成功: $deviceId")
-                                showSuccessDialog(pairingData.server)
+                                showSuccessDialog(pairingData.server, keyProtected)
                             } else {
                                 val errorMsg = response.errorBody()?.string() ?: "配对验证失败"
                                 Log.e(TAG, "配对失败: $errorMsg")
@@ -294,10 +294,14 @@ class QRScannerActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun showSuccessDialog(serverUrl: String) {
+    private fun showSuccessDialog(serverUrl: String, keyProtected: Boolean = true) {
+        var message = "设备已成功配对到: $serverUrl\n\n所有通信现在将使用 AES-256-GCM 加密。"
+        if (!keyProtected) {
+            message += "\n\n安全提示：本机安全存储（Keystore）不可用，加密密钥已明文保存在本机，请避免在共享或 Root 设备上使用。"
+        }
         AlertDialog.Builder(this)
             .setTitle("配对成功")
-            .setMessage("设备已成功配对到: $serverUrl\n\n所有通信现在将使用 AES-256-GCM 加密。")
+            .setMessage(message)
             .setPositiveButton("确定") { _, _ ->
                 val resultIntent = Intent().apply {
                     putExtra(EXTRA_QR_RESULT, "success")

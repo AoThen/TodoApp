@@ -111,41 +111,44 @@ class DeltaSyncWorker(
                             )
                         )
                     }
-                } else if (!serverChange.isDeleted) {
-                    val timestamp = serverChange.updatedAt
-                    // 幽灵任务合并：本地离线创建的同名未同步任务直接采用服务端身份，避免重复
-                    val ghost = database.taskDao().getUnsyncedTaskByTitle(serverChange.title ?: "")
-                    if (ghost != null) {
-                        database.taskDao().updateTask(
-                            ghost.copy(
-                                serverId = serverChange.id,
-                                serverVersion = serverChange.serverVersion,
-                                description = serverChange.description ?: ghost.description,
-                                status = serverChange.status ?: ghost.status,
-                                priority = serverChange.priority ?: ghost.priority,
-                                dueAt = serverChange.dueAt ?: ghost.dueAt,
-                                updatedAt = serverChange.updatedAt,
-                                lastModified = serverChange.updatedAt
+                    } else if (!serverChange.isDeleted) {
+                        val timestamp = serverChange.updatedAt
+                        // 优先按 local_id 精确匹配本地尚未同步的离线任务（离线创建后回执丢失时的自愈），
+                        // 不按标题猜测，避免同名不同任务被错误合并
+                        val ghost = serverChange.localId
+                            ?.takeIf { it.isNotEmpty() }
+                            ?.let { database.taskDao().getUnsyncedTaskByLocalId(it) }
+                        if (ghost != null) {
+                            database.taskDao().updateTask(
+                                ghost.copy(
+                                    serverId = serverChange.id,
+                                    serverVersion = serverChange.serverVersion,
+                                    description = serverChange.description ?: ghost.description,
+                                    status = serverChange.status ?: ghost.status,
+                                    priority = serverChange.priority ?: ghost.priority,
+                                    dueAt = serverChange.dueAt ?: ghost.dueAt,
+                                    updatedAt = serverChange.updatedAt,
+                                    lastModified = serverChange.updatedAt
+                                )
                             )
-                        )
-                    } else {
-                        database.taskDao().insertTask(
-                            Task(
-                                localId = UUID.randomUUID().toString(),
-                                serverId = serverChange.id,
-                                userId = userId,
-                                serverVersion = serverChange.serverVersion,
-                                title = serverChange.title ?: "",
-                                description = serverChange.description ?: "",
-                                status = serverChange.status ?: "todo",
-                                priority = serverChange.priority ?: "medium",
-                                dueAt = serverChange.dueAt,
-                                createdAt = timestamp,
-                                updatedAt = timestamp,
-                                lastModified = timestamp
+                        } else {
+                            database.taskDao().insertTask(
+                                Task(
+                                    localId = UUID.randomUUID().toString(),
+                                    serverId = serverChange.id,
+                                    userId = userId,
+                                    serverVersion = serverChange.serverVersion,
+                                    title = serverChange.title ?: "",
+                                    description = serverChange.description ?: "",
+                                    status = serverChange.status ?: "todo",
+                                    priority = serverChange.priority ?: "medium",
+                                    dueAt = serverChange.dueAt,
+                                    createdAt = timestamp,
+                                    updatedAt = timestamp,
+                                    lastModified = timestamp
+                                )
                             )
-                        )
-                    }
+                        }
                 }
             }
 

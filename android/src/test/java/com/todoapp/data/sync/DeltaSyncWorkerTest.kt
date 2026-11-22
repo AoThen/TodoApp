@@ -88,8 +88,8 @@ class DeltaSyncWorkerTest {
         every { RetrofitClient.getAccessToken(any()) } returns validJwt()
 
         coEvery { mockDeltaDao.getAllDeltas() } returns emptyList()
-        // relaxed mock 对可空返回值默认返回非 null mock，会误导幽灵合并分支；默认无幽灵任务
-        coEvery { mockTaskDao.getUnsyncedTaskByTitle(any()) } returns null
+        // relaxed mock 对可空返回值默认返回非 null mock，会误导 local_id 合并分支；默认无匹配任务
+        coEvery { mockTaskDao.getUnsyncedTaskByLocalId(any()) } returns null
     }
 
     @After
@@ -274,7 +274,7 @@ class DeltaSyncWorkerTest {
     }
 
     @Test
-    fun success_mergesLocalGhostTaskForServerCreatedTask() {
+    fun success_mergesLocalUnsyncedTaskByLocalId() {
         coEvery { mockDeltaDao.getAllDeltas() } returns listOf(pendingDelta)
         val ghost = Task(
             id = 9,
@@ -286,7 +286,7 @@ class DeltaSyncWorkerTest {
             lastModified = "t0"
         )
         coEvery { mockTaskDao.getTaskByServerId(300L) } returns null
-        coEvery { mockTaskDao.getUnsyncedTaskByTitle("其他设备新建") } returns ghost
+        coEvery { mockTaskDao.getUnsyncedTaskByLocalId("local-ghost") } returns ghost
         stubSync(
             Response.success(
                 syncResponse(
@@ -294,6 +294,7 @@ class DeltaSyncWorkerTest {
                         ServerChange(
                             id = 300,
                             serverVersion = 1,
+                            localId = "local-ghost",
                             title = "其他设备新建",
                             status = "todo",
                             updatedAt = "2026-11-20T02:00:00Z",
@@ -306,13 +307,42 @@ class DeltaSyncWorkerTest {
 
         assertEquals(ListenableWorker.Result.success(), runWorker())
 
-        // 同名本地未同步任务被合并：采用服务端身份，而不是重复插入
+        // local_id 精确匹配的本地未同步任务被合并：采用服务端身份，而不是重复插入
         val merged = slot<Task>()
         coVerify(exactly = 1) { mockTaskDao.updateTask(capture(merged)) }
         assertEquals("local-ghost", merged.captured.localId)
         assertEquals(300L, merged.captured.serverId)
         assertEquals(1, merged.captured.serverVersion)
         coVerify(exactly = 0) { mockTaskDao.insertTask(any()) }
+    }
+
+    @Test
+    fun success_sameTitleButDifferentLocalId_insertsAsNewTask() {
+        coEvery { mockDeltaDao.getAllDeltas() } returns listOf(pendingDelta)
+        coEvery { mockTaskDao.getTaskByServerId(300L) } returns null
+        stubSync(
+            Response.success(
+                syncResponse(
+                    serverChanges = listOf(
+                        ServerChange(
+                            id = 300,
+                            serverVersion = 1,
+                            localId = "srv-other-device",
+                            title = "本地新建",
+                            status = "todo",
+                            updatedAt = "2026-11-20T02:00:00Z",
+                            isDeleted = false
+                        )
+                    )
+                )
+            )
+        )
+
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+
+        // local_id 不匹配时，即使标题相同也作为新任务插入，不再按标题错误合并
+        coVerify(exactly = 1) { mockTaskDao.insertTask(any()) }
+        coVerify(exactly = 0) { mockTaskDao.updateTask(any()) }
     }
 
     @Test

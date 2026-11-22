@@ -120,6 +120,8 @@ data class SyncResponse(
 data class ServerChange(
     @SerializedName("id") val id: Long,
     @SerializedName("server_version") val serverVersion: Int,
+    // 服务端任务的 local_id：用于精确匹配本地离线创建的同源任务
+    @SerializedName("local_id") val localId: String? = null,
     // 以下字段服务端在 update/delete 场景可能不下发，需可空并在客户端做合并兜底
     @SerializedName("title") val title: String? = null,
     @SerializedName("description") val description: String? = null,

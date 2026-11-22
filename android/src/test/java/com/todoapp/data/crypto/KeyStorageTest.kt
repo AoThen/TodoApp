@@ -46,13 +46,14 @@ class KeyStorageTest {
 
     @Test
     fun `Keystore 不可用时 saveKey 明文兜底且 getKey 可还原`() {
-        KeyStorage.saveKey(context, keyHex, serverUrl)
+        // JVM 环境无 AndroidKeyStore：saveKey 应返回 false（明文兜底）并可还原
+        assertFalse(KeyStorage.saveKey(context, keyHex, serverUrl))
         assertEquals(keyHex, KeyStorage.getKey(context))
     }
 
     @Test
     fun `Keystore 不可用时 serverUrl 明文兜底且 getServerUrl 可还原`() {
-        KeyStorage.saveKey(context, keyHex, serverUrl)
+        assertFalse(KeyStorage.saveKey(context, keyHex, serverUrl))
         assertEquals(serverUrl, KeyStorage.getServerUrl(context))
     }
 

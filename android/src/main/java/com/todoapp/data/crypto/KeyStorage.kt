@@ -39,36 +39,35 @@ object KeyStorage {
         }
     }
 
-    fun saveKey(context: Context, key: String, serverUrl: String) {
-        try {
+    /**
+     * 保存配对下发的通道密钥与服务器地址。
+     * @return true 表示密钥已经 Keystore 加密存储；false 表示 Keystore 不可用、已明文兜底（调用方应提示用户）
+     */
+    fun saveKey(context: Context, key: String, serverUrl: String): Boolean {
+        return try {
             val prefs = context.getSharedPreferences(ENCRYPTION_PREFERENCE, Context.MODE_PRIVATE)
 
             if (keyStore != null && !keyExistsInKeystore()) {
                 createKeyInKeystore()
             }
 
-            val encryptedKey = if (keyStore != null && keyExistsInKeystore()) {
-                encryptWithKeystore(key)
-            } else {
-                key
-            }
-
-            val encryptedServerUrl = if (keyStore != null && keyExistsInKeystore()) {
-                encryptWithKeystore(serverUrl)
-            } else {
-                serverUrl
-            }
+            val protected = keyStore != null && keyExistsInKeystore()
+            val encryptedKey = if (protected) encryptWithKeystore(key) else key
+            val encryptedServerUrl = if (protected) encryptWithKeystore(serverUrl) else serverUrl
 
             prefs.edit()
                 .putString(KEY_KEY, encryptedKey)
                 .putString(SERVER_URL_KEY, encryptedServerUrl)
                 .apply()
+            protected
         } catch (e: Exception) {
+            android.util.Log.w("KeyStorage", "Keystore 加密存储失败，降级为明文保存", e)
             val prefs = context.getSharedPreferences(ENCRYPTION_PREFERENCE, Context.MODE_PRIVATE)
             prefs.edit()
                 .putString(KEY_KEY, key)
                 .putString(SERVER_URL_KEY, serverUrl)
                 .apply()
+            false
         }
     }
 
@@ -152,7 +151,7 @@ object KeyStorage {
             keyGenerator.generateKey()
         } catch (e: Exception) {
             // Keystore 不可用时静默降级：saveKey 会回退为明文存储
-            android.util.Log.d("KeyStorage", "createKeyInKeystore failed, fallback to plaintext", e)
+            android.util.Log.w("KeyStorage", "createKeyInKeystore failed, fallback to plaintext", e)
         }
     }
 

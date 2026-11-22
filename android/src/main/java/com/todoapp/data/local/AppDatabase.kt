@@ -95,9 +95,9 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE serverId = :serverId LIMIT 1")
     suspend fun getTaskByServerId(serverId: Long): Task?
 
-    /** 查找本地新建且尚未关联服务端 ID 的同名未删除任务（同步时用于合并幽灵任务，避免重复） */
-    @Query("SELECT * FROM tasks WHERE isDeleted = 0 AND serverId IS NULL AND title = :title LIMIT 1")
-    suspend fun getUnsyncedTaskByTitle(title: String): Task?
+    /** 按本地 ID 查找尚未关联服务端 ID 的未删除任务（同步时用于精确合并离线创建的任务，避免重复） */
+    @Query("SELECT * FROM tasks WHERE isDeleted = 0 AND serverId IS NULL AND localId = :localId LIMIT 1")
+    suspend fun getUnsyncedTaskByLocalId(localId: String): Task?
 
     /** 查询截止日期落在 [startIso, endIso] 区间内的未删除任务（dueAt 为 ISO-8601 UTC 字符串，可直接做字典序比较） */
     @Query("SELECT * FROM tasks WHERE isDeleted = 0 AND dueAt IS NOT NULL AND dueAt >= :startIso AND dueAt <= :endIso ORDER BY dueAt ASC")
