@@ -151,16 +151,6 @@ class TaskListFragment : Fragment() {
         binding.tvSyncStatus.setTextColor(statusColor)
     }
 
-    private fun navigateToTaskDetail(taskId: String) {
-        val bundle = Bundle().apply {
-            putString("taskId", taskId)
-        }
-        findNavController().navigate(
-            R.id.action_taskListFragment_to_taskDetailFragment,
-            bundle
-        )
-    }
-
     private fun navigateToAddTask() {
         findNavController().navigate(R.id.action_taskListFragment_to_addTaskFragment)
     }

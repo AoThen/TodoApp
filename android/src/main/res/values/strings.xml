@@ -163,7 +163,6 @@
     <!-- Metadata -->
     <string name="metadata_created_at">创建时间: %1$s</string>
     <string name="metadata_updated_at">更新时间: %1$s</string>
-    <string name="metadata_task_detail">任务详情</string>
     <string name="metadata_modify_task">修改任务信息</string>
     
     <!-- Content descriptions for accessibility -->
@@ -177,5 +176,4 @@
     <!-- Task detail titles -->
     <string name="add_task_title">添加任务</string>
     <string name="edit_task_title">编辑任务</string>
-    <string name="task_detail_title">任务详情</string>
 </resources>

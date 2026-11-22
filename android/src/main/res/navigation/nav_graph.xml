@@ -46,14 +46,6 @@
         tools:layout="@layout/fragment_task_list">
 
         <action
-            android:id="@+id/action_taskListFragment_to_taskDetailFragment"
-            app:destination="@id/taskDetailFragment">
-            <argument
-                android:name="taskId"
-                android:defaultValue="" />
-        </action>
-
-        <action
             android:id="@+id/action_taskListFragment_to_addTaskFragment"
             app:destination="@id/addTaskFragment">
 
@@ -83,30 +75,6 @@
         <action
             android:id="@+id/action_addTaskFragment_to_taskListFragment"
             app:popUpTo="@id/taskListFragment"
-            app:popUpToInclusive="true" />
-    </fragment>
-
-    <!-- Task Detail Fragment -->
-    <fragment
-        android:id="@+id/taskDetailFragment"
-        android:name="com.todoapp.ui.tasks.TaskDetailFragment"
-        android:label="任务详情"
-        tools:layout="@layout/fragment_task_detail">
-
-        <argument
-            android:name="taskId"
-            app:argType="string" />
-
-        <action
-            android:id="@+id/action_taskDetail_to_taskList"
-            app:destination="@id/taskListFragment"
-            app:popUpTo="@id/taskListFragment"
-            app:popUpToInclusive="false" />
-
-        <action
-            android:id="@+id/action_taskDetail_to_addTask"
-            app:destination="@id/addTaskFragment"
-            app:popUpTo="@id/taskDetailFragment"
             app:popUpToInclusive="true" />
     </fragment>
 
