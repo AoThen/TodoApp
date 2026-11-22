@@ -3,13 +3,10 @@ package com.todoapp.data.crypto
 import android.content.Context
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
-import okhttp3.logging.HttpLoggingInterceptor
-import java.util.concurrent.TimeUnit
 
 class CryptoInterceptor private constructor(context: Context) : Interceptor {
 
@@ -104,15 +101,11 @@ class CryptoInterceptor private constructor(context: Context) : Interceptor {
     }
 
     private fun shouldEncryptPath(path: String, method: String): Boolean {
-        return when {
-            path.contains("/auth/") -> false
-            path.contains("/health") -> false
-            path == "/api/v1/tasks" && method == "GET" -> false
-            path.startsWith("/api/v1/tasks/") && method == "GET" -> false
-            path.startsWith("/api/v1/tasks/") && method == "DELETE" -> false
-            path.contains("/admin/") -> false
-            else -> true
-        }
+        // 与服务端 EncryptionMiddleware.ShouldEncrypt 语义严格对齐：
+        // 仅 /sync 与 /tasks 的非 GET 请求加密；
+        // auth、devices（配对）、admin、export、GET 查询等一律明文（服务端不解密这些路径）
+        val isSyncOrTasks = path.endsWith("/sync") || path.contains("/tasks")
+        return isSyncOrTasks && method != "GET"
     }
 
     private fun createErrorResponse(chain: Interceptor.Chain, message: String): Response {
@@ -133,23 +126,6 @@ class CryptoInterceptor private constructor(context: Context) : Interceptor {
             return instance ?: synchronized(this) {
                 instance ?: CryptoInterceptor(context).also { instance = it }
             }
-        }
-
-        fun createOkHttpClient(context: Context): OkHttpClient {
-            return OkHttpClient.Builder()
-                .addInterceptor(getInstance(context))
-                .addInterceptor(HttpLoggingInterceptor().apply {
-                    level = if (com.todoapp.BuildConfig.DEBUG) {
-                        HttpLoggingInterceptor.Level.BODY
-                    } else {
-                        HttpLoggingInterceptor.Level.NONE
-                    }
-                })
-                .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .writeTimeout(30, TimeUnit.SECONDS)
-                .retryOnConnectionFailure(true)
-                .build()
         }
     }
 }

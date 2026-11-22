@@ -63,6 +63,8 @@ object RetrofitClient {
     private fun createOkHttpClient(context: Context): OkHttpClient {
         return OkHttpClient.Builder()
             .cookieJar(getCookieJar(context.applicationContext))
+            // 加密拦截器置于最外层：先加密请求体、标记加密头，再由鉴权/日志拦截器处理
+            .addInterceptor(com.todoapp.data.crypto.CryptoInterceptor.getInstance(context.applicationContext))
             .addInterceptor(createAuthInterceptor(context))
             .addInterceptor(createLoggingInterceptor())
             .connectTimeout(CONNECT_TIMEOUT, TimeUnit.SECONDS)

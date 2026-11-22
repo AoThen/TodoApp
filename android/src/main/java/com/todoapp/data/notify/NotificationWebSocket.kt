@@ -23,7 +23,7 @@ class NotificationWebSocket(
 
     private var webSocket: WebSocket? = null
     private var ready: Boolean = false
-    private val messageHandlers = mutableMapOf<String, (JSONObject) -> Unit>()
+    private val messageHandlers = java.util.concurrent.ConcurrentHashMap<String, (JSONObject) -> Unit>()
     private var reconnectAttempts: Int = 0
     private val maxReconnectAttempts: Int = com.todoapp.config.SyncConfig.MAX_RECONNECT_ATTEMPTS
     private var reconnectJob: Job? = null
@@ -49,6 +49,11 @@ class NotificationWebSocket(
     }
 
     fun connect() {
+        // 防止重叠建连泄漏：先静默取消旧连接（cancel 不会触发 onClosed/onFailure 重连回调）
+        webSocket?.cancel()
+        webSocket = null
+        ready = false
+
         val serverAddress = getServerAddress()
         val encryptionParam = if (encryptionEnabled) "&encryption=true" else ""
         // 与服务端协议保持一致：https 用 wss，http 用 ws
@@ -220,5 +225,13 @@ class NotificationWebSocket(
 
     fun isConnected(): Boolean {
         return webSocket != null && ready
+    }
+
+    /**
+     * 重连是否已耗尽放弃：处于该状态的实例不会再自行恢复，
+     * 调用方（NotificationSocketController）应销毁并重建连接
+     */
+    fun isReconnectExhausted(): Boolean {
+        return reconnectAttempts >= maxReconnectAttempts && !isConnected()
     }
 }

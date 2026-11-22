@@ -10,7 +10,6 @@ object AppConfig {
 
     // 默认服务端地址来自构建时注入的 BuildConfig.SERVER_URL（可用 -PSERVER_URL 覆盖）
     val DEFAULT_BASE_URL = BuildConfig.SERVER_URL
-    const val WEB_SOCKET_PATH = "/ws"
 
     private var baseUrl: String = DEFAULT_BASE_URL
 
@@ -36,26 +35,6 @@ object AppConfig {
             .edit()
             .putString(KEY_BASE_URL, baseUrl)
             .apply()
-    }
-
-    fun getWebSocketUrl(token: String, encryptionEnabled: Boolean = true): String {
-        val serverAddress = getServerAddress()
-        val encryptionParam = if (encryptionEnabled) "&encryption=true" else ""
-        
-        // Determine WebSocket protocol based on base URL protocol
-        val wsProtocol = if (baseUrl.startsWith("https")) "wss://" else "ws://"
-        return "$wsProtocol$serverAddress$WEB_SOCKET_PATH?token=$token$encryptionParam"
-    }
-
-    private fun getServerAddress(): String {
-        return try {
-            val url = java.net.URL(baseUrl)
-            val host = url.host
-            val port = if (url.port > 0) url.port else if (url.protocol == "https") 443 else 80
-            "$host:$port"
-        } catch (e: Exception) {
-            "10.0.2.2:8080"
-        }
     }
 
     fun isFirstLaunch(context: Context): Boolean {

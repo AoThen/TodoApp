@@ -30,9 +30,12 @@ object NotificationSocketController {
         if (token.isEmpty() || !KeyStorage.hasValidPairing(appContext)) {
             return
         }
-        // 同一 token 已有连接（含退避重连中）时复用，避免重复建连
+        // 同一 token 已有连接时复用；但重连已耗尽放弃的"僵尸"连接必须销毁重建，
+        // 否则前台期间一次网络抖动后本进程将永远收不到实时通知
         if (socket != null && activeToken == token) {
-            return
+            if (!socket!!.isReconnectExhausted()) {
+                return
+            }
         }
         socket?.disconnect()
 
