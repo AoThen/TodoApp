@@ -27,10 +27,15 @@ object AppConfig {
             .getString(KEY_USER_EMAIL, "") ?: ""
 
     fun setUserEmail(context: Context, email: String) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_USER_EMAIL, email)
-            .apply()
+        try {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_USER_EMAIL, email)
+                .apply()
+        } catch (e: Exception) {
+            // 邮箱仅用于问候语展示，写入失败不影响登录流程
+            android.util.Log.e("AppConfig", "保存用户邮箱失败", e)
+        }
     }
 
     fun setBaseUrl(context: Context, url: String) {
