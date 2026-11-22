@@ -9,7 +9,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "tasks", indices = [
     Index(value = ["userId"]),
-    Index(value = ["status"])
+    Index(value = ["status"]),
+    Index(value = ["localId"]),
+    Index(value = ["serverId"])
 ])
 data class Task(
     @PrimaryKey(autoGenerate = true)
@@ -21,6 +23,8 @@ data class Task(
     val title: String,
     val description: String = "",
     val status: String = "todo",
+    // 勾选完成前的状态：取消完成时恢复，避免 in_progress/archived 状态被抹掉（仅本地使用，不参与同步）
+    val previousStatus: String? = null,
     val priority: String = "medium",
     val dueAt: String? = null,
     val createdAt: String,
@@ -202,8 +206,8 @@ interface NotificationDao {
 
 @Database(
     entities = [Task::class, DeltaChange::class, SyncMeta::class, Conflict::class, Notification::class],
-    version = 3,
-    exportSchema = false
+    version = 4,
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun taskDao(): TaskDao
@@ -217,6 +221,7 @@ abstract class AppDatabase : RoomDatabase() {
         private const val VERSION_1 = 1
         private const val VERSION_2 = 2
         private const val VERSION_3 = 3
+        private const val VERSION_4 = 4
 
         @Volatile
         private var INSTANCE: AppDatabase? = null
@@ -240,6 +245,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(VERSION_3, VERSION_4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Version 3 to 4: tasks 增加勾选前状态列；为 localId/serverId 查询建索引
+                db.execSQL("ALTER TABLE tasks ADD COLUMN previousStatus TEXT DEFAULT NULL")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_localId ON tasks(localId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_serverId ON tasks(serverId)")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -247,7 +261,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { INSTANCE = it }
             }
@@ -259,7 +273,7 @@ abstract class AppDatabase : RoomDatabase() {
                 context.applicationContext,
                 AppDatabase::class.java
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
         }
     }

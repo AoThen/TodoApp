@@ -89,13 +89,25 @@ class TaskRepository(
 
     suspend fun toggleTaskCompletion(task: Task): Result<Unit> {
         return Result.runCatching {
-            val isCompleting = task.status != "done"
-            val updatedTask = task.copy(
-                status = if (isCompleting) "done" else "todo",
-                updatedAt = DateTimeUtils.getCurrentTimestamp(),
-                lastModified = DateTimeUtils.getCurrentTimestamp(),
-                completedAt = if (isCompleting) DateTimeUtils.getCurrentTimestamp() else null
-            )
+            val now = DateTimeUtils.getCurrentTimestamp()
+            val updatedTask = if (task.status != "done") {
+                // 完成：记住勾选前状态，取消完成时恢复，避免 in_progress/archived 被抹掉
+                task.copy(
+                    status = "done",
+                    previousStatus = task.status,
+                    updatedAt = now,
+                    lastModified = now,
+                    completedAt = now
+                )
+            } else {
+                task.copy(
+                    status = task.previousStatus ?: "todo",
+                    previousStatus = null,
+                    updatedAt = now,
+                    lastModified = now,
+                    completedAt = null
+                )
+            }
             taskDao.updateTask(updatedTask)
 
             addToDeltaQueue("update", updatedTask)

@@ -131,6 +131,23 @@ class TaskRepositoryTest {
     }
 
     @Test
+    fun toggleTaskCompletion_restoresIntermediateStatusOnUndo() = runBlocking {
+        val task = insertLocalTask(status = "in_progress")
+
+        repository.toggleTaskCompletion(task)
+        val done = db.taskDao().getTaskByLocalId(task.localId)!!
+        assertEquals("done", done.status)
+        assertEquals("in_progress", done.previousStatus)
+
+        // 取消完成应恢复勾选前的中间状态，而不是退回 todo
+        repository.toggleTaskCompletion(done)
+        val restored = db.taskDao().getTaskByLocalId(task.localId)!!
+        assertEquals("in_progress", restored.status)
+        assertNull(restored.previousStatus)
+        assertNull(restored.completedAt)
+    }
+
+    @Test
     fun updateTask_refreshesTimestamp() = runBlocking {
         val task = insertLocalTask()
         val updated = task.copy(title = "改后的标题")
