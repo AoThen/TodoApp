@@ -92,10 +92,17 @@ describe('ConflictsModal', () => {
       conflicts: [
         { field_name: 'title', server_value: '服务器标题', client_value: '客户端标题' },
         { field_name: 'unknown_field', server_value: 1, client_value: 2 },
+        { field_name: 'description', server_value: null, client_value: null },
       ],
     });
     expect(screen.getByText(/标题：服务器「服务器标题」 vs 本地「客户端标题」/)).toBeInTheDocument();
     expect(screen.getByText(/unknown_field：服务器「1」 vs 本地「2」/)).toBeInTheDocument();
+    expect(screen.getByText(/描述：服务器「」 vs 本地「」/)).toBeInTheDocument();
+  });
+
+  it('空字段级明细数组时不渲染明细区块', () => {
+    renderWithConflict({ ...sampleConflict, conflicts: [] });
+    expect(screen.queryByText(/服务器「/)).not.toBeInTheDocument();
   });
 
   it('无字段级明细时不渲染明细区块', () => {
