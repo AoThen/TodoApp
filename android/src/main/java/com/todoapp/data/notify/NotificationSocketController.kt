@@ -37,7 +37,7 @@ object NotificationSocketController {
         socket?.disconnect()
 
         val userId = JwtUtils.parseUserId(token).toIntOrNull() ?: return
-        val manager = NotificationManager(appContext, userId, scope)
+        val manager = NotificationManager(appContext, userId)
         val ws = NotificationWebSocket(appContext, token)
         ws.onMessage("notification") { json -> handleNotification(manager, json) }
 

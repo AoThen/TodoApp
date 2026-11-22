@@ -54,7 +54,7 @@ class NotificationFragment : Fragment() {
 
         // userId 取自当前登录用户 JWT；导航参数仅作兜底（bottom-nav 入口不会传参）
         userId = resolveUserId()
-        notificationManager = NotificationManager(requireContext(), userId, lifecycleScope)
+        notificationManager = NotificationManager(requireContext(), userId)
 
         setupRecyclerView(view)
         setupButtons(view)
@@ -79,11 +79,6 @@ class NotificationFragment : Fragment() {
         ) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-    }
-
-    override fun onDestroyView() {
-        super.onDestroyView()
-        notificationManager.cleanup()
     }
 
     private fun setupRecyclerView(view: View) {

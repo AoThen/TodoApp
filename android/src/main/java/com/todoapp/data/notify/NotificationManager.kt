@@ -11,14 +11,13 @@ import androidx.core.content.ContextCompat
 import com.todoapp.R
 import com.todoapp.data.local.AppDatabase
 import com.todoapp.data.local.Notification as NotificationEntity
-import kotlinx.coroutines.*
-import java.text.SimpleDateFormat
-import java.util.*
+import com.todoapp.utils.DateTimeUtils
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class NotificationManager(
     private val context: Context,
-    private val userId: Int,
-    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val userId: Int
 ) {
     private val database = AppDatabase.getInstance(context)
     private val notificationManager = NotificationManagerCompat.from(context)
@@ -65,8 +64,7 @@ class NotificationManager(
             title = title,
             content = content,
             priority = priority,
-            createdAt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-                .format(Date()),
+            createdAt = DateTimeUtils.getCurrentTimestamp(),
             expiresAt = null
         )
 
@@ -135,9 +133,7 @@ class NotificationManager(
         try {
             val notification = database.notificationDao().getNotificationById(notificationId)
             if (notification != null) {
-                val readAt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-                    .format(Date())
-                database.notificationDao().markAsRead(notificationId, readAt)
+                database.notificationDao().markAsRead(notificationId, DateTimeUtils.getCurrentTimestamp())
                 // 取消系统通知
                 notificationManager.cancel(notificationId.toInt())
                 return@withContext true
@@ -153,9 +149,7 @@ class NotificationManager(
      * 标记全部已读
      */
     suspend fun markAllAsRead(): Int = withContext(Dispatchers.IO) {
-        val readAt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-            .format(Date())
-        database.notificationDao().markAllAsRead(userId, readAt)
+        database.notificationDao().markAllAsRead(userId, DateTimeUtils.getCurrentTimestamp())
     }
 
     /**
@@ -188,12 +182,5 @@ class NotificationManager(
      */
     suspend fun cleanupExpired(): Int = withContext(Dispatchers.IO) {
         database.notificationDao().deleteExpiredNotifications()
-    }
-
-    /**
-     * 清理所有
-     */
-    fun cleanup() {
-        scope.cancel()
     }
 }

@@ -7,6 +7,8 @@ import java.util.TimeZone
 
 object DateTimeUtils {
     private const val ISO_8601_FORMAT = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+    // 历史数据（通知等）曾以本地时区 "yyyy-MM-dd HH:mm:ss" 入库，解析时兜底兼容
+    private const val LEGACY_LOCAL_FORMAT = "yyyy-MM-dd HH:mm:ss"
     private const val DISPLAY_FORMAT = "MM-dd HH:mm"
     private const val FULL_DISPLAY_FORMAT = "yyyy-MM-dd HH:mm:ss"
 
@@ -40,7 +42,12 @@ object DateTimeUtils {
                 timeZone = TimeZone.getTimeZone("UTC")
             }.parse(timestamp)
         } catch (e: Exception) {
-            null
+            // 兼容历史本地时区格式数据
+            try {
+                SimpleDateFormat(LEGACY_LOCAL_FORMAT, Locale.getDefault()).parse(timestamp)
+            } catch (e2: Exception) {
+                null
+            }
         }
     }
 
