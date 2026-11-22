@@ -80,17 +80,16 @@ async function flushAsync(times = 5) {
 }
 
 describe('websocketService', () => {
-  it('connect 建立 WebSocket 连接并携带加密子协议', async () => {
+  it('connect 建立 WebSocket 连接并通过 query 传递令牌与加密标记', async () => {
     await websocketService.connect('tok-1', true);
     const ws = MockWebSocket.instances[0];
-    expect(ws.url).toBe('ws://localhost:3000/ws');
-    expect(ws.protocols[0]).toBe('todoapp.encryption.tok-1');
+    expect(ws.url).toBe('ws://localhost:3000/ws?token=tok-1&encryption=true');
   });
 
-  it('非加密模式使用 todoapp 子协议', async () => {
+  it('非加密模式 URL 不携带 encryption=true', async () => {
     await websocketService.connect('tok-2', false);
     const ws = MockWebSocket.instances[0];
-    expect(ws.protocols[0]).toBe('todoapp.tok-2');
+    expect(ws.url).toBe('ws://localhost:3000/ws?token=tok-2&encryption=false');
   });
 
   it('onopen 后发送握手，收到匹配握手响应后进入就绪', async () => {

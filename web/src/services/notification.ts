@@ -53,39 +53,40 @@ export class NotificationService {
     if (filters.priority !== undefined) params.append('priority', filters.priority);
 
     const response = await this.apiClient.get<NotificationListResponse>(
-      `/api/v1/notifications?${params.toString()}`
+      `/notifications?${params.toString()}`
     );
+    // axios 响应拦截器已解包 {success, data}，此处直接是业务数据
     return response.data;
   }
 
   async createNotification(data: NotificationCreateRequest): Promise<Notification> {
     const response = await this.apiClient.post<Notification>(
-      '/api/v1/notifications',
+      '/notifications',
       data
     );
     return response.data;
   }
 
   async markAsRead(notificationId: number): Promise<void> {
-    await this.apiClient.patch(`/api/v1/notifications/${notificationId}/read`);
+    await this.apiClient.patch(`/notifications/${notificationId}/read`);
   }
 
   async markAllAsRead(): Promise<{ status: string; marked_count: number }> {
-    const response = await this.apiClient.patch('/api/v1/notifications/read-all');
+    const response = await this.apiClient.patch('/notifications/read-all');
     return response.data;
   }
 
   async deleteNotification(notificationId: number): Promise<void> {
-    await this.apiClient.delete(`/api/v1/notifications/${notificationId}`);
+    await this.apiClient.delete(`/notifications/${notificationId}`);
   }
 
   async clearNotifications(olderThanDays: number = 30): Promise<{ status: string; cleared_count: number }> {
-    const response = await this.apiClient.delete(`/api/v1/notifications/clear?older_than_days=${olderThanDays}`);
+    const response = await this.apiClient.delete(`/notifications/clear?older_than_days=${olderThanDays}`);
     return response.data;
   }
 
   async getUnreadCount(types?: string[]): Promise<{ unread_count: number }> {
-    let url = '/api/v1/notifications/unread-count';
+    let url = '/notifications/unread-count';
     if (types && types.length > 0) {
       url += `?type=${types.join(',')}`;
     }

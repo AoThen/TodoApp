@@ -37,16 +37,16 @@ class WebSocketService {
       this.reconnectAttempts = 0;
     }
 
-    const protocol = enableEncryption ? 'todoapp.encryption' : 'todoapp';
-    
     // Determine WebSocket protocol based on current page protocol
     const isSecure = window.location.protocol === 'https:';
     const wsProtocol = isSecure ? 'wss://' : 'ws://';
     const serverHost = import.meta.env.VITE_WS_HOST || window.location.host;
-    const wsUrl = `${wsProtocol}${serverHost}/ws`;
+    // token 走 query 参数：gorilla Upgrader 未配置子协议协商，
+    // 携带自定义 Sec-WebSocket-Protocol 会被直接拒绝（401）
+    const wsUrl = `${wsProtocol}${serverHost}/ws?token=${encodeURIComponent(token)}&encryption=${enableEncryption}`;
 
     try {
-      this.ws = new WebSocket(wsUrl, [`${protocol}.${token}`]);
+      this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
         console.log('[WebSocket] Connected');

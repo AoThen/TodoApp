@@ -50,8 +50,6 @@ const renderCenter = () =>
 describe('NotificationCenter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // 组件构造 NotificationService 时直接读取 window.apiService.client
-    (window as any).apiService = { client: {} };
   });
 
   it('加载中显示 loading', async () => {

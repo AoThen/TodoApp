@@ -78,6 +78,8 @@ const AppContent: React.FC = () => {
         const token = localStorage.getItem('access_token');
         if (token) {
           setAuthToken(token);
+          // 刷新/二次进入时也要恢复管理员标识，否则管理入口在已登录刷新后消失
+          checkAdminStatus();
         }
 
         // Start auto-sync

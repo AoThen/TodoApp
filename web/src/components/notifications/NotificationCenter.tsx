@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Notification, NotificationService, NotificationFilters } from '../../services/notification';
+import { apiService } from '../../services/api';
 import NotificationItem from './NotificationItem';
 import './NotificationCenter.css';
 
@@ -17,9 +18,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ onClose, onUpda
   const [filters, setFilters] = useState<NotificationFilters>({});
   const [error, setError] = useState<string | null>(null);
 
-  const notificationService = new NotificationService(
-    (window as any).apiService.client
-  );
+  const notificationService = new NotificationService(apiService.getClient());
 
   const loadNotifications = async () => {
     try {
