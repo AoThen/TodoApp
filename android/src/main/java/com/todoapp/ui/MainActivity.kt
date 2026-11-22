@@ -3,6 +3,7 @@ package com.todoapp.ui
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.navigation.NavController
+import androidx.navigation.NavOptions
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.setupActionBarWithNavController
@@ -78,10 +79,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun navigateIfNotCurrent(navController: NavController, destinationId: Int) {
         if (navController.currentDestination?.id != destinationId) {
-            // 清空到 startDestination（含）的旧栈，避免已登录用户按返回键退回配对/登录页
-            navController.navigate(destinationId) {
-                popUpTo(R.id.pairingFragment) { inclusive = true }
-            }
+            // 清空到 startDestination（含）的旧栈，避免已登录用户按返回键退回配对/登录页。
+            // 注意 Navigation 2.7.6 无 navigate(Int, NavOptions) / KDSL 重载，
+            // 需走经典三参 navigate(resId, args, navOptions)
+            val options = NavOptions.Builder()
+                .setPopUpTo(R.id.pairingFragment, true)
+                .build()
+            navController.navigate(destinationId, null, options)
         }
     }
 
