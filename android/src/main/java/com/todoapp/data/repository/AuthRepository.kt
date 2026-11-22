@@ -3,6 +3,7 @@ package com.todoapp.data.repository
 import android.content.Context
 import com.todoapp.data.remote.*
 import com.todoapp.data.remote.RetrofitClient
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -11,7 +12,8 @@ import javax.inject.Singleton
 @Singleton
 class AuthRepository @Inject constructor(
     private val apiService: ApiService,
-    private val context: Context
+    // Hilt 只提供 @ApplicationContext 限定的 Context 绑定，裸 Context 无法注入
+    @ApplicationContext private val context: Context
 ) {
     
     suspend fun login(email: String, password: String): Result<LoginResponse> {

@@ -56,7 +56,7 @@ class ImportExportManager {
         for (t in tasks) {
             val row = listOf(
                 t.title,
-                t.description ?: "",
+                t.description,
                 t.status,
                 t.priority,
                 t.dueAt ?: "",
