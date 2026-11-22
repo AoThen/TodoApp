@@ -8,6 +8,7 @@ import android.net.NetworkRequest
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
@@ -129,8 +130,14 @@ class TaskListViewModel @Inject constructor(
                 )
                 .build()
 
-            WorkManager.getInstance(context).enqueue(workRequest)
-            observeSyncWork(workRequest.id)
+            // 唯一名 + KEEP：手动同步进行中时重复触发不重复入队；
+            // 与周期任务的并发互斥由 Worker 内部的同步锁兜底
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                DeltaSyncWorker.MANUAL_WORK_NAME,
+                ExistingWorkPolicy.KEEP,
+                workRequest
+            )
+            observeSyncWork()
             workRequest.id
         } catch (e: Exception) {
             _syncState.value = SyncState.Error(
@@ -140,14 +147,15 @@ class TaskListViewModel @Inject constructor(
         }
     }
 
-    /** 观察同步任务状态，结束时回写 syncState，避免进度条永久转动 */
-    private fun observeSyncWork(workId: UUID) {
+    /** 观察手动同步任务状态，结束时回写 syncState，避免进度条永久转动 */
+    private fun observeSyncWork() {
         syncObservationJob?.cancel()
         syncObservationJob = viewModelScope.launch {
             WorkManager.getInstance(context)
-                .getWorkInfoByIdFlow(workId)
-                .collect { info ->
-                    when (info?.state) {
+                .getWorkInfosForUniqueWorkFlow(DeltaSyncWorker.MANUAL_WORK_NAME)
+                .collect { infos ->
+                    val info = infos.firstOrNull() ?: return@collect
+                    when (info.state) {
                         WorkInfo.State.SUCCEEDED -> {
                             _syncState.value = SyncState.Success
                             syncObservationJob?.cancel()

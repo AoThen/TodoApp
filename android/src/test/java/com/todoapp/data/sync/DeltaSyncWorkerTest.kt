@@ -120,13 +120,27 @@ class DeltaSyncWorkerTest {
     )
 
     @Test
-    fun expiredToken_failsWithoutCallingApi() {
+    fun expiredToken_proceedsToSyncForAutoRefresh() {
+        // 过期 token 由网络层 401→续期→重试链路统一处理，Worker 不再预检拦截
         every { RetrofitClient.getAccessToken(any()) } returns jwt(
             """{"user_id":"42","token_type":"access","exp":${System.currentTimeMillis() / 1000 - 100}}"""
         )
 
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+    }
+
+    @Test
+    fun unauthorized_failsWithoutRetry() {
+        // 续期失败后的 401 需要重新登录，重试无意义
+        coEvery { mockDeltaDao.getAllDeltas() } returns listOf(pendingDelta)
+        stubSync(
+            Response.error(
+                401,
+                """{"error":"未授权"}""".toResponseBody("application/json".toMediaType())
+            )
+        )
+
         assertEquals(ListenableWorker.Result.failure(), runWorker())
-        coVerify(exactly = 0) { mockApi.sync(any()) }
     }
 
     @Test

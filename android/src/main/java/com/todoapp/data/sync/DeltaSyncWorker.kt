@@ -11,6 +11,7 @@ import com.todoapp.data.remote.SyncRequest
 import com.todoapp.config.SyncConfig
 import com.todoapp.utils.JwtUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -24,16 +25,27 @@ class DeltaSyncWorker(
     private val apiService = RetrofitClient.getApiService(context)
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        // 进程内互斥：手动同步与周期同步并发时，后到者直接跳过，避免重复消费同一批 delta
+        if (!syncMutex.tryLock()) {
+            return@withContext Result.success()
+        }
         try {
-            // 简化验证：只做格式和过期检查
-            // 真正的签名验证由服务器完成
+            doSync()
+        } finally {
+            syncMutex.unlock()
+        }
+    }
+
+    private suspend fun doSync(): Result = withContext(Dispatchers.IO) {
+        try {
+            // 仅拦截未登录/凭据异常；过期 token 放行，
+            // 由网络层的 401→自动续期→重试链路统一处理（预检拦截会导致过期后同步永久失效）
             val token = RetrofitClient.getAccessToken(applicationContext)
             val validationResult = JwtUtils.validateAccessToken(token)
-            
+
             when (validationResult) {
                 is JwtUtils.TokenValidation.Expired -> {
-                    android.util.Log.w("DeltaSyncWorker", "Token expired, cannot sync")
-                    return@withContext Result.failure()
+                    // 放行：网络层会先刷新 token 再重试
                 }
                 is JwtUtils.TokenValidation.InvalidFormat,
                 is JwtUtils.TokenValidation.InvalidType,
@@ -45,7 +57,7 @@ class DeltaSyncWorker(
                     // Token有效，继续同步
                 }
             }
-            
+
             val pendingDeltas = database.deltaQueueDao().getAllDeltas()
             if (pendingDeltas.isEmpty()) {
                 return@withContext Result.success()
@@ -70,6 +82,10 @@ class DeltaSyncWorker(
 
             val syncBody = response.body()
             if (!response.isSuccessful || syncBody == null) {
+                // 401：续期已失败（refresh token 失效），需重新登录，重试无意义
+                if (response.code() == 401) {
+                    return@withContext Result.failure()
+                }
                 return@withContext Result.retry()
             }
             val syncResponse = syncBody
@@ -164,10 +180,15 @@ class DeltaSyncWorker(
                 )
             }
 
+            // 记录服务端最新版本号，供增量拉取与冲突判定使用
+            val maxServerVersion = syncResponse.serverChanges
+                .maxOfOrNull { it.serverVersion }
+                ?: syncMeta?.lastServerVersion ?: 0
             database.syncMetaDao().insertSyncMeta(
                 SyncMeta(
                     userId = userId,
-                    lastSyncAt = syncResponse.lastSyncAt
+                    lastSyncAt = syncResponse.lastSyncAt,
+                    lastServerVersion = maxServerVersion
                 )
             )
 
@@ -198,6 +219,12 @@ class DeltaSyncWorker(
     companion object {
         const val WORK_NAME = "DeltaSyncWorker"
 
+        /** 手动同步专用唯一名：与周期任务分开入队，避免互相顶替 */
+        const val MANUAL_WORK_NAME = "DeltaSyncWorker.manual"
+
+        /** 同一时刻仅允许一个同步任务处理 delta 队列 */
+        private val syncMutex = Mutex()
+
         fun schedule(context: Context) {
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -224,8 +251,18 @@ class DeltaSyncWorker(
 
         fun runOnce(context: Context) {
             val request = OneTimeWorkRequestBuilder<DeltaSyncWorker>()
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build()
+                )
                 .build()
-            WorkManager.getInstance(context).enqueue(request)
+            // 唯一名 + KEEP：手动同步进行中时重复触发直接跳过，避免并发消费队列
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                WORK_NAME,
+                ExistingWorkPolicy.KEEP,
+                request
+            )
         }
     }
 }
