@@ -237,4 +237,39 @@ describe('syncManager', () => {
       vi.useRealTimers();
     }
   });
+
+  it('同步失败时保留增量队列与同步位点，不清除任何数据', async () => {
+    const d1 = makeDelta(1, 'local-a');
+    mockedDb.getPendingDeltas.mockResolvedValue([d1]);
+    mockedSync.mockRejectedValueOnce(new Error('network down'));
+
+    await expect(syncManager.sync()).rejects.toThrow('network down');
+
+    // 失败不得清除队列/回写位点，否则离线数据会丢
+    expect(mockedDb.clearDelta).not.toHaveBeenCalled();
+    expect(mockedDb.updateSyncMeta).not.toHaveBeenCalled();
+    expect(mockedDb.updateTask).not.toHaveBeenCalled();
+  });
+
+  it('同步失败后队列仍在，恢复后可再次同步成功', async () => {
+    const d1 = makeDelta(1, 'local-a');
+    mockedDb.getPendingDeltas.mockResolvedValue([d1]);
+    mockedSync.mockRejectedValueOnce(new Error('offline'));
+    await expect(syncManager.sync()).rejects.toThrow('offline');
+
+    mockedSync.mockResolvedValue({
+      server_changes: [],
+      client_changes: [{ local_id: 'local-a', server_id: 11, op: 'update' }],
+      conflicts: [],
+      last_sync_at: '2026-01-04T00:00:00Z',
+    });
+    await syncManager.sync();
+
+    expect(mockedSync).toHaveBeenCalledTimes(2);
+    expect(mockedDb.clearDelta).toHaveBeenCalledWith(1);
+    expect(mockedDb.updateSyncMeta).toHaveBeenCalledWith('current-user', {
+      last_sync_at: '2026-01-04T00:00:00Z',
+      last_server_version: 0,
+    });
+  });
 });
