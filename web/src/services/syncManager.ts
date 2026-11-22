@@ -51,13 +51,14 @@ class SyncManager {
       const response = await apiService.sync(lastSyncAt, pendingDeltas);
 
       for (const serverChange of response.server_changes) {
-        // 按服务器 ID 匹配本地任务并回写最新版本号（local_id 与 delta ID 属不同命名空间，不可混用）
+        // 按服务器 ID 匹配本地任务并回写同步元数据（版本号等）。
+        // 注意：不回写 title 等内容字段——本地任务可能带有待同步的未确认编辑，
+        // "保留本地"重放依赖这份本地快照，被服务端内容覆盖会导致重放错误数据。
         const localTask = await indexedDBService.getTaskByServerId(serverChange.id);
         if (localTask) {
           await indexedDBService.updateTask(localTask.local_id, {
             server_id: serverChange.id,
             server_version: serverChange.server_version,
-            title: serverChange.title,
             updated_at: serverChange.updated_at,
             is_deleted: serverChange.is_deleted,
           });
@@ -67,6 +68,21 @@ class SyncManager {
       for (const clientChange of response.client_changes) {
         const delta = pendingDeltas.find(d => d.local_id === clientChange.local_id);
         if (delta) {
+          // insert 回执：把服务端 ID/初始版本回写本地任务，
+          // 后续对该任务的修改/删除才能携带正确的 id 与 client_version
+          if (clientChange.op === 'insert' && clientChange.server_id > 0) {
+            const taskLocalId = typeof delta.payload.local_id === 'string' ? delta.payload.local_id : '';
+            if (taskLocalId) {
+              try {
+                await indexedDBService.updateTask(taskLocalId, {
+                  server_id: clientChange.server_id,
+                  server_version: 1,
+                });
+              } catch {
+                // 本地任务已不存在（如撤销），跳过回写
+              }
+            }
+          }
           await indexedDBService.clearDelta(delta.id!);
         }
       }
@@ -124,6 +140,25 @@ class SyncManager {
     });
 
     this.scheduleDebouncedSync();
+  }
+
+  /**
+   * 把服务端任务列表合并进本地 IndexedDB（其他设备产生的任务也因此在本端可编辑）。
+   * 调用方需已完成 id → server_id 的映射。
+   */
+  async reconcileServerTasks(serverTasks: Task[]): Promise<void> {
+    for (const task of serverTasks) {
+      if (task.is_deleted) continue;
+      const normalized: Task = {
+        ...task,
+        local_id: task.local_id || `server-${task.server_id}`,
+      };
+      try {
+        await indexedDBService.upsertTask(normalized);
+      } catch (error) {
+        console.error('合并服务端任务失败:', error);
+      }
+    }
   }
 
   startAutoSync(intervalMs: number = 30000): void {

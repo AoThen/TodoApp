@@ -66,6 +66,29 @@ describe('indexedDBService', () => {
     await expect(indexedDBService.updateTask('ghost-id', { title: 'x' })).rejects.toThrow('Task not found');
   });
 
+  it('upsertTask 新任务直接落库；已存在任务仅合并元数据不覆盖本地内容', async () => {
+    const uid = uniqueUser();
+    const local = await indexedDBService.addTask(makeTask(uid, '本地待同步标题'));
+    await indexedDBService.updateTask(local.local_id, { server_id: 7, server_version: 1 });
+
+    await indexedDBService.upsertTask({
+      ...makeTask(uid, '服务端标题'),
+      local_id: local.local_id,
+      server_id: 7,
+      server_version: 3,
+    } as never);
+
+    const merged = await indexedDBService.getTaskByLocalId(local.local_id);
+    expect(merged?.title).toBe('本地待同步标题'); // 内容不被服务端列表回退
+    expect(merged?.server_version).toBe(3);       // 元数据取最新
+    expect(merged?.server_id).toBe(7);
+
+    const foreign = makeTask(uid, '外来任务');
+    await indexedDBService.upsertTask({ ...foreign, server_id: 99, server_version: 1 } as never);
+    const fetched = await indexedDBService.getTaskByLocalId(foreign.local_id);
+    expect(fetched?.server_id).toBe(99);
+  });
+
   it('deleteTask 软删除：is_deleted 置真但数据保留', async () => {
     const uid = uniqueUser();
     const task = await indexedDBService.addTask(makeTask(uid, '待删除'));
@@ -91,6 +114,14 @@ describe('indexedDBService', () => {
 
     await indexedDBService.clearAllDeltas();
     expect(await indexedDBService.getPendingDeltas()).toHaveLength(0);
+  });
+
+  it('updateDelta 合并指定增量的 payload', async () => {
+    const id = await indexedDBService.enqueueDelta({ local_id: 'l1', op: 'insert', payload: { local_id: 't1', title: '原标题', status: 'todo' }, client_version: 0 });
+
+    await indexedDBService.updateDelta(id, { status: 'done', priority: 'high' });
+    const [delta] = await indexedDBService.getPendingDeltas();
+    expect(delta.payload).toMatchObject({ local_id: 't1', title: '原标题', status: 'done', priority: 'high' });
   });
 
   it('syncMeta 合并更新且保留未覆盖字段', async () => {

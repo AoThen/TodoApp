@@ -37,14 +37,18 @@ const ConflictsModal: React.FC = () => {
           await indexedDBService.deleteConflict(conflict.local_id);
         } else {
           const clientVersion = conflict.server_version ?? localTask.server_version;
-          await syncManager.enqueueLocalChange('update', {
+          const payload: Record<string, unknown> = {
             id: conflict.server_id,
             title: localTask.title,
             description: localTask.description,
             status: localTask.status,
             priority: localTask.priority,
-            due_at: localTask.due_at ?? '',
-          }, clientVersion);
+          };
+          // 仅在本地确有截止时间时携带，避免误清服务端已设置的 due_at
+          if (localTask.due_at) {
+            payload.due_at = localTask.due_at;
+          }
+          await syncManager.enqueueLocalChange('update', payload, clientVersion);
           await indexedDBService.deleteConflict(conflict.local_id);
           toast.success('已保留本地版本');
         }

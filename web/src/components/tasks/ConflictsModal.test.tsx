@@ -128,7 +128,7 @@ describe('ConflictsModal', () => {
     expect(clientVersion).toBe(5);
   });
 
-  it('本地截止日期已清空时显式提交空串以同步清除', async () => {
+  it('本地无截止日期时重放不携带 due_at（避免误清服务端已设置的截止时间）', async () => {
     getTaskByServerId.mockResolvedValue({ ...localTask, due_at: undefined });
     renderWithConflict();
 
@@ -137,7 +137,7 @@ describe('ConflictsModal', () => {
     });
 
     const [, payload] = enqueueLocalChange.mock.calls[0];
-    expect(payload).toMatchObject({ due_at: '' });
+    expect(payload).not.toHaveProperty('due_at');
   });
 
   it('本地数据缺失时提示错误并回退为服务器版本', async () => {

@@ -125,13 +125,34 @@ class IndexedDBService {
   async updateTask(localId: string, updates: Partial<Task>): Promise<void> {
     const task = await this.db!.get('tasks', localId);
     if (!task) throw new Error('Task not found');
-    
+
     const updatedTask: Task = {
       ...task,
       ...updates,
       updated_at: new Date().toISOString(),
     };
     await this.db!.put('tasks', updatedTask);
+  }
+
+  /**
+   * 服务端任务落库（不存在则新建）。
+   * 本地已有记录时仅合并同步元数据并补齐缺失字段，内容以本地为准——
+   * 本地可能带有尚未同步的编辑，服务端列表刷新不得回退这些改动
+   * （与 sync() 中 server_changes 只回写元数据的策略一致）。
+   */
+  async upsertTask(task: Task): Promise<void> {
+    const existing = await this.db!.get('tasks', task.local_id);
+    if (!existing) {
+      await this.db!.put('tasks', task);
+      return;
+    }
+    const merged: Task = {
+      ...task,
+      ...existing,
+      server_id: existing.server_id ?? task.server_id,
+      server_version: Math.max(existing.server_version ?? 0, task.server_version ?? 0),
+    };
+    await this.db!.put('tasks', merged);
   }
 
   async deleteTask(localId: string): Promise<void> {
@@ -170,6 +191,13 @@ class IndexedDBService {
 
   async clearDelta(id: number): Promise<void> {
     await this.db!.delete('delta_queue', id);
+  }
+
+  /** 合并更新队列中指定增量的 payload（用于 insert 未确认前的本地变更合并） */
+  async updateDelta(id: number, payloadPatch: Record<string, unknown>): Promise<void> {
+    const delta = await this.db!.get('delta_queue', id);
+    if (!delta) return;
+    await this.db!.put('delta_queue', { ...delta, payload: { ...delta.payload, ...payloadPatch } });
   }
 
   async clearAllDeltas(): Promise<void> {

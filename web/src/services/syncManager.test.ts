@@ -12,6 +12,7 @@ vi.mock('./indexedDB', () => ({
     getPendingDeltas: vi.fn(),
     getSyncMeta: vi.fn(),
     getTaskByServerId: vi.fn(),
+    upsertTask: vi.fn(),
     updateTask: vi.fn(),
     clearDelta: vi.fn(),
     addConflict: vi.fn(),
@@ -71,7 +72,7 @@ describe('syncManager', () => {
     expect(mockedDb.addConflict).not.toHaveBeenCalled();
   });
 
-  it('服务端变更按 server_id 回写到本地任务并更新版本号', async () => {
+  it('服务端变更按 server_id 回写同步元数据并更新版本号', async () => {
     const d1 = makeDelta(1, 'local-a');
     mockedDb.getPendingDeltas.mockResolvedValue([d1]);
     mockedDb.getTaskByServerId.mockResolvedValue({ local_id: 'local-a', server_id: 99, server_version: 2, title: '旧' } as never);
@@ -88,9 +89,26 @@ describe('syncManager', () => {
     expect(mockedDb.updateTask).toHaveBeenCalledWith('local-a', expect.objectContaining({
       server_id: 99,
       server_version: 3,
-      title: '新标题',
       is_deleted: false,
     }));
+  });
+
+  it('server_changes 回写不覆盖本地内容字段（保留本地待同步编辑）', async () => {
+    const d1 = makeDelta(1, 'local-a');
+    mockedDb.getPendingDeltas.mockResolvedValue([d1]);
+    mockedDb.getTaskByServerId.mockResolvedValue({ local_id: 'local-a', server_id: 99, server_version: 2, title: '本地待同步标题' } as never);
+    mockedSync.mockResolvedValue({
+      server_changes: [{ id: 99, server_version: 3, title: '服务端标题', updated_at: '2026-01-02T01:00:00Z', is_deleted: false }],
+      client_changes: [{ local_id: 'local-a', server_id: 99, op: 'update' }],
+      conflicts: [],
+      last_sync_at: '2026-01-02T01:00:00Z',
+    });
+
+    await syncManager.sync();
+
+    const writeback = mockedDb.updateTask.mock.calls.find(call => call[0] === 'local-a');
+    expect(writeback).toBeTruthy();
+    expect(writeback![1]).not.toHaveProperty('title');
   });
 
   it('冲突写入本地冲突表并通知监听者', async () => {
@@ -140,6 +158,47 @@ describe('syncManager', () => {
     resolveSync({ server_changes: [], client_changes: [{ local_id: 'local-a', server_id: 1, op: 'update' }], conflicts: [], last_sync_at: 'x' });
     await Promise.all([first, second]);
     expect(mockedSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('insert 回执把服务端 ID 与初始版本回写到本地任务', async () => {
+    const insertDelta = {
+      id: 1,
+      local_id: 'delta-1',
+      op: 'insert' as const,
+      payload: { local_id: 'local-new', title: '新任务' },
+      client_version: 1,
+      timestamp: new Date().toISOString(),
+    };
+    mockedDb.getPendingDeltas.mockResolvedValue([insertDelta]);
+    mockedSync.mockResolvedValue({
+      server_changes: [],
+      client_changes: [{ local_id: 'delta-1', server_id: 55, op: 'insert' }],
+      conflicts: [],
+      last_sync_at: '2026-01-03T00:00:00Z',
+    });
+
+    await syncManager.sync();
+
+    expect(mockedDb.updateTask).toHaveBeenCalledWith('local-new', { server_id: 55, server_version: 1 });
+    expect(mockedDb.clearDelta).toHaveBeenCalledWith(1);
+  });
+
+  it('reconcileServerTasks 落库服务端任务，local_id 缺失时按 server_id 合成键，跳过已删除', async () => {
+    await syncManager.reconcileServerTasks([
+      { local_id: 's-1', server_id: 11, server_version: 2, title: 'S1' } as never,
+      { local_id: '', server_id: 12, server_version: 1, title: 'S2' } as never,
+      { local_id: 's-3', server_id: 13, is_deleted: true } as never,
+    ]);
+
+    expect(mockedDb.upsertTask).toHaveBeenCalledTimes(2);
+    expect(mockedDb.upsertTask).toHaveBeenCalledWith(expect.objectContaining({
+      local_id: 's-1',
+      server_id: 11,
+    }));
+    expect(mockedDb.upsertTask).toHaveBeenCalledWith(expect.objectContaining({
+      local_id: 'server-12',
+      server_id: 12,
+    }));
   });
 
   it('enqueueLocalChange 写入增量队列并触发 5 秒防抖同步', async () => {

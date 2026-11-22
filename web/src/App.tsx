@@ -34,6 +34,14 @@ const queryClient = new QueryClient({
   },
 });
 
+// 服务端任务 DTO：主键字段为 id，本地模型使用 server_id
+type ServerTaskDTO = Task & { id?: number };
+
+const toClientTask = (t: ServerTaskDTO): Task => {
+  const { id, ...rest } = t;
+  return { ...rest, server_id: id ?? rest.server_id };
+};
+
 const AppContent: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -119,8 +127,14 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     if (authToken && tasksQuery.data) {
-      setTasks(tasksQuery.data.tasks.filter((t: Task) => !t.is_deleted));
+      // 映射服务端主键并合并进 IndexedDB，
+      // 使其他设备创建的任务在本端也能编辑/删除并参与冲突回放
+      const mapped = tasksQuery.data.tasks
+        .filter((t: ServerTaskDTO) => !t.is_deleted)
+        .map(toClientTask);
+      setTasks(mapped);
       setPagination(tasksQuery.data.pagination || null);
+      syncManager.reconcileServerTasks(mapped).catch(() => {});
     }
   }, [authToken, tasksQuery.data]);
 
@@ -150,6 +164,32 @@ const AppContent: React.FC = () => {
       setIsAdmin(false);
     }
   };
+
+  // 服务端任务变更统一入队入口：入队前从 IndexedDB 读取最新同步元数据
+  // （insert 回执/版本回写只落 IndexedDB，React state 可能滞后一个同步周期）
+  const enqueueTaskChange = useCallback(async (
+    task: Task,
+    op: 'update' | 'delete',
+    payload: Record<string, unknown>
+  ) => {
+    if (!authToken) return;
+    const fresh = await indexedDBService.getTaskByLocalId(task.local_id);
+    const serverId = fresh?.server_id ?? task.server_id;
+    if (!serverId) {
+      // 服务端 ID 未知（如离线创建尚未同步）：把变更合并进待发送的 insert 增量，
+      // 避免产生无法上报的孤儿更新；删除则直接取消该 insert
+      const pending = await indexedDBService.getPendingDeltas();
+      const insertDelta = pending.find(d => d.op === 'insert' && d.payload.local_id === task.local_id);
+      if (!insertDelta?.id) return;
+      if (op === 'delete') {
+        await indexedDBService.clearDelta(insertDelta.id);
+      } else {
+        await indexedDBService.updateDelta(insertDelta.id, payload);
+      }
+      return;
+    }
+    await syncManager.enqueueLocalChange(op, { ...payload, id: serverId }, fresh?.server_version ?? task.server_version);
+  }, [authToken]);
 
   const handleAddTaskFromForm = useCallback(async (title: string) => {
     if (!title.trim()) return;
@@ -198,10 +238,8 @@ const AppContent: React.FC = () => {
     ));
 
     if (authToken) {
-      await syncManager.enqueueLocalChange('update', {
-        id: task.server_id,
-        status: newStatus,
-      }, task.server_version + 1);
+      // client_version 语义：客户端所见版本号（服务端据此做乐观并发校验）
+      await enqueueTaskChange(task, 'update', { status: newStatus });
     }
   };
 
@@ -223,11 +261,8 @@ const AppContent: React.FC = () => {
     ));
     setEditingTask(null);
 
-    if (authToken && editingTask.server_id) {
-      await syncManager.enqueueLocalChange('update', {
-        id: editingTask.server_id,
-        ...updates,
-      }, editingTask.server_version + 1);
+    if (authToken) {
+      await enqueueTaskChange(editingTask, 'update', { ...updates });
     }
   };
 
@@ -240,10 +275,8 @@ const AppContent: React.FC = () => {
     await indexedDBService.deleteTask(task.local_id);
     setTasks(prev => prev.filter(t => t.local_id !== task.local_id));
 
-    if (authToken && task.server_id) {
-      await syncManager.enqueueLocalChange('delete', {
-        id: task.server_id,
-      }, task.server_version + 1);
+    if (authToken) {
+      await enqueueTaskChange(task, 'delete', {});
     }
   };
 
