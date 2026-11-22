@@ -248,21 +248,5 @@ class DeltaSyncWorker(
                 request
             )
         }
-
-        fun runOnce(context: Context) {
-            val request = OneTimeWorkRequestBuilder<DeltaSyncWorker>()
-                .setConstraints(
-                    Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build()
-                )
-                .build()
-            // 唯一名 + KEEP：手动同步进行中时重复触发直接跳过，避免并发消费队列
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                WORK_NAME,
-                ExistingWorkPolicy.KEEP,
-                request
-            )
-        }
     }
 }
