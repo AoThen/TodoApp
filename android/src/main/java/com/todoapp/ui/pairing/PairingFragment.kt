@@ -96,6 +96,8 @@ class PairingFragment : Fragment() {
                     is PairingState.Success -> {
                         binding.progressBar.visibility = View.GONE
                         Toast.makeText(requireContext(), R.string.pairing_success, Toast.LENGTH_SHORT).show()
+                        // 配对成功后接通通知实时通道（未登录时内部会安全跳过）
+                        com.todoapp.data.notify.NotificationSocketController.start(requireContext())
                         val app = requireActivity().application as TodoApp
                         if (app.isUserLoggedIn()) {
                             // 已登录：配对完成后直接进入主界面

@@ -1,6 +1,7 @@
 package com.todoapp.data.sync
 
 import android.content.Context
+import androidx.room.withTransaction
 import androidx.work.*
 import com.todoapp.data.local.AppDatabase
 import com.todoapp.data.local.SyncMeta
@@ -74,80 +75,100 @@ class DeltaSyncWorker(
             }
             val syncResponse = syncBody
 
-            // 先处理已确认的客户端变更：清理 delta 队列，并为 insert 回填服务端 ID
-            for (clientChange in syncResponse.clientChanges) {
-                val delta = pendingDeltas.find { it.localId == clientChange.localId } ?: continue
-                if (clientChange.op == "insert") {
-                    val localTask = database.taskDao().getTaskByLocalId(delta.localId)
-                    if (localTask != null && localTask.serverId == null) {
-                        database.taskDao().updateTask(
-                            localTask.copy(serverId = clientChange.serverId)
-                        )
-                    }
-                }
-                database.deltaQueueDao().deleteDelta(delta.id)
-            }
-
-            // 再应用服务端变更：按 serverId 匹配本地任务；不存在且未删除 → 其他设备新建的任务，插入本地
-            for (serverChange in syncResponse.serverChanges) {
-                val existing = database.taskDao().getTaskByServerId(serverChange.id)
-                if (existing != null) {
-                    if (serverChange.isDeleted) {
-                        database.taskDao().softDeleteTask(existing.id, serverChange.updatedAt)
-                    } else {
-                        database.taskDao().updateTask(
-                            existing.copy(
-                                serverId = serverChange.id,
-                                serverVersion = serverChange.serverVersion,
-                                title = serverChange.title ?: existing.title,
-                                description = serverChange.description ?: existing.description,
-                                status = serverChange.status ?: existing.status,
-                                priority = serverChange.priority ?: existing.priority,
-                                dueAt = serverChange.dueAt ?: existing.dueAt,
-                                updatedAt = serverChange.updatedAt,
-                                isDeleted = false
+            // 本地应用阶段放入同一事务：任一步失败整体回滚，避免出现"部分应用"的中间状态
+            database.withTransaction {
+                // 先处理已确认的客户端变更：清理 delta 队列，并为 insert 回填服务端 ID
+                for (clientChange in syncResponse.clientChanges) {
+                    val delta = pendingDeltas.find { it.localId == clientChange.localId } ?: continue
+                    if (clientChange.op == "insert") {
+                        val localTask = database.taskDao().getTaskByLocalId(delta.localId)
+                        if (localTask != null && localTask.serverId == null) {
+                            database.taskDao().updateTask(
+                                localTask.copy(serverId = clientChange.serverId)
                             )
-                        )
+                        }
                     }
-                } else if (!serverChange.isDeleted) {
-                    val timestamp = serverChange.updatedAt
-                    database.taskDao().insertTask(
-                        Task(
-                            localId = UUID.randomUUID().toString(),
-                            serverId = serverChange.id,
-                            userId = userId,
-                            serverVersion = serverChange.serverVersion,
-                            title = serverChange.title ?: "",
-                            description = serverChange.description ?: "",
-                            status = serverChange.status ?: "todo",
-                            priority = serverChange.priority ?: "medium",
-                            dueAt = serverChange.dueAt,
-                            createdAt = timestamp,
-                            updatedAt = timestamp,
-                            lastModified = timestamp
+                    database.deltaQueueDao().deleteDelta(delta.id)
+                }
+
+                // 再应用服务端变更：按 serverId 匹配本地任务；不存在且未删除 → 其他设备新建的任务，插入本地
+                for (serverChange in syncResponse.serverChanges) {
+                    val existing = database.taskDao().getTaskByServerId(serverChange.id)
+                    if (existing != null) {
+                        if (serverChange.isDeleted) {
+                            database.taskDao().softDeleteTask(existing.id, serverChange.updatedAt)
+                        } else {
+                            database.taskDao().updateTask(
+                                existing.copy(
+                                    serverId = serverChange.id,
+                                    serverVersion = serverChange.serverVersion,
+                                    title = serverChange.title ?: existing.title,
+                                    description = serverChange.description ?: existing.description,
+                                    status = serverChange.status ?: existing.status,
+                                    priority = serverChange.priority ?: existing.priority,
+                                    dueAt = serverChange.dueAt ?: existing.dueAt,
+                                    updatedAt = serverChange.updatedAt,
+                                    isDeleted = false
+                                )
+                            )
+                        }
+                    } else if (!serverChange.isDeleted) {
+                        val timestamp = serverChange.updatedAt
+                        // 幽灵任务合并：本地离线创建的同名未同步任务直接采用服务端身份，避免重复
+                        val ghost = database.taskDao().getUnsyncedTaskByTitle(serverChange.title ?: "")
+                        if (ghost != null) {
+                            database.taskDao().updateTask(
+                                ghost.copy(
+                                    serverId = serverChange.id,
+                                    serverVersion = serverChange.serverVersion,
+                                    description = serverChange.description ?: ghost.description,
+                                    status = serverChange.status ?: ghost.status,
+                                    priority = serverChange.priority ?: ghost.priority,
+                                    dueAt = serverChange.dueAt ?: ghost.dueAt,
+                                    updatedAt = serverChange.updatedAt,
+                                    lastModified = serverChange.updatedAt
+                                )
+                            )
+                        } else {
+                            database.taskDao().insertTask(
+                                Task(
+                                    localId = UUID.randomUUID().toString(),
+                                    serverId = serverChange.id,
+                                    userId = userId,
+                                    serverVersion = serverChange.serverVersion,
+                                    title = serverChange.title ?: "",
+                                    description = serverChange.description ?: "",
+                                    status = serverChange.status ?: "todo",
+                                    priority = serverChange.priority ?: "medium",
+                                    dueAt = serverChange.dueAt,
+                                    createdAt = timestamp,
+                                    updatedAt = timestamp,
+                                    lastModified = timestamp
+                                )
+                            )
+                        }
+                    }
+                }
+
+                for (conflict in syncResponse.conflicts) {
+                    database.conflictDao().insertConflict(
+                        com.todoapp.data.local.Conflict(
+                            localId = conflict.localId,
+                            serverId = conflict.serverId,
+                            reason = conflict.reason,
+                            options = conflict.options?.joinToString(",") ?: "",
+                            createdAt = java.time.Instant.now().toString()
                         )
                     )
                 }
-            }
 
-            for (conflict in syncResponse.conflicts) {
-                database.conflictDao().insertConflict(
-                    com.todoapp.data.local.Conflict(
-                        localId = conflict.localId,
-                        serverId = conflict.serverId,
-                        reason = conflict.reason,
-                        options = conflict.options?.joinToString(",") ?: "",
-                        createdAt = java.time.Instant.now().toString()
+                database.syncMetaDao().insertSyncMeta(
+                    SyncMeta(
+                        userId = userId,
+                        lastSyncAt = syncResponse.lastSyncAt
                     )
                 )
             }
-
-            database.syncMetaDao().insertSyncMeta(
-                SyncMeta(
-                    userId = userId,
-                    lastSyncAt = syncResponse.lastSyncAt
-                )
-            )
 
             Result.success()
         } catch (e: Exception) {

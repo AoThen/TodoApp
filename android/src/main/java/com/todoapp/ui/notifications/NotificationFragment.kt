@@ -52,13 +52,25 @@ class NotificationFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        userId = arguments?.getInt(Config.ARG_USER_ID) ?: 0
+        // userId 取自当前登录用户 JWT；导航参数仅作兜底（bottom-nav 入口不会传参）
+        userId = resolveUserId()
         notificationManager = NotificationManager(requireContext(), userId, lifecycleScope)
 
         setupRecyclerView(view)
         setupButtons(view)
         ensureNotificationPermission()
         loadNotifications()
+    }
+
+    private fun resolveUserId(): Int {
+        val fromToken = try {
+            com.todoapp.utils.JwtUtils.parseUserId(
+                com.todoapp.data.remote.RetrofitClient.getAccessToken(requireContext())
+            ).toIntOrNull()
+        } catch (e: Exception) {
+            null
+        }
+        return fromToken ?: arguments?.getInt(Config.ARG_USER_ID) ?: 0
     }
 
     private fun ensureNotificationPermission() {

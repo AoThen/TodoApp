@@ -79,6 +79,17 @@ android {
     }
 }
 
+// release 构建必须显式指定正式服务端地址，防止把模拟器占位地址打进生产包
+androidComponents {
+    onVariants { variant ->
+        if (variant.buildType == "release" && project.findProperty("SERVER_URL") == null) {
+            throw GradleException(
+                "release 构建需要通过 -PSERVER_URL=https://your-host/api/v1/ 指定正式服务端地址"
+            )
+        }
+    }
+}
+
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")

@@ -175,6 +175,8 @@ class QRScannerActivity : AppCompatActivity() {
                                 // 服务器验证成功
                                 KeyStorage.init()
                                 KeyStorage.saveKey(this@QRScannerActivity, pairingData.key, pairingData.server)
+                                // 同步刷新加密拦截器的内存密钥缓存，使后续请求立即启用加密通道
+                                com.todoapp.data.crypto.CryptoInterceptor.getInstance(applicationContext).refreshKey()
 
                                 // 保存设备信息
                                 val prefs = getSharedPreferences("TodoAppPrefs", MODE_PRIVATE)

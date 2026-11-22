@@ -69,6 +69,8 @@ class LoginFragment : Fragment() {
                         binding.progressBar.visibility = View.GONE
                         binding.btnLogin.isEnabled = true
                         Toast.makeText(requireContext(), R.string.login_success, Toast.LENGTH_SHORT).show()
+                        // 登录成功后接通通知实时通道（未配对时内部会安全跳过）
+                        com.todoapp.data.notify.NotificationSocketController.start(requireContext())
                         val app = requireActivity().application as TodoApp
                         if (app.isUserPaired()) {
                             navigateToMainApp()

@@ -10,6 +10,7 @@ import androidx.navigation.ui.setupWithNavController
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.todoapp.R
 import com.todoapp.TodoApp
+import com.todoapp.data.notify.NotificationSocketController
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -20,9 +21,20 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         setupNavigation()
-        
+
         // Check initial navigation state
         checkInitialNavigation()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // 前台时建立通知实时通道（未登录/未配对时内部会安全跳过）
+        NotificationSocketController.start(this)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        NotificationSocketController.stop()
     }
 
     private fun setupNavigation() {

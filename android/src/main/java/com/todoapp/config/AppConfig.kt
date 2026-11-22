@@ -79,7 +79,8 @@ object SyncConfig {
     const val WRITE_TIMEOUT_SECONDS = 30L
 
     const val PING_INTERVAL_SECONDS = 30
-    const val MAX_RECONNECT_ATTEMPTS = 5
+    const val MAX_RECONNECT_ATTEMPTS = 10
+    const val MAX_RECONNECT_DELAY_MS = 60_000L
 
     const val CONNECTION_CHECK_INTERVAL_SECONDS = 30
     const val CONNECTION_CHECK_TIMEOUT_MS = 5000

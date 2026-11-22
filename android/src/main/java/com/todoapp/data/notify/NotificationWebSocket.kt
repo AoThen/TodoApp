@@ -25,7 +25,7 @@ class NotificationWebSocket(
     private var ready: Boolean = false
     private val messageHandlers = mutableMapOf<String, (JSONObject) -> Unit>()
     private var reconnectAttempts: Int = 0
-    private val maxReconnectAttempts: Int = 5
+    private val maxReconnectAttempts: Int = com.todoapp.config.SyncConfig.MAX_RECONNECT_ATTEMPTS
     private var reconnectJob: Job? = null
     // Store external scope reference to check if we should manage its lifecycle
     private val managedScope: Boolean = externalScope == null
@@ -188,7 +188,11 @@ class NotificationWebSocket(
     private fun handleReconnect() {
         if (reconnectAttempts < maxReconnectAttempts) {
             reconnectAttempts++
-            val delay = (2.0.pow(reconnectAttempts) * 1000).toLong()
+            // 指数退避（2s、4s、8s...），封顶 60s，避免频繁重试耗电
+            val delay = minOf(
+                (2.0.pow(reconnectAttempts) * 1000).toLong(),
+                com.todoapp.config.SyncConfig.MAX_RECONNECT_DELAY_MS
+            )
 
             android.util.Log.d(Config.TAG, "Reconnecting in ${delay}ms... (attempt $reconnectAttempts/$maxReconnectAttempts)")
 

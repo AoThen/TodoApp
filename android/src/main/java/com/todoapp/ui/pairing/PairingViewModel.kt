@@ -71,6 +71,8 @@ class PairingViewModel @Inject constructor() : ViewModel() {
                 }
 
                 KeyStorage.saveKey(context, finalKey, serverUrl)
+                // 同步刷新加密拦截器的内存密钥缓存，使后续请求立即启用加密通道
+                com.todoapp.data.crypto.CryptoInterceptor.getInstance(context.applicationContext).refreshKey()
                 RetrofitClient.setBaseUrl(serverUrl)
                 // 同步更新并持久化到 AppConfig，保证 Hilt 注入的登录/业务通道与同步通道指向同一服务器
                 AppConfig.setBaseUrl(context.applicationContext, serverUrl)
