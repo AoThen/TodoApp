@@ -173,6 +173,49 @@ describe('NotificationCenter', () => {
     await waitFor(() => expect(screen.getByText('暂无通知')).toBeInTheDocument());
   });
 
+  it('取消清空时不调用清空接口', async () => {
+    mockService.getNotifications.mockResolvedValue(makeResponse([makeNotification()]));
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderCenter();
+
+    await waitFor(() => expect(screen.getByText('清空')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('清空'));
+
+    expect(mockService.clearNotifications).not.toHaveBeenCalled();
+    expect(screen.getByText('通知标题')).toBeInTheDocument();
+    confirmSpy.mockRestore();
+  });
+
+  it('全部已读失败时不影响页面渲染', async () => {
+    mockService.getNotifications.mockResolvedValue(makeResponse([makeNotification()]));
+    mockService.markAllAsRead.mockRejectedValue(new Error('network'));
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    renderCenter();
+
+    await waitFor(() => expect(screen.getByText('全部已读')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('全部已读'));
+
+    await waitFor(() => expect(errSpy).toHaveBeenCalled());
+    expect(screen.getByText('通知标题')).toBeInTheDocument();
+    errSpy.mockRestore();
+  });
+
+  it('删除通知失败时列表保持不变', async () => {
+    mockService.getNotifications.mockResolvedValue(makeResponse([makeNotification()]));
+    mockService.deleteNotification.mockRejectedValue(new Error('network'));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    renderCenter();
+
+    await waitFor(() => expect(screen.getByText('通知标题')).toBeInTheDocument());
+    fireEvent.click(screen.getByTitle('删除'));
+
+    await waitFor(() => expect(mockService.deleteNotification).toHaveBeenCalled());
+    await waitFor(() => expect(errSpy).toHaveBeenCalled());
+    expect(screen.getByText('通知标题')).toBeInTheDocument();
+    errSpy.mockRestore();
+  });
+
   it('筛选条件变化时以新筛选重新加载并重置到第一页', async () => {
     mockService.getNotifications.mockResolvedValue(makeResponse([makeNotification()]));
     renderCenter();

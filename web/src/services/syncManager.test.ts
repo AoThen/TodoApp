@@ -272,4 +272,35 @@ describe('syncManager', () => {
       last_server_version: 0,
     });
   });
+
+  it('stopAutoSync 清除尚未触发的防抖同步定时器', async () => {
+    vi.useFakeTimers();
+    try {
+      mockedDb.getPendingDeltas.mockResolvedValue([makeDelta(1, 'local-pending')]);
+      await syncManager.enqueueLocalChange('insert', { title: '待同步' }, 0);
+
+      // 5 秒防抖窗口内主动停止，随后推进时间不应再触发同步
+      syncManager.stopAutoSync();
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(mockedSync).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reconcileServerTasks 单条落库失败不影响其余任务合并', async () => {
+    mockedDb.upsertTask
+      .mockRejectedValueOnce(new Error('db busy'))
+      .mockResolvedValueOnce(undefined);
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await syncManager.reconcileServerTasks([
+      { local_id: 's1', server_id: 21, title: '任务一', is_deleted: false },
+      { local_id: 's2', server_id: 22, title: '任务二', is_deleted: false },
+    ] as never);
+
+    expect(mockedDb.upsertTask).toHaveBeenCalledTimes(2);
+    expect(errSpy).toHaveBeenCalledTimes(1);
+    errSpy.mockRestore();
+  });
 });

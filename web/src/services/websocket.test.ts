@@ -155,6 +155,19 @@ describe('websocketService', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
+  it('onopen 后按周期发送 ping 心跳', async () => {
+    vi.useFakeTimers();
+    await websocketService.connect('tok-ping', false);
+    const ws = MockWebSocket.instances[0];
+    ws.onopen?.();
+    await flushAsync();
+    ws.sent.length = 0;
+
+    await vi.advanceTimersByTimeAsync(30000);
+    const payloads = ws.sent.map(s => JSON.parse(new TextDecoder().decode(s as ArrayBuffer)));
+    expect(payloads.some(p => p.type === 'ping')).toBe(true);
+  });
+
   it('断开后按指数退避重连（2^n * 1000ms），最多 5 次', async () => {
     vi.useFakeTimers();
     await websocketService.connect('tok-7', true);

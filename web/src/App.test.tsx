@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import App from './App';
 
 vi.mock('./services/indexedDB', () => ({
@@ -9,6 +9,9 @@ vi.mock('./services/indexedDB', () => ({
     getPendingDeltas: vi.fn(async () => []),
     clearDelta: vi.fn(async () => undefined),
     updateDelta: vi.fn(async () => undefined),
+    addTask: vi.fn(async () => undefined),
+    updateTask: vi.fn(async () => undefined),
+    deleteTask: vi.fn(async () => undefined),
   },
 }));
 
@@ -77,5 +80,79 @@ describe('App 登录守卫', () => {
     expect(await screen.findByPlaceholderText('输入新任务...')).toBeInTheDocument();
     // 刷新/二次进入时也应恢复管理员标识（getCurrentUser 被调用）
     expect(vi.mocked(apiService.getCurrentUser)).toHaveBeenCalled();
+  });
+
+  it('已登录用户可添加任务', async () => {
+    localStorage.setItem('access_token', 'token-add');
+    render(<App />);
+    const input = await screen.findByPlaceholderText('输入新任务...');
+    fireEvent.change(input, { target: { value: '新任务甲' } });
+    fireEvent.click(screen.getByRole('button', { name: '添加' }));
+
+    const { indexedDBService } = await import('./services/indexedDB');
+    const { syncManager } = await import('./services/syncManager');
+    await waitFor(() => {
+      expect(vi.mocked(indexedDBService.addTask)).toHaveBeenCalled();
+    });
+    expect(vi.mocked(syncManager.enqueueLocalChange)).toHaveBeenCalled();
+  });
+
+  it('已登录用户可完成任务与删除任务', async () => {
+    const { apiService } = await import('./services/api');
+    vi.mocked(apiService.getTasks).mockResolvedValue({
+      tasks: [
+        {
+          id: 1,
+          local_id: 'l1',
+          title: '任务甲',
+          description: '',
+          status: 'todo',
+          priority: 'medium',
+          is_deleted: false,
+          server_version: 1,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+      pagination: { page: 1, pages: 1, total: 1 },
+    } as never);
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    localStorage.setItem('access_token', 'token-ops');
+    render(<App />);
+    expect(await screen.findByText('任务甲')).toBeInTheDocument();
+
+    // 点击状态文本完成任务
+    fireEvent.click(screen.getByText('todo'));
+    const { indexedDBService } = await import('./services/indexedDB');
+    await waitFor(() => {
+      expect(vi.mocked(indexedDBService.updateTask)).toHaveBeenCalled();
+    });
+
+    // 确认后删除任务
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => {
+      expect(vi.mocked(indexedDBService.deleteTask)).toHaveBeenCalled();
+    });
+    expect(confirmSpy).toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it('已登录用户登出后回到登录页', async () => {
+    const { apiService } = await import('./services/api');
+    // 真实 logout 会在 finally 中清除本地令牌，mock 同步该副作用
+    vi.mocked(apiService.logout).mockImplementation(async () => {
+      localStorage.removeItem('access_token');
+    });
+    localStorage.setItem('access_token', 'token-out');
+    render(<App />);
+    expect(await screen.findByPlaceholderText('输入新任务...')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '登出' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /login/i })).toBeInTheDocument();
+    });
+    expect(vi.mocked(apiService.logout)).toHaveBeenCalled();
+    expect(localStorage.getItem('access_token')).toBeNull();
   });
 });

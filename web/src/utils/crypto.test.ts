@@ -62,4 +62,34 @@ describe('crypto (WebCrypto AES-GCM)', () => {
     const ct = await encrypt('storage key works');
     expect(await decrypt(ct)).toBe('storage key works');
   });
+
+  it('localStorage 写入失败时 setDeviceKey 静默降级', () => {
+    const storageSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('quota exceeded');
+    });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(() => setDeviceKey(KEY_HEX)).not.toThrow();
+    expect(errSpy).toHaveBeenCalled();
+    storageSpy.mockRestore();
+    errSpy.mockRestore();
+  });
+
+  it('localStorage 移除失败时 clearDeviceKey 静默降级', () => {
+    const storageSpy = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+      throw new Error('boom');
+    });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(() => clearDeviceKey()).not.toThrow();
+    expect(errSpy).toHaveBeenCalled();
+    storageSpy.mockRestore();
+    errSpy.mockRestore();
+  });
+
+  it('无存储密钥时回退 VITE_DEVICE_KEY 环境变量', async () => {
+    vi.stubEnv('VITE_DEVICE_KEY', KEY_HEX);
+    expect(isEncryptionConfigured()).toBe(true);
+    const ct = await encrypt('env key works');
+    expect(await decrypt(ct)).toBe('env key works');
+    vi.unstubAllEnvs();
+  });
 });

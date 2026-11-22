@@ -100,4 +100,49 @@ describe('adminService 方法', () => {
     await adminService.deleteUser(9);
     expect(mockClient.delete).toHaveBeenCalledWith('/admin/users/9');
   });
+
+  it('updateUser 提交 PATCH 与变更字段', async () => {
+    mockClient.patch.mockResolvedValueOnce({});
+    await adminService.updateUser(3, { role: 'admin' });
+    expect(mockClient.patch).toHaveBeenCalledWith('/admin/users/3', { role: 'admin' });
+  });
+
+  it('unlockUser 调用解锁端点', async () => {
+    mockClient.post.mockResolvedValueOnce({});
+    await adminService.unlockUser(5);
+    expect(mockClient.post).toHaveBeenCalledWith('/admin/users/5/unlock');
+  });
+
+  it('getActionLogs 传递筛选参数并返回解包后的日志', async () => {
+    mockClient.get.mockResolvedValueOnce({ data: [{ id: 1, action: 'delete_user' }] });
+    const logs = await adminService.getActionLogs({
+      email: 'a@b.c',
+      target_email: 't@b.c',
+      action: 'delete_user',
+      start_time: '2026-01-01T00:00:00Z',
+      end_time: '2026-01-31T00:00:00Z',
+      page: 1,
+      page_size: 50,
+    });
+    expect(mockClient.get).toHaveBeenCalledWith(
+      '/admin/logs/actions?email=a%40b.c&target_email=t%40b.c&action=delete_user&start_time=2026-01-01T00%3A00%3A00Z&end_time=2026-01-31T00%3A00%3A00Z&page=1&page_size=50'
+    );
+    expect(logs).toHaveLength(1);
+  });
+
+  it('getActionLogs 无参数时不拼接筛选串', async () => {
+    mockClient.get.mockResolvedValueOnce({ data: [] });
+    await adminService.getActionLogs();
+    expect(mockClient.get).toHaveBeenCalledWith('/admin/logs/actions?');
+  });
+
+  it('setConfig 提交 key/value 与可选描述', async () => {
+    mockClient.put.mockResolvedValueOnce({});
+    await adminService.setConfig('maintenance', 'true', '维护开关');
+    expect(mockClient.put).toHaveBeenCalledWith('/admin/config', {
+      key: 'maintenance',
+      value: 'true',
+      description: '维护开关',
+    });
+  });
 });
