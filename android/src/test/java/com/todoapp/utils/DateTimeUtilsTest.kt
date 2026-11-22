@@ -44,7 +44,7 @@ class DateTimeUtilsTest {
     }
 
     @Test
-    fun `formatForDisplay 输出 MM-dd HH:mm`() {
+    fun `formatForDisplay 输出月日时分格式`() {
         val display = DateTimeUtils.formatForDisplay("2026-01-15T10:30:00Z")
         assertTrue(display.matches(Regex("\\d{2}-\\d{2} \\d{2}:\\d{2}")))
     }
