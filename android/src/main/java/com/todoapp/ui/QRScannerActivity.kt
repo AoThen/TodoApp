@@ -131,9 +131,16 @@ class QRScannerActivity : AppCompatActivity() {
                     return@runOnUiThread
                 }
 
-                // 验证密钥格式
+                // 验证配对凭据格式
                 if (!AesGcmManager.isValidKey(pairingData.key)) {
                     showInvalidKeyDialog()
+                    return@runOnUiThread
+                }
+
+                // 校验通道密钥：旧版二维码无此字段，无法建立加密通道
+                val channelKey = pairingData.encryptionKey
+                if (channelKey == null || !AesGcmManager.isValidKey(channelKey)) {
+                    showOutdatedQRCodeDialog()
                     return@runOnUiThread
                 }
 
@@ -174,7 +181,8 @@ class QRScannerActivity : AppCompatActivity() {
                             if (response.isSuccessful && response.body() != null) {
                                 // 服务器验证成功
                                 KeyStorage.init()
-                                KeyStorage.saveKey(this@QRScannerActivity, pairingData.key, pairingData.server)
+                                // 保存通道加密密钥（而非一次性配对凭据），加密通道才能真正建立
+                                KeyStorage.saveKey(this@QRScannerActivity, channelKey, pairingData.server)
                                 // 同步刷新加密拦截器的内存密钥缓存，使后续请求立即启用加密通道
                                 com.todoapp.data.crypto.CryptoInterceptor.getInstance(applicationContext).refreshKey()
 
@@ -224,7 +232,8 @@ class QRScannerActivity : AppCompatActivity() {
                 type = json.optString("type"),
                 key = json.optString("key"),
                 server = json.optString("server"),
-                expires = json.optLong("expires", 0)
+                expires = json.optLong("expires", 0),
+                encryptionKey = json.optString("encryption_key", "").takeIf { it.isNotEmpty() }
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse pairing data", e)
@@ -326,6 +335,19 @@ class QRScannerActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun showOutdatedQRCodeDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("二维码版本过旧")
+            .setMessage("此二维码缺少通道加密密钥，请在网页端重新生成配对二维码后再试。")
+            .setPositiveButton("重试") { _, _ ->
+                isScanning = true
+            }
+            .setNegativeButton("取消") { _, _ ->
+                finish()
+            }
+            .show()
+    }
+
     private fun showPermissionDeniedDialog() {
         AlertDialog.Builder(this)
             .setTitle("需要相机权限")
@@ -388,7 +410,9 @@ class QRScannerActivity : AppCompatActivity() {
         val type: String,
         val key: String,
         val server: String,
-        val expires: Long
+        val expires: Long,
+        // 通道加密密钥：与一次性配对凭据 key 不同，旧版二维码无此字段
+        val encryptionKey: String? = null
     )
 
     companion object {

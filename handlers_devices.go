@@ -55,6 +55,11 @@ func handleInitPairing(w http.ResponseWriter, r *http.Request) {
 		serverURL = "http://localhost:8080"
 	}
 
+	// 顺带清理该用户已过期的待配对记录，避免 devices 表堆积垃圾行
+	if err := db.DeleteExpiredPendingPairings(userID); err != nil {
+		log.Printf("清理过期待配对记录失败: %v", err)
+	}
+
 	key, expiresAt, err := db.CreatePendingPairing(userID, req.DeviceType)
 	if err != nil {
 		log.Printf("创建配对密钥失败: %v", err)
@@ -63,10 +68,11 @@ func handleInitPairing(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.SuccessResponse(w, map[string]interface{}{
-		"key":        key,
-		"device_id":  req.DeviceID,
-		"server_url": serverURL,
-		"expires_at": expiresAt,
+		"key":            key,
+		"device_id":      req.DeviceID,
+		"server_url":     serverURL,
+		"expires_at":     expiresAt,
+		"encryption_key": os.Getenv("ENCRYPTION_KEY"),
 	}, http.StatusOK)
 }
 
@@ -125,6 +131,23 @@ func handleDevicePairing(w http.ResponseWriter, r *http.Request) {
 	existing, _ := db.ValidatePairingKey(userID, req.Key)
 	if existing {
 		response.ErrorResponse(w, "该设备已配对", http.StatusConflict)
+		return
+	}
+
+	// 校验待配对记录：必须命中本人名下未消费且未过期的配对密钥，防止伪造密钥注册设备
+	pendingExists, pendingExpired, err := db.ValidatePendingPairing(userID, req.Key)
+	if err != nil {
+		log.Printf("查询待配对记录失败: %v", err)
+		response.ErrorResponse(w, "配对校验失败", http.StatusInternalServerError)
+		return
+	}
+	if !pendingExists {
+		response.ErrorResponse(w, "无效的配对密钥，请先在网页端生成配对二维码", http.StatusBadRequest)
+		return
+	}
+	if pendingExpired {
+		_ = db.DeleteExpiredPendingPairings(userID)
+		response.ErrorResponse(w, "配对密钥已过期，请重新生成二维码", http.StatusGone)
 		return
 	}
 

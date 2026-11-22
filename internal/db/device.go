@@ -140,12 +140,41 @@ func CreatePendingPairing(userID int, deviceType string) (string, string, error)
 	expiresAt := time.Now().Add(5 * time.Minute).UTC()
 
 	_, err = DB.Exec(
-		"INSERT INTO devices (user_id, device_type, pairing_key, server_url, paired_at, last_seen, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		userID, deviceType, key, "", time.Now().UTC(), time.Now().UTC(), false,
+		"INSERT INTO devices (user_id, device_type, pairing_key, server_url, paired_at, last_seen, is_active, pairing_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		userID, deviceType, key, "", time.Now().UTC(), time.Now().UTC(), false, expiresAt,
 	)
 	if err != nil {
 		return "", "", err
 	}
 
 	return key, expiresAt.Format(time.RFC3339), nil
+}
+
+// ValidatePendingPairing 校验待配对密钥：返回记录是否存在以及是否已过期。
+// 仅匹配 is_active=0 的待配对行；存量行无过期时间（NULL）时按已过期处理。
+func ValidatePendingPairing(userID int, pairingKey string) (exists bool, expired bool, err error) {
+	var expiresAt sql.NullTime
+	err = DB.QueryRow(
+		"SELECT pairing_expires_at FROM devices WHERE user_id = ? AND pairing_key = ? AND is_active = 0",
+		userID, pairingKey,
+	).Scan(&expiresAt)
+	if err == sql.ErrNoRows {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	if !expiresAt.Valid {
+		return true, true, nil
+	}
+	return true, !time.Now().UTC().Before(expiresAt.Time), nil
+}
+
+// DeleteExpiredPendingPairings 清理指定用户已过期的待配对记录，防止 devices 表堆积垃圾行
+func DeleteExpiredPendingPairings(userID int) error {
+	_, err := DB.Exec(
+		"DELETE FROM devices WHERE user_id = ? AND is_active = 0 AND pairing_expires_at IS NOT NULL AND pairing_expires_at < ?",
+		userID, time.Now().UTC(),
+	)
+	return err
 }

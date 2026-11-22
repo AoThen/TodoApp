@@ -166,7 +166,9 @@ data class InitPairingResponse(
     @SerializedName("key") val key: String,
     @SerializedName("device_id") val deviceId: String,
     @SerializedName("server_url") val serverUrl: String,
-    @SerializedName("expires_at") val expiresAt: String
+    @SerializedName("expires_at") val expiresAt: String,
+    // 通道加密密钥：与一次性配对凭据 key 不同，扫码端用它建立加密通道
+    @SerializedName("encryption_key") val encryptionKey: String? = null
 )
 
 data class Device(

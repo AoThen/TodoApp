@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
+import com.google.gson.annotations.SerializedName
 import com.todoapp.R
 import com.todoapp.config.AppConfig
+import com.todoapp.data.crypto.AesGcmManager
 import com.todoapp.data.crypto.KeyStorage
 import com.todoapp.data.remote.InitPairingRequest
 import com.todoapp.data.remote.RetrofitClient
@@ -21,7 +23,9 @@ data class PairingData(
     val v: Int,
     val key: String?,
     val server: String,
-    val expires: String?
+    val expires: String?,
+    // 通道加密密钥：与一次性配对凭据 key 不同，旧版二维码无此字段
+    @SerializedName("encryption_key") val encryptionKey: String? = null
 )
 
 sealed class PairingState {
@@ -51,16 +55,17 @@ class PairingViewModel @Inject constructor() : ViewModel() {
                     return@launch
                 }
 
-                var finalKey = pairingData.key
+                var channelKey = pairingData.encryptionKey
                 var serverUrl = pairingData.server
 
-                if (finalKey.isNullOrEmpty()) {
+                if (pairingData.key.isNullOrEmpty()) {
+                    // 无配对凭据时由 App 自行发起配对，直接领取通道密钥
                     val response = RetrofitClient.getApiService(context)
                         .initPairing(InitPairingRequest("android", null))
-                    
+
                     val initBody = response.body()
                     if (response.isSuccessful && initBody != null) {
-                        finalKey = initBody.key
+                        channelKey = initBody.encryptionKey
                         serverUrl = initBody.serverUrl
                     } else {
                         _pairingState.value = PairingState.Error(
@@ -70,7 +75,17 @@ class PairingViewModel @Inject constructor() : ViewModel() {
                     }
                 }
 
-                KeyStorage.saveKey(context, finalKey, serverUrl)
+                // 二维码必须携带通道密钥（旧版二维码无此字段），否则加密通道无法建立
+                val resolvedChannelKey = channelKey
+                if (resolvedChannelKey.isNullOrEmpty() || !AesGcmManager.isValidKey(resolvedChannelKey)) {
+                    _pairingState.value = PairingState.Error(
+                        context.getString(R.string.pairing_invalid_qr)
+                    )
+                    return@launch
+                }
+
+                // 保存通道加密密钥（而非一次性配对凭据），加密通道才能真正建立
+                KeyStorage.saveKey(context, resolvedChannelKey, serverUrl)
                 // 同步刷新加密拦截器的内存密钥缓存，使后续请求立即启用加密通道
                 com.todoapp.data.crypto.CryptoInterceptor.getInstance(context.applicationContext).refreshKey()
                 RetrofitClient.setBaseUrl(serverUrl)

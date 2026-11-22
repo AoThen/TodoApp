@@ -299,6 +299,7 @@ class ApiService {
     device_id: string;
     server_url: string;
     expires_at: string;
+    encryption_key: string;
   }> {
     const response = await this.client.post('/devices/pair/init', {
       device_type: deviceType,

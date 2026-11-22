@@ -22,6 +22,7 @@ const pairingInfo = {
   device_id: 'web-device-1',
   server_url: 'http://localhost:8080',
   expires_at: '2026-01-01T10:05:00Z',
+  encryption_key: 'b'.repeat(64),
 };
 
 const makeDevice = (overrides: Record<string, unknown> = {}) => ({
@@ -77,6 +78,7 @@ describe('DevicePairing', () => {
       key: pairingInfo.key,
       server: pairingInfo.server_url,
       expires: pairingInfo.expires_at,
+      encryption_key: pairingInfo.encryption_key,
     });
     expect(screen.getByDisplayValue(pairingInfo.key)).toBeInTheDocument();
   });

@@ -149,6 +149,7 @@ func InitDB(dataSourceName string) error {
             paired_at DATETIME,
             last_seen DATETIME,
             is_active BOOLEAN DEFAULT 1,
+            pairing_expires_at DATETIME,
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );`,
 		`CREATE TABLE IF NOT EXISTS deleted_tasks (
@@ -207,6 +208,10 @@ func InitDB(dataSourceName string) error {
 	// 存量库迁移：conflicts 表补充 user_id 归属列（新库建表语句已包含，此处容错处理重复列）
 	if _, err := DB.Exec("ALTER TABLE conflicts ADD COLUMN user_id INTEGER"); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 		return fmt.Errorf("迁移 conflicts.user_id 失败: %w", err)
+	}
+	// 存量库迁移：devices 表补充配对密钥过期时间列（新库建表语句已包含，此处容错处理重复列）
+	if _, err := DB.Exec("ALTER TABLE devices ADD COLUMN pairing_expires_at DATETIME"); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("迁移 devices.pairing_expires_at 失败: %w", err)
 	}
 	// 初始化任务全文索引（FTS5 不可用时自动退回 LIKE）
 	InitFTS()

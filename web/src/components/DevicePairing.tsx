@@ -9,6 +9,8 @@ interface PairingData {
   key: string;
   server: string;
   expires: string;
+  /** 通道加密密钥（与一次性配对凭据 key 不同），扫码端用它建立加密通道 */
+  encryption_key: string;
 }
 
 interface Device {
@@ -60,7 +62,8 @@ const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
         type: 'todoapp-pairing',
         key: pairingInfo.key,
         server: pairingInfo.server_url,
-        expires: pairingInfo.expires_at
+        expires: pairingInfo.expires_at,
+        encryption_key: pairingInfo.encryption_key
       };
 
       setQrData(JSON.stringify(pairingData));
@@ -70,7 +73,7 @@ const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
         device_type: 'web',
         device_id: pairingInfo.device_id
       });
-      
+
       setPaired(true);
       setSuccess('设备配对成功！');
     } catch (err: any) {
@@ -143,7 +146,8 @@ const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
         type: 'todoapp-pairing',
         key: pairingInfo.key,
         server: pairingInfo.server_url,
-        expires: pairingInfo.expires_at
+        expires: pairingInfo.expires_at,
+        encryption_key: pairingInfo.encryption_key
       };
 
       setQrData(JSON.stringify(pairingData));
