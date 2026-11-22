@@ -138,7 +138,7 @@ jobs:
           name: playwright-report
           path: web/test-results/
 
-  # 注：GitHub 托管 runner 当前无 KVM，且新版 emulator 禁止 x86_64 宿主上的
-  # 软件仿真与跨架构（arm64）仿真，模拟器 instrumented 测试无法在托管 runner 执行。
-  # androidTest 目录下的 instrumented 测试（TaskDao/NotificationDao）可在本地
-  # 有 KVM 的环境运行：./gradlew connectedDebugAndroidTest
+  # 注：GitHub 托管 runner 自带 /dev/kvm（需 udev 规则放行 kvm 节点权限，做法见
+  # android-e2e.yml），androidTest 目录下的 instrumented 测试（TaskDao/NotificationDao）
+  # 由 android-e2e.yml 在托管 runner 的 Android 模拟器上执行：
+  # reactivecircus/android-emulator-runner + ./gradlew connectedDebugAndroidTest

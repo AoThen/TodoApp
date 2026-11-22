@@ -27,12 +27,12 @@ TodoApp is a feature-rich task management application with offline-first archite
 go run main.go                              # Run dev server
 CGO_ENABLED=1 go build -o todoapp-server .  # Production build
 
-# 测试（auth 包 init() 需要 JWT_SECRET 环境变量，至少 32 字符）
-JWT_SECRET=test-secret-key-for-unit-tests-1234567890 go test ./...  # All tests
-JWT_SECRET=test-secret-key-for-unit-tests-1234567890 go test -v ./internal/db  # Specific package
-JWT_SECRET=test-secret-key-for-unit-tests-1234567890 go test -v ./internal/db -run TestUpdateTaskFullOwnership  # Single test
-JWT_SECRET=test-secret-key-for-unit-tests-1234567890 go test -v -run ^TestFuncName$ ./...  # Run specific test function
-JWT_SECRET=test-secret-key-for-unit-tests-1234567890 go test -v -count=1 -race ./...  # Run with race detection
+# 测试（auth 包 init() 需要 JWT_SECRET，集成测试 TestMain 还需要 ENCRYPTION_KEY，缺一即退出）
+JWT_SECRET=test-secret-key-for-unit-tests-1234567890 ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef go test ./...  # All tests
+JWT_SECRET=test-secret-key-for-unit-tests-1234567890 ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef go test -v ./internal/db  # Specific package
+JWT_SECRET=test-secret-key-for-unit-tests-1234567890 ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef go test -v ./internal/db -run TestUpdateTaskFullOwnership  # Single test
+JWT_SECRET=test-secret-key-for-unit-tests-1234567890 ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef go test -v -run ^TestFuncName$ ./...  # Run specific test function
+JWT_SECRET=test-secret-key-for-unit-tests-1234567890 ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef go test -v -count=1 -race ./...  # Run with race detection
 ```
 
 ### Frontend (React/TypeScript)
@@ -49,7 +49,7 @@ cd android
 ./gradlew assembleDebug                     # Debug APK
 ./gradlew assembleRelease                   # Release APK
 ./gradlew test                              # Unit tests（JUnit + Robolectric）
-./gradlew connectedAndroidTest              # Instrumentation tests（需本地 KVM 模拟器环境）
+./gradlew connectedDebugAndroidTest         # Instrumentation tests（需本地 KVM 模拟器环境，CI 由 android-e2e.yml 执行）
 ./gradlew test --tests "*.SomeTest"  # Specific test
 ./gradlew clean                             # Clean build
 ./gradlew lint                              # Android lint
