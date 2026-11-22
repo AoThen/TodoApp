@@ -1,0 +1,69 @@
+name: Android E2E
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  connected-test:
+    name: Android 模拟器 instrumented 测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # GitHub 托管 runner 自带 /dev/kvm，只需 udev 规则放行 kvm 节点权限
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload
+          sudo udevadm trigger --name-match=kvm
+
+      # 启动 Go 后端，模拟器通过 10.0.2.2 访问宿主机 8080 端口
+      - name: Start backend
+        env:
+          JWT_SECRET: test-secret-key-for-unit-tests-1234567890
+          ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+          INITIAL_ADMIN_EMAIL: admin@e2e.local
+          INITIAL_ADMIN_PASSWORD: "E2eAdmin@2026"
+          ENVIRONMENT: development
+          SERVER_PORT: "8080"
+        run: |
+          CGO_ENABLED=1 go build -o todoapp-server .
+          ./todoapp-server &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8080/api/v1/health > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8080/api/v1/health
+
+      - name: Run instrumented tests on emulator
+        uses: reactivecircus/android-emulator-runner@v2.38.0
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          script: cd android && ./gradlew connectedDebugAndroidTest -PSERVER_URL=http://10.0.2.2:8080/api/v1/ --no-daemon
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-e2e-report
+          path: |
+            android/build/reports/androidTests/
+            android/build/outputs/androidTest-results/
