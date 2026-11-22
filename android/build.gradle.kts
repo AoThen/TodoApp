@@ -34,6 +34,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // 临时使用 debug 签名产出"内部验证包"，解决无签名包无法安装的问题。
+            // 正式发布前必须替换为正式证书（经 keystore.properties / CI 环境变量注入，勿提交仓库）；
+            // 内部验证包与正式包签名不同，切换时用户需卸载重装。
+            signingConfig = signingConfigs.getByName("debug")
         }
         debug {
             isMinifyEnabled = false

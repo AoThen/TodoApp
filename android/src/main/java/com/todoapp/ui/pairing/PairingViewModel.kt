@@ -19,11 +19,12 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class PairingData(
-    val type: String,
-    val v: Int,
-    val key: String?,
-    val server: String,
-    val expires: String?,
+    // release 开启混淆后 Gson 反射按字段名匹配会失败，必须显式声明序列化名
+    @SerializedName("type") val type: String,
+    @SerializedName("v") val v: Int,
+    @SerializedName("key") val key: String?,
+    @SerializedName("server") val server: String,
+    @SerializedName("expires") val expires: String?,
     // 通道加密密钥：与一次性配对凭据 key 不同，旧版二维码无此字段
     @SerializedName("encryption_key") val encryptionKey: String? = null
 )
