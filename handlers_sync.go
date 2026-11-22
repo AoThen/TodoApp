@@ -371,6 +371,20 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 		_, _ = sendNotificationToUser(userID, "sync_success", "同步完成", fmt.Sprintf("成功同步 %d 个任务", len(clientChanges)), "normal", wsHub)
 	}
 
+	// ✅ 增量拉取：携带 last_sync_at 游标时，返回该时间及之后服务端变更的任务（含软删除，供对端同步删除）
+	if s.LastSyncAt != "" {
+		if since, parseErr := time.Parse(time.RFC3339, s.LastSyncAt); parseErr == nil {
+			changed, qErr := db.GetTasksChangedSince(userID, since)
+			if qErr != nil {
+				log.Printf("增量拉取失败: %v", qErr)
+			} else {
+				serverChanges = append(serverChanges, changed...)
+			}
+		} else {
+			log.Printf("last_sync_at 游标解析失败，跳过增量拉取: %v", parseErr)
+		}
+	}
+
 	resp := map[string]interface{}{
 		"server_changes": serverChanges,
 		"client_changes": clientChanges,
