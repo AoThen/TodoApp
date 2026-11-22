@@ -81,7 +81,8 @@ class TaskDaoInstrumentedTest {
     @Test
     fun getAllTasks按创建时间倒序且过滤已删除() = runTest {
         dao.insertTask(task("任务A"))
-        dao.insertTask(task("任务B"))
+        // 显式给出更晚的 createdAt：helper 生成的默认时间相同，倒序断言需要可区分的排序键
+        dao.insertTask(task("任务B").copy(createdAt = "2026-01-05T00:00:00Z"))
         val deletedId = dao.insertTask(task("任务C"))
         dao.softDeleteTask(deletedId, "2026-01-02T00:00:00Z")
 
