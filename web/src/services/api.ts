@@ -242,6 +242,12 @@ class ApiService {
       server_id: number;
       reason: string;
       options: string[];
+      /** 字段级冲突明细（服务端智能合并时下发） */
+      conflicts?: Array<{
+        field_name: string;
+        server_value: unknown;
+        client_value: unknown;
+      }>;
       server_version?: number;
     }>;
   }> {

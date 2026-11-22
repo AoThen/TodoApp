@@ -94,6 +94,7 @@ class SyncManager {
           server_id: conflict.server_id,
           reason: conflict.reason,
           options: conflict.options,
+          conflicts: conflict.conflicts,
           server_version: conflict.server_version,
           created_at: new Date().toISOString(),
         });
@@ -102,6 +103,7 @@ class SyncManager {
           server_id: conflict.server_id,
           reason: conflict.reason,
           options: conflict.options,
+          conflicts: conflict.conflicts,
           server_version: conflict.server_version,
           created_at: new Date().toISOString(),
         } as Conflict);

@@ -38,6 +38,12 @@ interface Conflict {
   server_id: number;
   reason: string;
   options: string[];
+  /** 字段级冲突明细（服务端智能合并时下发） */
+  conflicts?: Array<{
+    field_name: string;
+    server_value: unknown;
+    client_value: unknown;
+  }>;
   /** 冲突发生时服务器端任务版本号，用于"保留本地"时作为 CV 重放 */
   server_version?: number;
   created_at: string;

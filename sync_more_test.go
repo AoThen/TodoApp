@@ -125,3 +125,80 @@ func TestSyncBatchChanges(t *testing.T) {
 		t.Errorf("批量同步后应有 30 个任务, got %d", len(tasks))
 	}
 }
+
+// TestSyncPoisonDeltaSkipped 验证指向不存在任务的 delta 被跳过而非阻塞整批同步
+func TestSyncPoisonDeltaSkipped(t *testing.T) {
+	cleanTables(t)
+	changes := []map[string]interface{}{
+		insertChange("local-poison-a", "毒丸前"),
+		{
+			"local_id": "local-poison-bad", "op": "update",
+			"payload":        map[string]interface{}{"id": 999999, "title": "幽灵更新"},
+			"client_version": 1,
+		},
+		insertChange("local-poison-c", "毒丸后"),
+	}
+	resp, out := syncChanges(t, userTok, "", changes)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("含毒丸 delta 的同步应 200 并跳过坏数据, got %d: %v", resp.StatusCode, out)
+	}
+	clientChanges, _ := out["client_changes"].([]interface{})
+	if len(clientChanges) != 3 {
+		t.Fatalf("三条 delta 均应有回执, got %d: %v", len(clientChanges), out)
+	}
+	badReceipt, _ := clientChanges[1].(map[string]interface{})
+	if sid, _ := badReceipt["server_id"].(float64); sid != 0 {
+		t.Errorf("毒丸 delta 回执 server_id 应为 0, got %v", badReceipt)
+	}
+	_, out = doJSON(t, http.MethodGet, "/api/v1/tasks?page=1&page_size=100", userTok, nil)
+	tasks, _ := dataMap(out)["tasks"].([]interface{})
+	if len(tasks) != 2 {
+		t.Errorf("正常 delta 应照常落库（2 条）, got %d: %v", len(tasks), out)
+	}
+}
+
+// TestSyncConflictCarriesOptionsAndFields 验证冲突回执携带解决选项与字段级明细
+func TestSyncConflictCarriesOptionsAndFields(t *testing.T) {
+	cleanTables(t)
+	resp, out := syncChanges(t, userTok, "", []map[string]interface{}{insertChange("local-cf", "冲突标题")})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("insert sync 应 200, got %d: %v", resp.StatusCode, out)
+	}
+	serverChanges, _ := out["server_changes"].([]interface{})
+	if len(serverChanges) != 1 {
+		t.Fatalf("应返回 1 条 server_change: %v", out)
+	}
+	change, _ := serverChanges[0].(map[string]interface{})
+	serverID, _ := change["id"].(float64)
+
+	// 版本号故意落后（服务端已是 1），制造 intelligent_merge 冲突
+	upd := map[string]interface{}{
+		"local_id": "local-cf", "op": "update",
+		"payload":        map[string]interface{}{"id": serverID, "title": "客户端标题"},
+		"client_version": 0,
+	}
+	resp, out = syncChanges(t, userTok, "", []map[string]interface{}{upd})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("冲突更新应 200, got %d: %v", resp.StatusCode, out)
+	}
+	conflicts, _ := out["conflicts"].([]interface{})
+	if len(conflicts) != 1 {
+		t.Fatalf("应产生 1 条冲突, got %d: %v", len(conflicts), out)
+	}
+	c0, _ := conflicts[0].(map[string]interface{})
+	opts, _ := c0["options"].([]interface{})
+	if len(opts) != 3 {
+		t.Errorf("intelligent_merge 冲突应含 3 个解决选项, got %v", c0["options"])
+	}
+	fieldConf, _ := c0["conflicts"].([]interface{})
+	if len(fieldConf) != 1 {
+		t.Fatalf("应含 1 条字段级冲突明细, got %v", c0["conflicts"])
+	}
+	f0, _ := fieldConf[0].(map[string]interface{})
+	if f0["field_name"] != "title" {
+		t.Errorf("字段级冲突应为 title, got %v", f0)
+	}
+	if f0["server_value"] != "冲突标题" || f0["client_value"] != "客户端标题" {
+		t.Errorf("字段级冲突应含双方值, got %v", f0)
+	}
+}

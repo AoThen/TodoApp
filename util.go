@@ -1,17 +1,27 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"log"
 	"strconv"
 	"time"
 )
 
+// randomString 生成密码学安全的随机字符串（hex 编码），用于 local_id 冲突副本后缀
 func randomString(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+	b := make([]byte, (length+1)/2)
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand 极少失败；降级为时间戳源，保证功能不中断
+		log.Printf("生成随机数失败，降级为时间戳源: %v", err)
+		const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+		out := make([]byte, length)
+		for i := range out {
+			out[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+		}
+		return string(out)
 	}
-	return string(b)
+	return hex.EncodeToString(b)[:length]
 }
 
 // ============ Admin Handlers ============

@@ -3,6 +3,15 @@ import { toast } from 'react-toastify';
 import { syncManager } from '../../services/syncManager';
 import { indexedDBService } from '../../services/indexedDB';
 
+const FIELD_LABELS: Record<string, string> = {
+  title: '标题',
+  description: '描述',
+  status: '状态',
+  priority: '优先级',
+};
+
+const fieldNameLabel = (name: string) => FIELD_LABELS[name] || name;
+
 const ConflictsModal: React.FC = () => {
   const [conflicts, setConflicts] = useState<any[]>([]);
   const [show, setShow] = useState(false);
@@ -84,6 +93,15 @@ const ConflictsModal: React.FC = () => {
               <div key={index} className="conflict-item">
                 <p><strong>冲突 #{index + 1}</strong></p>
                 <p>原因: {conflict.reason}</p>
+                {Array.isArray(conflict.conflicts) && conflict.conflicts.length > 0 && (
+                  <div className="conflict-fields">
+                    {conflict.conflicts.map((field: { field_name: string; server_value: unknown; client_value: unknown }, fieldIndex: number) => (
+                      <p key={fieldIndex}>
+                        {fieldNameLabel(field.field_name)}：服务器「{String(field.server_value ?? '')}」 vs 本地「{String(field.client_value ?? '')}」
+                      </p>
+                    ))}
+                  </div>
+                )}
                 <div className="conflict-options">
                   <button onClick={() => resolveConflict(index, 'local')}>保留本地</button>
                   <button onClick={() => resolveConflict(index, 'server')}>使用服务器</button>

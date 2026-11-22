@@ -15,6 +15,7 @@ import (
 import (
 	"todoapp/internal/db"
 	"todoapp/internal/response"
+	"todoapp/internal/types"
 	wsclient "todoapp/internal/websocket"
 )
 
@@ -23,6 +24,14 @@ type conflictRecord struct {
 	localID  string
 	serverID int64
 	reason   string
+}
+
+// conflictOptions 返回冲突解决选项；删除/重复插入场景没有"合并"语义
+func conflictOptions(includeMerge bool) []types.ConflictResolution {
+	if includeMerge {
+		return []types.ConflictResolution{types.ConflictKeepServer, types.ConflictKeepClient, types.ConflictMerge}
+	}
+	return []types.ConflictResolution{types.ConflictKeepServer, types.ConflictKeepClient}
 }
 
 func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
@@ -131,6 +140,7 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 							"server_id":      existingID,
 							"reason":         "duplicate_insert",
 							"server_version": existVer,
+							"options":        conflictOptions(false),
 						})
 					}
 				} else {
@@ -174,6 +184,14 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 				oldVer, serverTitle, serverDesc, serverStatus, _, queryErr := db.GetTaskForSync(tx, userID, id)
 
 				if queryErr != nil {
+					if errors.Is(queryErr, sql.ErrNoRows) {
+						// 任务不存在（从未同步或已硬删）：回执 server_id=0 供客户端清理滞留 delta，不阻塞同批其他变更
+						log.Printf("跳过不存在的任务 delta: local_id=%s id=%v", c.LocalID, idVal)
+						clientChanges = append(clientChanges, map[string]interface{}{
+							"local_id": c.LocalID, "server_id": int64(0), "op": op,
+						})
+						continue
+					}
 					syncFail("查询任务失败", queryErr)
 					return
 				}
@@ -184,16 +202,20 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 				if c.CV != oldVer {
 					log.Printf("检测到冲突: client_version=%d, server_version=%d", c.CV, oldVer)
 
-					// 获取客户端更新
+					// 获取客户端更新（记录字段是否显式出现在 delta 中，用于字段级冲突明细）
 					clientTitle := ""
 					clientDesc := ""
 					clientStatus := serverStatus
+					hasTitle := false
+					hasDesc := false
 
 					if v, ok := c.Payload["title"].(string); ok {
 						clientTitle = v
+						hasTitle = true
 					}
 					if v, ok := c.Payload["description"].(string); ok {
 						clientDesc = v
+						hasDesc = true
 					}
 					if v, ok := c.Payload["status"].(string); ok {
 						clientStatus = v
@@ -225,6 +247,18 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 							"local_id": c.LocalID, "server_id": id, "op": "update",
 						})
 
+						// 字段级冲突明细：仅列出客户端显式修改且与服务端不同的字段
+						fieldConflicts := []types.FieldLevelConflict{}
+						if hasTitle && clientTitle != serverTitle {
+							fieldConflicts = append(fieldConflicts, types.FieldLevelConflict{FieldName: "title", ServerValue: serverTitle, ClientValue: clientTitle})
+						}
+						if hasDesc && clientDesc != serverDesc {
+							fieldConflicts = append(fieldConflicts, types.FieldLevelConflict{FieldName: "description", ServerValue: serverDesc, ClientValue: clientDesc})
+						}
+						if clientStatus != serverStatus {
+							fieldConflicts = append(fieldConflicts, types.FieldLevelConflict{FieldName: "status", ServerValue: serverStatus, ClientValue: clientStatus})
+						}
+
 						// 记录冲突（事务提交后落库）
 						pendingConflicts = append(pendingConflicts, conflictRecord{localID: c.LocalID, serverID: id, reason: "intelligent_merge"})
 						conflicts = append(conflicts, map[string]interface{}{
@@ -233,6 +267,8 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 							"reason":         "intelligent_merge",
 							"server_version": newVer,
 							"resolution":     "智能合并",
+							"options":        conflictOptions(true),
+							"conflicts":      fieldConflicts,
 							"merged_data": map[string]interface{}{
 								"title":       mergedTitle,
 								"description": mergedDesc,
@@ -289,6 +325,14 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 				oldVer, _, _, _, isDeleted, queryErr := db.GetTaskForSync(tx, userID, id)
 
 				if queryErr != nil {
+					if errors.Is(queryErr, sql.ErrNoRows) {
+						// 任务不存在（从未同步或已硬删）：回执 server_id=0 供客户端清理滞留 delta，不阻塞同批其他变更
+						log.Printf("跳过不存在的任务删除 delta: local_id=%s id=%v", c.LocalID, idVal)
+						clientChanges = append(clientChanges, map[string]interface{}{
+							"local_id": c.LocalID, "server_id": int64(0), "op": op,
+						})
+						continue
+					}
 					syncFail("查询任务失败", queryErr)
 					return
 				}
@@ -324,6 +368,7 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 								"server_id":      id,
 								"reason":         "delete_while_modified",
 								"server_version": newVer,
+								"options":        conflictOptions(false),
 							})
 						}
 					}
