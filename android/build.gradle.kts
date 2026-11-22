@@ -79,21 +79,22 @@ android {
     }
 }
 
-// release 构建必须显式指定正式服务端地址，防止把模拟器占位地址打进生产包
-// 注意：不能在 onVariants 配置阶段抛错（assembleDebug 也会实例化 release 变体）；
-// ./gradlew test 会聚合 testReleaseUnitTest，也不能按名称笼统匹配 Release，
-// 这里只拦截真正产出 release 制品的任务
-gradle.taskGraph.whenReady {
-    val buildsReleaseArtifact = allTasks.any {
-        it.name.startsWith("assembleRelease") ||
-            it.name.startsWith("bundleRelease") ||
-            it.name.startsWith("connectedRelease") ||
-            it.name == "lintVitalRelease"
-    }
-    if (buildsReleaseArtifact && project.findProperty("SERVER_URL") == null) {
-        throw GradleException(
-            "release 构建需要通过 -PSERVER_URL=https://your-host/api/v1/ 指定正式服务端地址"
-        )
+// release 构建必须显式指定正式服务端地址，防止把模拟器占位地址打进生产包。
+// 校验锚定在 release 制品任务的 doFirst：只有真正执行 assembleRelease 等任务时才检查，
+// 不影响 assembleDebug、./gradlew test（含 testReleaseUnitTest）等其它任务
+afterEvaluate {
+    tasks.matching {
+        it.name == "assembleRelease" ||
+            it.name == "bundleRelease" ||
+            it.name == "connectedReleaseAndroidTest"
+    }.configureEach {
+        doFirst {
+            if (project.findProperty("SERVER_URL") == null) {
+                throw GradleException(
+                    "release 构建需要通过 -PSERVER_URL=https://your-host/api/v1/ 指定正式服务端地址"
+                )
+            }
+        }
     }
 }
 
