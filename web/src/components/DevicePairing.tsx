@@ -8,7 +8,8 @@ interface PairingData {
   type: string;
   key: string;
   server: string;
-  expires: string;
+  /** 过期时间：epoch 秒（Android 端按 optLong 解析） */
+  expires: number;
   /** 通道加密密钥（与一次性配对凭据 key 不同），扫码端用它建立加密通道 */
   encryption_key: string;
 }
@@ -62,7 +63,7 @@ const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
         type: 'todoapp-pairing',
         key: pairingInfo.key,
         server: pairingInfo.server_url,
-        expires: pairingInfo.expires_at,
+        expires: Math.floor(new Date(pairingInfo.expires_at).getTime() / 1000),
         encryption_key: pairingInfo.encryption_key
       };
 
@@ -146,7 +147,7 @@ const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
         type: 'todoapp-pairing',
         key: pairingInfo.key,
         server: pairingInfo.server_url,
-        expires: pairingInfo.expires_at,
+        expires: Math.floor(new Date(pairingInfo.expires_at).getTime() / 1000),
         encryption_key: pairingInfo.encryption_key
       };
 

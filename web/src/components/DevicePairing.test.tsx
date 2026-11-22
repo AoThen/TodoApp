@@ -77,7 +77,7 @@ describe('DevicePairing', () => {
       type: 'todoapp-pairing',
       key: pairingInfo.key,
       server: pairingInfo.server_url,
-      expires: pairingInfo.expires_at,
+      expires: Math.floor(new Date(pairingInfo.expires_at).getTime() / 1000),
       encryption_key: pairingInfo.encryption_key,
     });
     expect(screen.getByDisplayValue(pairingInfo.key)).toBeInTheDocument();

@@ -170,10 +170,11 @@ func ValidatePendingPairing(userID int, pairingKey string) (exists bool, expired
 	return true, !time.Now().UTC().Before(expiresAt.Time), nil
 }
 
-// DeleteExpiredPendingPairings 清理指定用户已过期的待配对记录，防止 devices 表堆积垃圾行
+// DeleteExpiredPendingPairings 清理指定用户已过期的待配对记录，防止 devices 表堆积垃圾行。
+// 存量行无过期时间（NULL）时按已过期处理，与 ValidatePendingPairing 的校验语义一致。
 func DeleteExpiredPendingPairings(userID int) error {
 	_, err := DB.Exec(
-		"DELETE FROM devices WHERE user_id = ? AND is_active = 0 AND pairing_expires_at IS NOT NULL AND pairing_expires_at < ?",
+		"DELETE FROM devices WHERE user_id = ? AND is_active = 0 AND (pairing_expires_at IS NULL OR pairing_expires_at < ?)",
 		userID, time.Now().UTC(),
 	)
 	return err

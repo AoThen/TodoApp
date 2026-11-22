@@ -56,4 +56,22 @@ func TestPairingExpiryLifecycle(t *testing.T) {
 	if exists, _, _ = ValidatePendingPairing(userID, "forged-key"); exists {
 		t.Error("伪造密钥不应通过校验")
 	}
+
+	// 存量行无过期时间（NULL）：按已过期处理，且应被清理
+	if _, err := DB.Exec(
+		"INSERT INTO devices (user_id, device_type, pairing_key, server_url, paired_at, last_seen, is_active) VALUES (?, 'web', 'legacy-key', '', ?, ?, 0)",
+		time.Now().UTC(), time.Now().UTC(),
+	); err != nil {
+		t.Fatalf("插入存量待配对行失败: %v", err)
+	}
+	exists, expired, err = ValidatePendingPairing(userID, "legacy-key")
+	if err != nil || !exists || !expired {
+		t.Fatalf("无过期时间的存量行应按已过期处理，got exists=%v expired=%v err=%v", exists, expired, err)
+	}
+	if err := DeleteExpiredPendingPairings(userID); err != nil {
+		t.Fatalf("清理存量行失败: %v", err)
+	}
+	if exists, _, _ = ValidatePendingPairing(userID, "legacy-key"); exists {
+		t.Error("无过期时间的存量行应被清理")
+	}
 }
