@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/crypto/bcrypt"
@@ -310,6 +311,77 @@ func ValidateRefreshToken(userID string, token string) (bool, error) {
 func RevokeRefreshToken(userID string, token string) error {
 	_, err := DB.Exec("UPDATE tokens SET revoked = 1 WHERE user_id = ? AND refresh_token = ?", userID, token)
 	return err
+}
+
+// ConsumeRefreshToken 原子校验并撤销刷新令牌（一次性认领）。
+// 只有未撤销且未过期的令牌会被置为 revoked=1 并返回 true；
+// 并发重放同一令牌时仅有一个请求能认领成功。
+func ConsumeRefreshToken(userID string, token string) (bool, error) {
+	result, err := DB.Exec(
+		"UPDATE tokens SET revoked = 1 WHERE user_id = ? AND refresh_token = ? AND revoked = 0 AND expires_at > ?",
+		userID, token, time.Now(),
+	)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return rows == 1, nil
+}
+
+// GetTasksChangedSince 返回用户在指定游标之后发生变更的任务（含软删除），用于增量同步拉取。
+// 变更时间取 COALESCE(last_modified, updated_at)，按秒级精度比较。
+// 使用 >=：与游标同秒内提交的任务也会随下次增量下发；客户端按 server_id
+// 幂等回放 server_changes，重复下发无副作用，可彻底消除 <1s 的漏拉窗口。
+func GetTasksChangedSince(userID int, since time.Time) ([]map[string]interface{}, error) {
+	sinceStr := since.UTC().Format("2006-01-02 15:04:05")
+	rows, err := DB.Query(`
+		SELECT id, COALESCE(local_id,''), server_version, title, COALESCE(description,''),
+		       status, COALESCE(priority,'medium'), is_deleted, updated_at, last_modified
+		FROM tasks
+		WHERE user_id = ? AND strftime('%s', COALESCE(last_modified, updated_at)) >= strftime('%s', ?)
+		ORDER BY COALESCE(last_modified, updated_at) ASC
+	`, userID, sinceStr)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []map[string]interface{}
+	for rows.Next() {
+		var id int64
+		var localID, title, description, status, priority string
+		var serverVersion int
+		var isDeleted bool
+		var updatedAt, lastModified sql.NullTime
+		if err := rows.Scan(&id, &localID, &serverVersion, &title, &description, &status, &priority, &isDeleted, &updatedAt, &lastModified); err != nil {
+			return nil, err
+		}
+		results = append(results, map[string]interface{}{
+			"id":             id,
+			"local_id":       localID,
+			"server_version": serverVersion,
+			"title":          title,
+			"description":    description,
+			"status":         status,
+			"priority":       priority,
+			"is_deleted":     isDeleted,
+			"updated_at":     nullTimeRFC3339(updatedAt),
+			"last_modified":  nullTimeRFC3339(lastModified),
+			"op":             "update",
+		})
+	}
+	return results, nil
+}
+
+// nullTimeRFC3339 将可空时间列格式化为 RFC3339，NULL 返回空串
+func nullTimeRFC3339(t sql.NullTime) string {
+	if !t.Valid {
+		return ""
+	}
+	return t.Time.UTC().Format(time.RFC3339)
 }
 
 // IsAccountLocked 检查账户是否被锁定
@@ -726,13 +798,25 @@ func UpdateTaskFull(taskID int64, userID int, title, description, status, priori
 	return nil
 }
 
-// DeleteTask 删除任务（软删除）
+// DeleteTask 删除任务（软删除），并写入回收站记录以支持撤销恢复（与批量删除行为一致）
 func DeleteTask(taskID int64, userID int) error {
 	now := time.Now().UTC()
-	result, err := DB.Exec(`
+	tx, err := DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		} else {
+			_ = tx.Commit()
+		}
+	}()
+
+	result, err := tx.Exec(`
 		UPDATE tasks
 		SET is_deleted = 1, updated_at = ?, last_modified = ?
-		WHERE id = ? AND user_id = ?
+		WHERE id = ? AND user_id = ? AND is_deleted = 0
 	`, now, now, taskID, userID)
 	if err != nil {
 		return err
@@ -742,9 +826,43 @@ func DeleteTask(taskID int64, userID int) error {
 		return err
 	}
 	if rows == 0 {
-		return fmt.Errorf("任务不存在")
+		err = fmt.Errorf("任务不存在")
+		return err
 	}
-	return nil
+
+	// 写入回收站记录，供 30 秒内撤销恢复使用
+	var localID, title, description, status, priority, dueAt, createdAt string
+	var serverVersion int
+	err = tx.QueryRow(
+		"SELECT COALESCE(local_id,''), server_version, title, COALESCE(description,''), status, COALESCE(priority,'medium'), COALESCE(due_at,''), COALESCE(created_at,'') FROM tasks WHERE id = ?",
+		taskID,
+	).Scan(&localID, &serverVersion, &title, &description, &status, &priority, &dueAt, &createdAt)
+	if err != nil {
+		return err
+	}
+
+	taskMap := map[string]interface{}{
+		"id":             taskID,
+		"local_id":       localID,
+		"server_version": serverVersion,
+		"title":          title,
+		"description":    description,
+		"status":         status,
+		"priority":       priority,
+		"due_at":         dueAt,
+		"created_at":     createdAt,
+	}
+	taskJSON, err := json.Marshal(taskMap)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(
+		"INSERT INTO deleted_tasks (task_id, user_id, task_data, deleted_at) VALUES (?, ?, ?, ?)",
+		taskID, userID, string(taskJSON), now,
+	); err != nil {
+		return err
+	}
+	return err
 }
 
 // CleanupExpiredTokens 清理过期的令牌
@@ -950,7 +1068,7 @@ func UpdateUser(userID int64, email, role string) error {
 	return err
 }
 
-// ResetUserPassword 重置用户密码
+// ResetUserPassword 重置用户密码，并撤销该用户全部刷新令牌（旧令牌立即失效）
 func ResetUserPassword(userID int64, newPassword string) error {
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), 12)
 	if err != nil {
@@ -958,16 +1076,37 @@ func ResetUserPassword(userID int64, newPassword string) error {
 	}
 
 	now := time.Now().UTC()
-	_, err = DB.Exec("UPDATE users SET password_hash = ?, must_change_password = ?, updated_at = ? WHERE id = ?",
-		string(hash), true, now, userID)
+	tx, err := DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		} else {
+			_ = tx.Commit()
+		}
+	}()
+
+	if _, err = tx.Exec("UPDATE users SET password_hash = ?, must_change_password = ?, updated_at = ? WHERE id = ?",
+		string(hash), true, now, userID); err != nil {
+		return err
+	}
+	// 密码重置后旧刷新令牌全部作废，防止凭据泄露后持续换发访问令牌
+	if _, err = tx.Exec("DELETE FROM tokens WHERE user_id = ?", userID); err != nil {
+		return err
+	}
 	return err
 }
 
 // LockUserAccount 锁定用户账户
 func LockUserAccount(userID int64, durationMinutes int) error {
+	// 锁定时间由 Go 侧计算：SQLite 的 datetime modifier 不支持 %d 字面量，
+	// 原实现会把无效 modifier 传入 datetime() 得到 NULL，导致锁定从未生效
+	lockedUntil := time.Now().UTC().Add(time.Duration(durationMinutes) * time.Minute)
 	_, err := DB.Exec(
-		"UPDATE users SET locked_until = datetime('now', '+%d minutes'), updated_at = ? WHERE id = ?",
-		durationMinutes, time.Now().UTC(), userID,
+		"UPDATE users SET locked_until = ?, updated_at = ? WHERE id = ?",
+		lockedUntil, time.Now().UTC(), userID,
 	)
 	return err
 }
@@ -979,7 +1118,7 @@ func UnlockUserAccount(userID int64) error {
 	return err
 }
 
-// DeleteUser 删除用户（软删除）
+// DeleteUser 删除用户（硬删除），并级联清理其名下业务数据（admin_logs 保留用于审计）
 func DeleteUser(userID int64) error {
 	// 检查是否为最后一个管理员
 	var adminCount int
@@ -998,7 +1137,42 @@ func DeleteUser(userID int64) error {
 		return fmt.Errorf("无法删除最后一个管理员")
 	}
 
-	_, err = DB.Exec("DELETE FROM users WHERE id = ?", userID)
+	var email string
+	if err := DB.QueryRow("SELECT email FROM users WHERE id = ?", userID).Scan(&email); err != nil {
+		return err
+	}
+
+	tx, err := DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		} else {
+			_ = tx.Commit()
+		}
+	}()
+
+	stmts := []struct {
+		query string
+		arg   interface{}
+	}{
+		{"DELETE FROM sync_meta WHERE user_id = ?", userID},
+		{"DELETE FROM conflicts WHERE user_id = ?", userID},
+		{"DELETE FROM deleted_tasks WHERE user_id = ?", userID},
+		{"DELETE FROM tasks WHERE user_id = ?", userID},
+		{"DELETE FROM notifications WHERE user_id = ?", userID},
+		{"DELETE FROM devices WHERE user_id = ?", userID},
+		{"DELETE FROM tokens WHERE user_id = ?", userID},
+		{"DELETE FROM login_logs WHERE email = ?", email},
+		{"DELETE FROM users WHERE id = ?", userID},
+	}
+	for _, s := range stmts {
+		if _, err = tx.Exec(s.query, s.arg); err != nil {
+			return err
+		}
+	}
 	return err
 }
 

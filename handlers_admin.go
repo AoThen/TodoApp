@@ -311,7 +311,11 @@ func handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 
 	targetEmail, _ := db.GetUserEmail(userID)
 	if err := db.DeleteUser(userID); err != nil {
-		response.ErrorResponse(w, err.Error(), http.StatusBadRequest)
+		if errors.Is(err, sql.ErrNoRows) {
+			response.ErrorResponse(w, "用户不存在", http.StatusNotFound)
+			return
+		}
+		response.ErrorResponse(w, "删除用户失败", http.StatusBadRequest)
 		return
 	}
 

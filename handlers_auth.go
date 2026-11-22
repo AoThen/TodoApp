@@ -137,9 +137,9 @@ func handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 验证数据库中的令牌
-	valid, err := db.ValidateRefreshToken(claims.UserID, c.Value)
-	if err != nil || !valid {
+	// 原子认领刷新令牌：校验 + 撤销一步完成，防止并发重放同一令牌多次换发
+	claimed, err := db.ConsumeRefreshToken(claims.UserID, c.Value)
+	if err != nil || !claimed {
 		response.ErrorResponse(w, "无效的刷新令牌", http.StatusUnauthorized)
 		return
 	}
@@ -157,11 +157,6 @@ func handleRefresh(w http.ResponseWriter, r *http.Request) {
 		log.Printf("生成刷新令牌失败: %v", err)
 		response.ErrorResponse(w, "内部服务器错误", http.StatusInternalServerError)
 		return
-	}
-
-	// 撤销旧令牌并保存新令牌
-	if err := db.RevokeRefreshToken(claims.UserID, c.Value); err != nil {
-		log.Printf("撤销刷新令牌失败: %v", err)
 	}
 
 	expiresAt := time.Now().Add(7 * 24 * time.Hour)

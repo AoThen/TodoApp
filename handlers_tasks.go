@@ -1,7 +1,9 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -300,6 +302,8 @@ func handleRestoreTask(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if _, ok := err.(*db.UndoExpiredError); ok {
 			response.ErrorResponse(w, "已超过30秒撤销期限", http.StatusGone)
+		} else if errors.Is(err, sql.ErrNoRows) {
+			response.ErrorResponse(w, "任务不存在", http.StatusNotFound)
 		} else {
 			response.ErrorResponse(w, "恢复失败", http.StatusInternalServerError)
 		}
