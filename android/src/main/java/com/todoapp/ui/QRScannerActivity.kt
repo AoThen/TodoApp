@@ -199,11 +199,12 @@ class QRScannerActivity : AppCompatActivity() {
                                     .putString("server_url", pairingData.server)
                                     .apply()
 
-                                // 同步更新 AppConfig，保证登录/业务通道与同步通道指向同一服务器
+                                // 同步更新两套 baseUrl 入口，保证登录/业务/同步通道与同步通道指向同一服务器
+                                RetrofitClient.setBaseUrl(pairingData.server)
                                 com.todoapp.config.AppConfig.setBaseUrl(applicationContext, pairingData.server)
 
                                 Log.d(TAG, "设备配对成功: $deviceId")
-                                showSuccessDialog(pairingData.server, keyProtected)
+                                showSuccessDialog(rawValue, pairingData.server, keyProtected)
                             } else {
                                 val errorMsg = response.errorBody()?.string() ?: "配对验证失败"
                                 Log.e(TAG, "配对失败: $errorMsg")
@@ -308,17 +309,7 @@ class QRScannerActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun showNotLoggedInDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("需要登录")
-            .setMessage("请先登录后再进行设备配对")
-            .setPositiveButton("确定") { _, _ ->
-                finish()
-            }
-            .show()
-    }
-
-    private fun showSuccessDialog(serverUrl: String, keyProtected: Boolean = true) {
+    private fun showSuccessDialog(qrRawValue: String, serverUrl: String, keyProtected: Boolean = true) {
         var message = "设备已成功配对到: $serverUrl\n\n所有通信现在将使用 AES-256-GCM 加密。"
         if (!keyProtected) {
             message += "\n\n安全提示：本机安全存储（Keystore）不可用，加密密钥已明文保存在本机，请避免在共享或 Root 设备上使用。"
@@ -327,8 +318,9 @@ class QRScannerActivity : AppCompatActivity() {
             .setTitle("配对成功")
             .setMessage(message)
             .setPositiveButton("确定") { _, _ ->
+                // 回传二维码原文，交由 PairingFragment 走统一的配对成功流程（本地保存操作幂等）
                 val resultIntent = Intent().apply {
-                    putExtra(EXTRA_QR_RESULT, "success")
+                    putExtra(EXTRA_QR_RESULT, qrRawValue)
                 }
                 setResult(RESULT_SUCCESS, resultIntent)
                 finish()
@@ -447,6 +439,5 @@ class QRScannerActivity : AppCompatActivity() {
         private const val TAG = "QRScannerActivity"
         const val EXTRA_QR_RESULT = "qr_result"
         const val RESULT_SUCCESS = 1001
-        const val RESULT_FAILED = 1002
     }
 }

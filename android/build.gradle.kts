@@ -88,7 +88,8 @@ ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
 
-// release 构建必须显式指定正式服务端地址，防止把模拟器占位地址打进生产包。// 校验锚定在 release 制品任务的 doFirst：只有真正执行 assembleRelease 等任务时才检查，
+// release 构建必须显式指定正式服务端地址，防止把模拟器占位地址打进生产包。
+// 校验锚定在 release 制品任务的 doFirst：只有真正执行 assembleRelease 等任务时才检查，
 // 不影响 assembleDebug、./gradlew test（含 testReleaseUnitTest）等其它任务
 afterEvaluate {
     tasks.matching {

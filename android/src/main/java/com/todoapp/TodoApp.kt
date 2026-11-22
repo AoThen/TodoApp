@@ -16,6 +16,8 @@ class TodoApp : Application(), Configuration.Provider {
 
         KeyStorage.init()
         AppConfig.initialize(this)
+        // 进程重启后恢复上次配对的服务端地址，避免登录/同步仍指向构建期默认地址
+        RetrofitClient.setBaseUrl(AppConfig.getBaseUrl())
         ThemeUtils.applySavedMode(this)
     }
 

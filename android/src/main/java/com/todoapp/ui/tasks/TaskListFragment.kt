@@ -53,7 +53,7 @@ class TaskListFragment : Fragment() {
     private fun setupRecyclerView() {
         taskAdapter = TaskAdapter(
             onTaskClick = { task: Task ->
-                // 点卡片直接打开编辑底部弹层（详情页保留，经长按/其他入口可达）
+                // 点卡片直接打开编辑底部弹层
                 val sheet = TaskEditBottomSheet().apply {
                     arguments = Bundle().apply {
                         putString(TaskEditBottomSheet.ARG_TASK_ID, task.localId)

@@ -49,7 +49,7 @@ class PairingViewModel @Inject constructor() : ViewModel() {
             try {
                 val pairingData = parsePairingData(qrData)
 
-                if (!isValidPairingData(pairingData)) {
+                if (pairingData == null || !isValidPairingData(pairingData)) {
                     _pairingState.value = PairingState.Error(
                         context.getString(R.string.pairing_failed)
                     )
@@ -109,7 +109,8 @@ class PairingViewModel @Inject constructor() : ViewModel() {
         }
     }
 
-    private fun parsePairingData(qrData: String): PairingData {
+    private fun parsePairingData(qrData: String): PairingData? {
+        // 非法 JSON 或字面量 "null" 会得到 null，由调用方按无效二维码处理
         return Gson().fromJson(qrData, PairingData::class.java)
     }
 

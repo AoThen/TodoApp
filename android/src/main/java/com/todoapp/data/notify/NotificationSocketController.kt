@@ -38,6 +38,9 @@ object NotificationSocketController {
             }
         }
         socket?.disconnect()
+        // 断开后先清空引用：若 userId 解析失败提前返回，避免残留死连接被后续 start() 复用
+        socket = null
+        activeToken = null
 
         val userId = JwtUtils.parseUserId(token).toIntOrNull() ?: return
         val manager = NotificationManager(appContext, userId)
