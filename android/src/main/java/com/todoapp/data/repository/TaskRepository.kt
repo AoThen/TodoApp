@@ -21,7 +21,8 @@ class TaskRepository(
     private val syncMetaDao: SyncMetaDao,
     private val context: Context
 ) {
-    val allTasks: Flow<List<Task>> = taskDao.getAllTasks()
+    /** 任务流：按当前登录用户过滤，避免多账号在同设备上互相可见 */
+    fun getAllTasks(): Flow<List<Task>> = taskDao.getAllTasks(getCurrentUserId())
 
     private fun getCurrentUserId(): String {
         return try {
@@ -48,10 +49,10 @@ class TaskRepository(
         }
     }
 
-    /** 按截止日期区间查询任务（日历视图使用） */
+    /** 按截止日期区间查询任务（日历视图使用），限定当前用户防止多账号串号 */
     suspend fun getTasksDueBetween(startIso: String, endIso: String): Result<List<Task>> {
         return Result.runCatching {
-            taskDao.getTasksDueBetween(startIso, endIso)
+            taskDao.getTasksDueBetween(getCurrentUserId(), startIso, endIso)
         }
     }
 
@@ -166,6 +167,13 @@ class TaskRepository(
         }
     }
 
+    /** 登出时清空待同步队列：避免前一账号的离线修改以新账号身份上传，造成跨账号数据串写 */
+    suspend fun clearDeltaQueue(): Result<Unit> {
+        return Result.runCatching {
+            deltaQueueDao.deleteAllDeltas()
+        }
+    }
+
     suspend fun getSyncMeta(userId: String): Result<SyncMeta?> {
         return Result.runCatching {
             syncMetaDao.getSyncMeta(userId)
@@ -174,10 +182,13 @@ class TaskRepository(
 
     suspend fun updateSyncMeta(userId: String, lastSyncAt: String): Result<Unit> {
         return Result.runCatching {
+            // 保留已有的 lastServerVersion，避免仅更新时间戳时把版本号重置为 0
+            val previous = syncMetaDao.getSyncMeta(userId)
             syncMetaDao.insertSyncMeta(
                 SyncMeta(
                     userId = userId,
-                    lastSyncAt = lastSyncAt
+                    lastSyncAt = lastSyncAt,
+                    lastServerVersion = previous?.lastServerVersion ?: 0
                 )
             )
         }
@@ -191,6 +202,19 @@ class TaskRepository(
             clientVersion = task.serverVersion + 1,
             timestamp = DateTimeUtils.getCurrentTimestamp()
         )
+        if (operation == "insert") {
+            deltaQueueDao.insertDelta(delta)
+            return
+        }
+        // 合并同一任务的重复修改：payload 为任务全量快照，新 delta 完全覆盖旧 mutation，
+        // 避免陈旧 delta 反复重发触发服务端冲突合并
+        if (task.serverId != null) {
+            // 已同步任务：直接替换其全部待同步 delta
+            deltaQueueDao.deleteDeltasByLocalId(task.localId)
+        } else {
+            // 未同步任务：insert 必须保留（服务端尚未见过该任务），仅合并旧的 update/delete
+            deltaQueueDao.deleteMutationsByLocalId(task.localId)
+        }
         deltaQueueDao.insertDelta(delta)
     }
 }

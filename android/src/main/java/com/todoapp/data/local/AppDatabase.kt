@@ -87,8 +87,8 @@ data class Notification(
 
 @Dao
 interface TaskDao {
-    @Query("SELECT * FROM tasks WHERE isDeleted = 0 ORDER BY createdAt DESC")
-    fun getAllTasks(): Flow<List<Task>>
+    @Query("SELECT * FROM tasks WHERE userId = :userId AND isDeleted = 0 ORDER BY createdAt DESC")
+    fun getAllTasks(userId: String): Flow<List<Task>>
 
     @Query("SELECT * FROM tasks WHERE localId = :localId")
     suspend fun getTaskByLocalId(localId: String): Task?
@@ -96,16 +96,17 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun getTaskById(id: Long): Task?
 
-    @Query("SELECT * FROM tasks WHERE serverId = :serverId LIMIT 1")
-    suspend fun getTaskByServerId(serverId: Long): Task?
+    /** 按服务端 ID 查询当前用户任务：不同账号的 serverId 可能重复，必须带 userId 过滤防止串号 */
+    @Query("SELECT * FROM tasks WHERE userId = :userId AND serverId = :serverId LIMIT 1")
+    suspend fun getTaskByServerId(userId: String, serverId: Long): Task?
 
     /** 按本地 ID 查找尚未关联服务端 ID 的未删除任务（同步时用于精确合并离线创建的任务，避免重复） */
     @Query("SELECT * FROM tasks WHERE isDeleted = 0 AND serverId IS NULL AND localId = :localId LIMIT 1")
     suspend fun getUnsyncedTaskByLocalId(localId: String): Task?
 
     /** 查询截止日期落在 [startIso, endIso] 区间内的未删除任务（dueAt 为 ISO-8601 UTC 字符串，可直接做字典序比较） */
-    @Query("SELECT * FROM tasks WHERE isDeleted = 0 AND dueAt IS NOT NULL AND dueAt >= :startIso AND dueAt <= :endIso ORDER BY dueAt ASC")
-    suspend fun getTasksDueBetween(startIso: String, endIso: String): List<Task>
+    @Query("SELECT * FROM tasks WHERE userId = :userId AND isDeleted = 0 AND dueAt IS NOT NULL AND dueAt >= :startIso AND dueAt <= :endIso ORDER BY dueAt ASC")
+    suspend fun getTasksDueBetween(userId: String, startIso: String, endIso: String): List<Task>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTask(task: Task): Long
@@ -122,7 +123,8 @@ interface TaskDao {
 
 @Dao
 interface DeltaQueueDao {
-    @Query("SELECT * FROM delta_queue ORDER BY timestamp ASC")
+    // 追加 id ASC：时间戳为秒级精度，同秒入队的 delta 依插入顺序稳定排序
+    @Query("SELECT * FROM delta_queue ORDER BY timestamp ASC, id ASC")
     suspend fun getAllDeltas(): List<DeltaChange>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -130,6 +132,20 @@ interface DeltaQueueDao {
 
     @Query("DELETE FROM delta_queue WHERE id = :id")
     suspend fun deleteDelta(id: Long)
+
+    @Query("DELETE FROM delta_queue WHERE localId = :localId")
+    suspend fun deleteDeltasByLocalId(localId: String)
+
+    @Query("DELETE FROM delta_queue WHERE localId = :localId AND op = :op")
+    suspend fun deleteDeltasByLocalIdAndOp(localId: String, op: String)
+
+    /** 删除同一任务的待同步 update/delete（insert 需保留，服务端尚未见过该任务） */
+    @Query("DELETE FROM delta_queue WHERE localId = :localId AND op IN ('update', 'delete')")
+    suspend fun deleteMutationsByLocalId(localId: String)
+
+    /** 统计同一任务仍待同步的 update/delete 数量：大于 0 说明本地有未确认的新修改 */
+    @Query("SELECT COUNT(*) FROM delta_queue WHERE localId = :localId AND op IN ('update', 'delete')")
+    suspend fun countPendingMutations(localId: String): Int
 
     @Query("DELETE FROM delta_queue")
     suspend fun deleteAllDeltas()

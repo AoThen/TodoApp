@@ -147,7 +147,8 @@ class TaskDetailViewModel @Inject constructor(
                 description = currentDescription,
                 status = currentStatus,
                 priority = currentPriority,
-                dueAt = if (currentDueDate.isNotBlank()) "${currentDueDate}T00:00:00Z" else task.dueAt,
+                // 输入框为空表示用户清除了截止日期，应置 null 而不是保留旧值
+                dueAt = if (currentDueDate.isNotBlank()) "${currentDueDate}T00:00:00Z" else null,
                 updatedAt = DateTimeUtils.getCurrentTimestamp(),
                 serverVersion = task.serverVersion + 1,
                 lastModified = DateTimeUtils.getCurrentTimestamp()

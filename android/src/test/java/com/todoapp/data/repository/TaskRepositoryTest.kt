@@ -192,4 +192,56 @@ class TaskRepositoryTest {
         val updated = (repository.getSyncMeta("42") as Result.Success).data
         assertEquals("2026-11-20T12:00:00Z", updated!!.lastSyncAt)
     }
+
+    @Test
+    fun syncMeta_preservesServerVersionOnTimestampUpdate() = runBlocking {
+        db.syncMetaDao().insertSyncMeta(
+            com.todoapp.data.local.SyncMeta(userId = "42", lastSyncAt = "t0", lastServerVersion = 9)
+        )
+
+        repository.updateSyncMeta("42", "2026-11-20T12:00:00Z")
+
+        val meta = (repository.getSyncMeta("42") as Result.Success).data
+        assertEquals(9, meta!!.lastServerVersion)
+    }
+
+    @Test
+    fun updateTask_coalescesPendingMutationsForSyncedTask() = runBlocking {
+        val task = insertLocalTask("已同步任务").copy(serverId = 7, serverVersion = 3)
+        db.taskDao().updateTask(task)
+
+        repository.updateTask(task.copy(title = "第一次修改"))
+        repository.updateTask(task.copy(title = "第二次修改"))
+
+        // 已同步任务的重复修改合并为最新一条，避免陈旧 delta 反复重发
+        val deltas = (repository.getPendingDeltas() as Result.Success).data
+        assertEquals(1, deltas.size)
+        assertEquals("update", deltas[0].op)
+        val payload = Gson().fromJson(deltas[0].payload, Task::class.java)
+        assertEquals("第二次修改", payload.title)
+    }
+
+    @Test
+    fun createThenEdit_keepsInsertAndMergesMutations() = runBlocking {
+        val created = (repository.createTask("离线任务") as Result.Success).data
+        val stored = db.taskDao().getTaskByLocalId(created.localId)!!
+        repository.updateTask(stored.copy(title = "离线编辑1"))
+        repository.updateTask(stored.copy(title = "离线编辑2"))
+
+        // insert 必须保留（服务端尚未见过该任务），重复 update 合并为最新一条
+        val deltas = (repository.getPendingDeltas() as Result.Success).data
+        assertEquals(listOf("insert", "update"), deltas.map { it.op }.sorted())
+        val updatePayload = Gson().fromJson(deltas.first { it.op == "update" }.payload, Task::class.java)
+        assertEquals("离线编辑2", updatePayload.title)
+    }
+
+    @Test
+    fun clearDeltaQueue_emptiesQueue() = runBlocking {
+        repository.deleteTask(insertLocalTask("待清理"))
+        assertTrue((repository.getPendingDeltas() as Result.Success).data.isNotEmpty())
+
+        repository.clearDeltaQueue()
+
+        assertTrue((repository.getPendingDeltas() as Result.Success).data.isEmpty())
+    }
 }

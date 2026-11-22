@@ -89,7 +89,7 @@ object RetrofitClient {
 
             val requestWithAuth = originalRequest.newBuilder().apply {
                 addHeader("Accept", "application/json")
-                addHeader("Content-Type", "application/json")
+                header("Content-Type", "application/json")
                 token?.let {
                     addHeader("Authorization", "Bearer $it")
                 }
@@ -105,12 +105,15 @@ object RetrofitClient {
 
             synchronized(refreshLock) {
                 val currentToken = prefs.getString(ACCESS_TOKEN_KEY, null)
-                if (currentToken == token && tryRefreshToken(context)) {
+                // 拿锁后发现 token 已被其他线程刷新时无需再次刷新，直接用最新 token 重试；
+                // 否则低概率下后来者会拿着新 token 仍收到 401，造成偶发同步失败/被登出假象
+                val refreshed = if (currentToken == token) tryRefreshToken(context) else true
+                if (refreshed) {
                     response.close()
                     val newToken = prefs.getString(ACCESS_TOKEN_KEY, null)
                     val retryRequest = originalRequest.newBuilder().apply {
                         addHeader("Accept", "application/json")
-                        addHeader("Content-Type", "application/json")
+                        header("Content-Type", "application/json")
                         newToken?.let {
                             addHeader("Authorization", "Bearer $it")
                         }

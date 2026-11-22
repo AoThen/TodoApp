@@ -47,7 +47,7 @@ class TaskListViewModel @Inject constructor(
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     /** 任务流：按搜索词过滤标题/描述（空词返回全量） */
-    val tasks = combine(taskRepository.allTasks, _searchQuery) { list, query ->
+    val tasks = combine(taskRepository.getAllTasks(), _searchQuery) { list, query ->
         filterTasks(list, query)
     }
 

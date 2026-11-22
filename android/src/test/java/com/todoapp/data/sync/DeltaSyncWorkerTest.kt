@@ -90,6 +90,9 @@ class DeltaSyncWorkerTest {
         coEvery { mockDeltaDao.getAllDeltas() } returns emptyList()
         // relaxed mock 对可空返回值默认返回非 null mock，会误导 local_id 合并分支；默认无匹配任务
         coEvery { mockTaskDao.getUnsyncedTaskByLocalId(any()) } returns null
+        coEvery { mockTaskDao.getTaskByLocalId(any()) } returns null
+        coEvery { mockTaskDao.getTaskByServerId(any(), any()) } returns null
+        coEvery { mockDeltaDao.countPendingMutations(any()) } returns 0
     }
 
     @After
@@ -204,7 +207,7 @@ class DeltaSyncWorkerTest {
         val updated = slot<Task>()
         coVerify(exactly = 1) { mockTaskDao.updateTask(capture(updated)) }
         assertEquals(100L, updated.captured.serverId)
-        coVerify(exactly = 1) { mockDeltaDao.deleteDelta(11L) }
+        coVerify(exactly = 1) { mockDeltaDao.deleteDeltasByLocalIdAndOp("local-1", "insert") }
         coVerify(exactly = 1) { mockApi.sync(any()) }
     }
 
@@ -225,9 +228,9 @@ class DeltaSyncWorkerTest {
             updatedAt = "t0",
             lastModified = "t0"
         )
-        coEvery { mockTaskDao.getTaskByServerId(200L) } returns existing
-        coEvery { mockTaskDao.getTaskByServerId(300L) } returns null
-        coEvery { mockTaskDao.getTaskByServerId(400L) } returns null
+        coEvery { mockTaskDao.getTaskByServerId("42", 200L) } returns existing
+        coEvery { mockTaskDao.getTaskByServerId("42", 300L) } returns null
+        coEvery { mockTaskDao.getTaskByServerId("42", 400L) } returns null
         stubSync(
             Response.success(
                 syncResponse(
@@ -299,7 +302,7 @@ class DeltaSyncWorkerTest {
             updatedAt = "t0",
             lastModified = "t0"
         )
-        coEvery { mockTaskDao.getTaskByServerId(300L) } returns null
+        coEvery { mockTaskDao.getTaskByServerId("42", 300L) } returns null
         coEvery { mockTaskDao.getUnsyncedTaskByLocalId("local-ghost") } returns ghost
         stubSync(
             Response.success(
@@ -333,7 +336,7 @@ class DeltaSyncWorkerTest {
     @Test
     fun success_sameTitleButDifferentLocalId_insertsAsNewTask() {
         coEvery { mockDeltaDao.getAllDeltas() } returns listOf(pendingDelta)
-        coEvery { mockTaskDao.getTaskByServerId(300L) } returns null
+        coEvery { mockTaskDao.getTaskByServerId("42", 300L) } returns null
         stubSync(
             Response.success(
                 syncResponse(
@@ -406,5 +409,214 @@ class DeltaSyncWorkerTest {
         assertEquals("本地新建", change.payload["title"])
         assertEquals("high", change.payload["priority"])
         assertEquals("todo", change.payload["status"])
+    }
+
+    @Test
+    fun offlineEdit_deferredUntilInsertAcked() {
+        // 离线创建后再编辑：insert 未确认前，update 延迟发送，避免服务端因缺少任务 ID 跳过导致编辑丢失
+        val updateDelta = pendingDelta.copy(
+            id = 12,
+            op = "update",
+            payload = """{"localId":"local-1","title":"离线编辑","status":"todo","priority":"high"}""",
+            clientVersion = 1
+        )
+        coEvery { mockDeltaDao.getAllDeltas() } returns listOf(pendingDelta, updateDelta)
+        // 本地任务存在但尚未同步（serverId 为空）→ update 应被延迟
+        coEvery {
+            mockTaskDao.getTaskByLocalId("local-1")
+        } returns Task(
+            id = 5,
+            localId = "local-1",
+            userId = "42",
+            title = "本地新建",
+            createdAt = "t",
+            updatedAt = "t",
+            lastModified = "t"
+        )
+        val requestSlot = slot<com.todoapp.data.remote.SyncRequest>()
+        stubSync(
+            Response.success(
+                syncResponse(clientChanges = listOf(ClientChange(localId = "local-1", serverId = 100, op = "insert")))
+            )
+        )
+
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+
+        coVerify { mockApi.sync(capture(requestSlot)) }
+        // 仅 insert 上传，update 延迟保留在队列中
+        assertEquals(1, requestSlot.captured.changes.size)
+        assertEquals("insert", requestSlot.captured.changes[0].op)
+        coVerify(exactly = 0) { mockDeltaDao.deleteDeltasByLocalIdAndOp("local-1", "update") }
+        coVerify(exactly = 0) { mockDeltaDao.deleteDelta(any()) }
+    }
+
+    @Test
+    fun updateDelta_injectsCurrentServerIdIntoPayload() {
+        // 冻结 payload 缺少 serverId 时，以上传时刻本地任务的 serverId 为准注入
+        val updateDelta = pendingDelta.copy(
+            id = 12,
+            op = "update",
+            payload = """{"localId":"local-1","title":"在线编辑","status":"done","priority":"high"}""",
+            clientVersion = 2
+        )
+        coEvery { mockDeltaDao.getAllDeltas() } returns listOf(updateDelta)
+        coEvery {
+            mockTaskDao.getTaskByLocalId("local-1")
+        } returns Task(
+            id = 5,
+            localId = "local-1",
+            serverId = 250,
+            userId = "42",
+            title = "在线编辑",
+            createdAt = "t",
+            updatedAt = "t",
+            lastModified = "t"
+        )
+        val requestSlot = slot<com.todoapp.data.remote.SyncRequest>()
+        stubSync(
+            Response.success(
+                syncResponse(clientChanges = listOf(ClientChange(localId = "local-1", serverId = 250, op = "update")))
+            )
+        )
+
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+
+        coVerify { mockApi.sync(capture(requestSlot)) }
+        val change = requestSlot.captured.changes.single()
+        assertEquals("update", change.op)
+        assertEquals(250L, change.payload["id"])
+        coVerify(exactly = 1) { mockDeltaDao.deleteDeltasByLocalIdAndOp("local-1", "update") }
+    }
+
+    @Test
+    fun updateAckWithZeroServerId_softDeletesSyncedTaskLocally() {
+        // 服务端已找不到已同步任务（可能被硬删）：本地软删并清理滞留 delta
+        val updateDelta = pendingDelta.copy(
+            id = 12,
+            op = "update",
+            payload = """{"localId":"local-1","title":"x"}""",
+            clientVersion = 2
+        )
+        coEvery { mockDeltaDao.getAllDeltas() } returns listOf(updateDelta)
+        coEvery {
+            mockTaskDao.getTaskByLocalId("local-1")
+        } returns Task(
+            id = 5,
+            localId = "local-1",
+            serverId = 250,
+            userId = "42",
+            title = "x",
+            createdAt = "t",
+            updatedAt = "t",
+            lastModified = "t"
+        )
+        stubSync(
+            Response.success(
+                syncResponse(clientChanges = listOf(ClientChange(localId = "local-1", serverId = 0, op = "update")))
+            )
+        )
+
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+
+        coVerify(exactly = 1) { mockTaskDao.softDeleteTask(5L, any()) }
+        coVerify(exactly = 1) { mockDeltaDao.deleteDeltasByLocalIdAndOp("local-1", "update") }
+    }
+
+    @Test
+    fun updateAckWithZeroServerId_keepsDeltaWhenTaskUnsynced() {
+        // 本地任务尚未同步却收到 update 的 server_id=0 回执：保留 delta，避免丢失离线编辑
+        val updateDelta = pendingDelta.copy(
+            id = 12,
+            op = "update",
+            payload = """{"localId":"local-1","title":"x"}""",
+            clientVersion = 2
+        )
+        coEvery { mockDeltaDao.getAllDeltas() } returns listOf(pendingDelta, updateDelta)
+        coEvery {
+            mockTaskDao.getTaskByLocalId("local-1")
+        } returns Task(
+            id = 5,
+            localId = "local-1",
+            userId = "42",
+            title = "x",
+            createdAt = "t",
+            updatedAt = "t",
+            lastModified = "t"
+        )
+        stubSync(
+            Response.success(
+                syncResponse(
+                    clientChanges = listOf(
+                        ClientChange(localId = "local-1", serverId = 100, op = "insert"),
+                        ClientChange(localId = "local-1", serverId = 0, op = "update")
+                    )
+                )
+            )
+        )
+
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+
+        coVerify(exactly = 0) { mockTaskDao.softDeleteTask(any(), any()) }
+        coVerify(exactly = 0) { mockDeltaDao.deleteDeltasByLocalIdAndOp("local-1", "update") }
+    }
+
+    @Test
+    fun serverChanges_skippedWhenLocalMutationsPending() {
+        // 本地仍有未确认的修改时，服务端回显（可能为创建时旧值）不得覆盖本地
+        coEvery { mockDeltaDao.getAllDeltas() } returns listOf(pendingDelta)
+        coEvery {
+            mockTaskDao.getTaskByServerId("42", 200L)
+        } returns Task(
+            id = 5,
+            localId = "local-2",
+            serverId = 200,
+            userId = "42",
+            serverVersion = 3,
+            title = "本地较新标题",
+            description = "本地描述",
+            status = "in_progress",
+            priority = "high",
+            createdAt = "t0",
+            updatedAt = "t1",
+            lastModified = "t1"
+        )
+        coEvery { mockDeltaDao.countPendingMutations("local-2") } returns 1
+        stubSync(
+            Response.success(
+                syncResponse(
+                    serverChanges = listOf(
+                        ServerChange(
+                            id = 200,
+                            serverVersion = 4,
+                            title = "服务端旧值",
+                            updatedAt = "2026-11-20T02:00:00Z",
+                            isDeleted = false
+                        )
+                    )
+                )
+            )
+        )
+
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+
+        coVerify(exactly = 0) { mockTaskDao.updateTask(any()) }
+        coVerify(exactly = 0) { mockTaskDao.softDeleteTask(any(), any()) }
+    }
+
+    @Test
+    fun staleDeltaForMissingTask_clearedWithoutApiCall() {
+        // 本地任务已不存在的滞留 delta：直接清理，不发起同步
+        val updateDelta = pendingDelta.copy(
+            id = 12,
+            op = "update",
+            payload = """{"localId":"missing","title":"x"}""",
+            clientVersion = 2
+        )
+        coEvery { mockDeltaDao.getAllDeltas() } returns listOf(updateDelta)
+
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+
+        coVerify(exactly = 1) { mockDeltaDao.deleteDelta(12L) }
+        coVerify(exactly = 0) { mockApi.sync(any()) }
     }
 }

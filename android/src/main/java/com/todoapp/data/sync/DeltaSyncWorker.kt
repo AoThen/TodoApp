@@ -3,12 +3,14 @@ package com.todoapp.data.sync
 import android.content.Context
 import androidx.work.*
 import com.todoapp.data.local.AppDatabase
+import com.todoapp.data.local.DeltaChange
 import com.todoapp.data.local.SyncMeta
 import com.todoapp.data.local.Task
 import com.todoapp.data.remote.DeltaChangeRequest
 import com.todoapp.data.remote.RetrofitClient
 import com.todoapp.data.remote.SyncRequest
 import com.todoapp.config.SyncConfig
+import com.todoapp.utils.DateTimeUtils
 import com.todoapp.utils.JwtUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -68,13 +70,64 @@ class DeltaSyncWorker(
             val syncMeta = database.syncMetaDao().getSyncMeta(userId)
             val lastSyncAt = syncMeta?.lastSyncAt ?: ""
 
-            val changes: List<DeltaChangeRequest> = pendingDeltas.map { delta ->
-                DeltaChangeRequest(
-                    localId = delta.localId,
-                    op = delta.op,
-                    payload = SyncPayloadConverter.payloadForServer(delta.payload),
-                    clientVersion = delta.clientVersion
-                )
+            // 组装上传批次：
+            // 1) insert 尚未被服务端确认（本地 serverId 为空）的任务，其 update/delete 本轮延迟发送，
+            //    待 insert ack 回填 serverId 后下一轮再传，避免服务端因 payload 缺少任务 ID 而跳过，
+            //    导致“离线创建后再编辑”的内容被静默丢弃；
+            // 2) update/delete 以上传时刻本地的 serverId 为准注入 payload（冻结 payload 可能缺失或过期）；
+            // 3) 本地任务已不存在的滞留 delta 直接清理，防止无限重发。
+            val changes = mutableListOf<DeltaChangeRequest>()
+            val staleDeltas = mutableListOf<DeltaChange>()
+            val insertSent = mutableSetOf<String>()
+            val taskCache = mutableMapOf<String, Task?>()
+
+            for (delta in pendingDeltas) {
+                when (delta.op) {
+                    "insert" -> {
+                        // 同一任务仅发送一条 insert（正常至多一条，防御重复滞留）
+                        if (insertSent.add(delta.localId)) {
+                            changes += DeltaChangeRequest(
+                                localId = delta.localId,
+                                op = delta.op,
+                                payload = SyncPayloadConverter.payloadForServer(delta.payload),
+                                clientVersion = delta.clientVersion
+                            )
+                        } else {
+                            staleDeltas += delta
+                        }
+                    }
+                    "update", "delete" -> {
+                        val task = taskCache.getOrPut(delta.localId) {
+                            database.taskDao().getTaskByLocalId(delta.localId)
+                        }
+                        val serverId = task?.serverId
+                        when {
+                            task == null -> staleDeltas += delta
+                            serverId == null -> {
+                                // insert 未确认：延迟到下一轮，保留 delta 待后续上传
+                            }
+                            else -> {
+                                val payload = SyncPayloadConverter.payloadForServer(delta.payload).toMutableMap()
+                                payload["id"] = serverId
+                                changes += DeltaChangeRequest(
+                                    localId = delta.localId,
+                                    op = delta.op,
+                                    payload = payload,
+                                    clientVersion = delta.clientVersion
+                                )
+                            }
+                        }
+                    }
+                    else -> staleDeltas += delta
+                }
+            }
+
+            if (staleDeltas.isNotEmpty()) {
+                staleDeltas.forEach { database.deltaQueueDao().deleteDelta(it.id) }
+            }
+            if (changes.isEmpty()) {
+                // 没有可上传的变更（全部延迟或已被清理）：不发起空同步，与“队列为空则跳过”的原行为一致
+                return@withContext Result.success()
             }
 
             val request = SyncRequest(lastSyncAt, changes)
@@ -90,43 +143,66 @@ class DeltaSyncWorker(
             }
             val syncResponse = syncBody
 
-            // 先处理已确认的客户端变更：清理 delta 队列，并为 insert 回填服务端 ID
+            // 先处理已确认的客户端变更：按 op 精确清理 delta 队列，并为 insert 回填服务端 ID
             // 注：未用 room-ktx 的 withTransaction——它是顶层扩展函数，单测的 mockk AppDatabase
             // 无法拦截，会在 relaxed mock 上永久挂起；待测试改用真实内存库后再引入事务
             for (clientChange in syncResponse.clientChanges) {
-                val delta = pendingDeltas.find { it.localId == clientChange.localId } ?: continue
-                if (clientChange.op == "insert") {
-                    val localTask = database.taskDao().getTaskByLocalId(delta.localId)
-                    if (localTask != null && localTask.serverId == null) {
-                        database.taskDao().updateTask(
-                            localTask.copy(serverId = clientChange.serverId)
-                        )
+                val localTask = database.taskDao().getTaskByLocalId(clientChange.localId)
+                when (clientChange.op) {
+                    "insert" -> {
+                        if (localTask != null && localTask.serverId == null && clientChange.serverId > 0) {
+                            database.taskDao().updateTask(
+                                localTask.copy(serverId = clientChange.serverId)
+                            )
+                        }
+                        database.deltaQueueDao().deleteDeltasByLocalIdAndOp(clientChange.localId, "insert")
+                    }
+                    "delete" -> {
+                        // 无论服务端是“已删除”还是“任务本就不存在”，删除目的均已达成
+                        database.deltaQueueDao().deleteDeltasByLocalIdAndOp(clientChange.localId, "delete")
+                    }
+                    "update" -> {
+                        if (clientChange.serverId > 0) {
+                            database.deltaQueueDao().deleteDeltasByLocalIdAndOp(clientChange.localId, "update")
+                        } else if (localTask != null && localTask.serverId != null) {
+                            // 服务端已找不到该任务（可能被硬删）：本地同步软删并清理 delta
+                            database.taskDao().softDeleteTask(localTask.id, DateTimeUtils.getCurrentTimestamp())
+                            database.deltaQueueDao().deleteDeltasByLocalIdAndOp(clientChange.localId, "update")
+                        }
+                        // 其余情况（本地任务尚未同步却收到 update 回执；正常流程中未同步任务的
+                        // update 在上传组装阶段必被延迟，不会与服务端产生交互）：保留 delta，
+                        // 下一轮按延迟策略重发，避免丢编辑。属防御性兜底。
                     }
                 }
-                database.deltaQueueDao().deleteDelta(delta.id)
             }
 
             // 再应用服务端变更：按 serverId 匹配本地任务；不存在且未删除 → 其他设备新建的任务，插入本地
             for (serverChange in syncResponse.serverChanges) {
-                val existing = database.taskDao().getTaskByServerId(serverChange.id)
+                val existing = database.taskDao().getTaskByServerId(userId, serverChange.id)
                 if (existing != null) {
                     if (serverChange.isDeleted) {
                         database.taskDao().softDeleteTask(existing.id, serverChange.updatedAt)
-                    } else {
-                        database.taskDao().updateTask(
-                            existing.copy(
-                                serverId = serverChange.id,
-                                serverVersion = serverChange.serverVersion,
-                                title = serverChange.title ?: existing.title,
-                                description = serverChange.description ?: existing.description,
-                                status = serverChange.status ?: existing.status,
-                                priority = serverChange.priority ?: existing.priority,
-                                dueAt = serverChange.dueAt ?: existing.dueAt,
-                                updatedAt = serverChange.updatedAt,
-                                isDeleted = false
-                            )
-                        )
+                        continue
                     }
+                    // 本地仍有待上传的修改时保留本地值：服务端 insert 回显/冲突合并结果
+                    // 携带的可能是创建时旧值，直接覆盖会冲掉尚未同步的离线编辑
+                    val pendingMutations = database.deltaQueueDao().countPendingMutations(existing.localId)
+                    if (pendingMutations > 0) {
+                        continue
+                    }
+                    database.taskDao().updateTask(
+                        existing.copy(
+                            serverId = serverChange.id,
+                            serverVersion = serverChange.serverVersion,
+                            title = serverChange.title ?: existing.title,
+                            description = serverChange.description ?: existing.description,
+                            status = serverChange.status ?: existing.status,
+                            priority = serverChange.priority ?: existing.priority,
+                            dueAt = serverChange.dueAt ?: existing.dueAt,
+                            updatedAt = serverChange.updatedAt,
+                            isDeleted = false
+                        )
+                    )
                 } else if (!serverChange.isDeleted) {
                     val timestamp = serverChange.updatedAt
                     // 优先按 local_id 精确匹配本地尚未同步的离线任务（离线创建后回执丢失时的自愈），

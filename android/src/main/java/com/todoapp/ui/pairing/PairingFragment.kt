@@ -12,7 +12,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.todoapp.R
@@ -81,36 +83,40 @@ class PairingFragment : Fragment() {
 
     private fun setupObservers() {
         viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.pairingState.collect { state ->
-                when (state) {
-                    is PairingState.Idle -> {
-                        binding.progressBar.visibility = View.GONE
-                        binding.btnScanQR.isEnabled = true
-                        binding.btnManualPair.isEnabled = true
-                    }
-                    is PairingState.Loading -> {
-                        binding.progressBar.visibility = View.VISIBLE
-                        binding.btnScanQR.isEnabled = false
-                        binding.btnManualPair.isEnabled = false
-                    }
-                    is PairingState.Success -> {
-                        binding.progressBar.visibility = View.GONE
-                        Toast.makeText(requireContext(), R.string.pairing_success, Toast.LENGTH_SHORT).show()
-                        // 配对成功后接通通知实时通道（未登录时内部会安全跳过）
-                        com.todoapp.data.notify.NotificationSocketController.start(requireContext())
-                        val app = requireActivity().application as TodoApp
-                        if (app.isUserLoggedIn()) {
-                            // 已登录：配对完成后直接进入主界面
-                            findNavController().navigate(R.id.action_pairingFragment_to_taskListFragment)
-                        } else {
-                            navigateToLogin()
+            // repeatOnLifecycle：离开 STARTED 后停止收集，避免 detach 后仍触发
+            // requireContext()/binding 相关逻辑造成崩溃窗口
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.pairingState.collect { state ->
+                    when (state) {
+                        is PairingState.Idle -> {
+                            binding.progressBar.visibility = View.GONE
+                            binding.btnScanQR.isEnabled = true
+                            binding.btnManualPair.isEnabled = true
                         }
-                    }
-                    is PairingState.Error -> {
-                        binding.progressBar.visibility = View.GONE
-                        binding.btnScanQR.isEnabled = true
-                        binding.btnManualPair.isEnabled = true
-                        Toast.makeText(requireContext(), state.message, Toast.LENGTH_LONG).show()
+                        is PairingState.Loading -> {
+                            binding.progressBar.visibility = View.VISIBLE
+                            binding.btnScanQR.isEnabled = false
+                            binding.btnManualPair.isEnabled = false
+                        }
+                        is PairingState.Success -> {
+                            binding.progressBar.visibility = View.GONE
+                            Toast.makeText(requireContext(), R.string.pairing_success, Toast.LENGTH_SHORT).show()
+                            // 配对成功后接通通知实时通道（未登录时内部会安全跳过）
+                            com.todoapp.data.notify.NotificationSocketController.start(requireContext())
+                            val app = requireActivity().application as TodoApp
+                            if (app.isUserLoggedIn()) {
+                                // 已登录：配对完成后直接进入主界面
+                                findNavController().navigate(R.id.action_pairingFragment_to_taskListFragment)
+                            } else {
+                                navigateToLogin()
+                            }
+                        }
+                        is PairingState.Error -> {
+                            binding.progressBar.visibility = View.GONE
+                            binding.btnScanQR.isEnabled = true
+                            binding.btnManualPair.isEnabled = true
+                            Toast.makeText(requireContext(), state.message, Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
             }

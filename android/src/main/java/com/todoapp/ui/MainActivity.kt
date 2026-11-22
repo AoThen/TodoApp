@@ -23,8 +23,11 @@ class MainActivity : AppCompatActivity() {
 
         setupNavigation()
 
-        // Check initial navigation state
-        checkInitialNavigation()
+        // 仅在首次创建时做初始导航；旋转屏/进程恢复时 savedInstanceState 非空，
+        // Navigation 已自行恢复目的地，强制跳转会把用户从日历/设置页弹回任务列表
+        if (savedInstanceState == null) {
+            checkInitialNavigation()
+        }
     }
 
     override fun onStart() {

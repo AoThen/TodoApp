@@ -116,6 +116,18 @@
     <string name="settings_server_url">服务器地址</string>
     <string name="settings_version">版本号</string>
     <string name="settings_re_pair">重新配对设备</string>
+    <string name="settings_section_data">数据</string>
+    <string name="settings_export_json">导出任务（JSON）</string>
+    <string name="settings_export_csv">导出任务（CSV）</string>
+    <string name="settings_import_json">导入任务（JSON）</string>
+    <string name="settings_logout_confirm_title">退出登录</string>
+    <string name="settings_logout_confirm_message">确定退出登录吗？本地尚未同步的修改将被清除。</string>
+    <string name="settings_logout_done">已退出登录</string>
+    <string name="settings_export_success">已导出 %1$d 条任务</string>
+    <string name="settings_export_failed">导出失败，请重试</string>
+    <string name="settings_import_success">成功导入 %1$d 条任务</string>
+    <string name="settings_import_partial">导入完成：成功 %1$d 条，跳过 %2$d 条</string>
+    <string name="settings_import_failed">导入失败：无效的文件内容</string>
 
     <!-- Calendar -->
     <string name="calendar_month_format">%1$d年%2$d月</string>

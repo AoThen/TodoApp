@@ -71,7 +71,7 @@ class TaskDaoInstrumentedTest {
         val id = dao.insertTask(task("待删除"))
         dao.softDeleteTask(id, "2026-01-02T00:00:00Z")
 
-        assertEquals(0, dao.getAllTasks().first().size)
+        assertEquals(0, dao.getAllTasks("user-1").first().size)
         // 与后端软删语义一致：单查不过滤 isDeleted
         val single = dao.getTaskById(id)
         assertNotNull(single)
@@ -86,8 +86,19 @@ class TaskDaoInstrumentedTest {
         val deletedId = dao.insertTask(task("任务C"))
         dao.softDeleteTask(deletedId, "2026-01-02T00:00:00Z")
 
-        val titles = dao.getAllTasks().first().map { it.title }
+        val titles = dao.getAllTasks("user-1").first().map { it.title }
         assertEquals(listOf("任务B", "任务A"), titles)
+    }
+
+    @Test
+    fun getAllTasks按用户隔离() = runTest {
+        dao.insertTask(task("我的任务"))
+        dao.insertTask(task("他人任务").copy(userId = "user-2"))
+
+        val mine = dao.getAllTasks("user-1").first().map { it.title }
+        val others = dao.getAllTasks("user-2").first().map { it.title }
+        assertEquals(listOf("我的任务"), mine)
+        assertEquals(listOf("他人任务"), others)
     }
 
     @Test
@@ -95,7 +106,7 @@ class TaskDaoInstrumentedTest {
         dao.insertTask(task("任务A"))
         dao.insertTask(task("任务B"))
         dao.deleteAllTasks()
-        assertEquals(0, dao.getAllTasks().first().size)
+        assertEquals(0, dao.getAllTasks("user-1").first().size)
     }
 
     @Test
