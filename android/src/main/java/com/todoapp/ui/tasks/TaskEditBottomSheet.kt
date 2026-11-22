@@ -70,7 +70,7 @@ class TaskEditBottomSheet : BottomSheetDialogFragment(), DatePickerDialog.OnDate
             val task = viewModel.getCurrentTask() ?: return@setOnClickListener
             MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.confirm_delete)
-                .setMessage(R.string.confirm_delete_task_message, task.title)
+                .setMessage(getString(R.string.confirm_delete_task_message, task.title))
                 .setPositiveButton(R.string.delete) { _, _ ->
                     isDeleting = true
                     viewModel.deleteTask(requireContext())
