@@ -11,7 +11,7 @@ import okhttp3.Response
 internal class AuthInterceptor(
     private val getToken: () -> String?,
     private val clearToken: () -> Unit,
-    private val tryRefresh: () -> RefreshOutcome,
+    private val tryRefresh: () -> RetrofitClient.RefreshOutcome,
     private val onSessionExpired: () -> Unit,
     private val lock: Any
 ) : Interceptor {
@@ -44,10 +44,10 @@ internal class AuthInterceptor(
             val outcome = if (currentToken == token) {
                 tryRefresh()
             } else {
-                RefreshOutcome.Success
+                RetrofitClient.RefreshOutcome.Success
             }
             when (outcome) {
-                RefreshOutcome.Success -> {
+                RetrofitClient.RefreshOutcome.Success -> {
                     response.close()
                     val newToken = getToken()
                     val retryRequest = originalRequest.newBuilder().apply {
@@ -60,14 +60,14 @@ internal class AuthInterceptor(
 
                     return chain.proceed(retryRequest)
                 }
-                RefreshOutcome.InvalidSession -> {
+                RetrofitClient.RefreshOutcome.InvalidSession -> {
                     // 服务端明确拒绝刷新令牌：清除本地会话并广播失效事件，
                     // 由 UI 层引导重新登录；离线等瞬态失败不动会话，避免误踢
                     android.util.Log.e("RetrofitClient", "Refresh token rejected, session expired")
                     clearToken()
                     onSessionExpired()
                 }
-                RefreshOutcome.TransientError -> {
+                RetrofitClient.RefreshOutcome.TransientError -> {
                     android.util.Log.e("RetrofitClient", "Token refresh failed transiently, keep session")
                 }
             }
