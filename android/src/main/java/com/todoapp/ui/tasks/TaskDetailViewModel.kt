@@ -133,9 +133,11 @@ class TaskDetailViewModel @Inject constructor(
 
     fun updateTask(context: android.content.Context) {
         viewModelScope.launch {
-            _uiState.value = TaskDetailState.Loading
-
+            // 先取当前任务再切 Loading：getCurrentTask 仅在 Success 状态返回任务，
+            // 若先置 Loading 会导致任务永远取不到、更新静默失效
             val task = getCurrentTask() ?: return@launch
+
+            _uiState.value = TaskDetailState.Loading
 
             if (!_formState.value.isFormValid) {
                 _uiState.value = TaskDetailState.Error(context.getString(R.string.task_fix_form_errors))
@@ -170,9 +172,10 @@ class TaskDetailViewModel @Inject constructor(
 
     fun deleteTask(context: android.content.Context) {
         viewModelScope.launch {
-            _uiState.value = TaskDetailState.Loading
-
+            // 与 updateTask 同理：先取任务再切 Loading
             val task = getCurrentTask() ?: return@launch
+
+            _uiState.value = TaskDetailState.Loading
 
             taskRepository.deleteTask(task)
                 .onSuccess {
