@@ -8,7 +8,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
-import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -85,67 +84,15 @@ object RetrofitClient {
     }
 
     private fun createAuthInterceptor(context: Context): Interceptor {
-        return Interceptor { chain ->
-            val originalRequest = chain.request()
-
-            val prefs = getEncryptedPrefs(context)
-            val token = prefs.getString(ACCESS_TOKEN_KEY, null)
-
-            val requestWithAuth = originalRequest.newBuilder().apply {
-                addHeader("Accept", "application/json")
-                header("Content-Type", "application/json")
-                token?.let {
-                    addHeader("Authorization", "Bearer $it")
-                }
-            }.build()
-
-            val response = chain.proceed(requestWithAuth)
-
-            // 登录接口的 401 表示凭据错误，直接透传给调用方展示
-            val isLoginRequest = originalRequest.url.encodedPath.endsWith("/auth/login")
-            if (response.code != 401 || isLoginRequest) {
-                return@Interceptor response
-            }
-
-            synchronized(refreshLock) {
-                val currentToken = prefs.getString(ACCESS_TOKEN_KEY, null)
-                // 拿锁后发现 token 已被其他线程刷新时无需再次刷新，直接用最新 token 重试；
-                // 否则低概率下后来者会拿着新 token 仍收到 401，造成偶发同步失败/被登出假象
-                val outcome = if (currentToken == token) {
-                    tryRefreshToken(context)
-                } else {
-                    RefreshOutcome.Success
-                }
-                when (outcome) {
-                    RefreshOutcome.Success -> {
-                        response.close()
-                        val newToken = prefs.getString(ACCESS_TOKEN_KEY, null)
-                        val retryRequest = originalRequest.newBuilder().apply {
-                            addHeader("Accept", "application/json")
-                            header("Content-Type", "application/json")
-                            newToken?.let {
-                                addHeader("Authorization", "Bearer $it")
-                            }
-                        }.build()
-
-                        return@Interceptor chain.proceed(retryRequest)
-                    }
-                    RefreshOutcome.InvalidSession -> {
-                        // 服务端明确拒绝刷新令牌：清除本地会话并广播失效事件，
-                        // 由 UI 层引导重新登录；离线等瞬态失败不动会话，避免误踢
-                        android.util.Log.e("RetrofitClient", "Refresh token rejected, session expired")
-                        clearToken(context)
-                        SessionEvents.notifyExpired()
-                    }
-                    RefreshOutcome.TransientError -> {
-                        android.util.Log.e("RetrofitClient", "Token refresh failed transiently, keep session")
-                    }
-                }
-            }
-
-            // 刷新失败：保留原始响应（不能 close 后再返回，否则调用方读取错误体时报 closed）
-            response
-        }
+        // 拦截器随 Retrofit 单例长期存活，仅捕获 applicationContext 避免持有 Activity
+        val appContext = context.applicationContext
+        return AuthInterceptor(
+            getToken = { getEncryptedPrefs(appContext).getString(ACCESS_TOKEN_KEY, null) },
+            clearToken = { clearToken(appContext) },
+            tryRefresh = { tryRefreshToken(appContext) },
+            onSessionExpired = { SessionEvents.notifyExpired() },
+            lock = refreshLock
+        )
     }
 
     /**
@@ -158,7 +105,7 @@ object RetrofitClient {
         }
     }
 
-    private fun tryRefreshToken(context: Context): RefreshOutcome {
+    internal fun tryRefreshToken(context: Context): RefreshOutcome {
         return try {
             // refresh token 由服务端通过 HttpOnly Cookie 下发，随 CookieJar 自动携带；
             // 无 Cookie 时服务端返回 401，本方法返回 InvalidSession
@@ -306,6 +253,9 @@ object RetrofitClient {
         retrofit = null
         apiService = null
         refreshRetrofit = null
+        // 切换服务端后旧会话凭据与 Cookie 均失效，一并清理
+        cachedPrefs = null
+        cookieJar?.clear()
     }
 
     fun getBaseUrl(): String {

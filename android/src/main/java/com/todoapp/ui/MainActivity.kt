@@ -58,19 +58,17 @@ class MainActivity : AppCompatActivity() {
         // 防止未配对/未登录用户经底栏或深链绕过配对/登录页进入主界面
         navController.addOnDestinationChangedListener { controller, destination, _ ->
             val app = application as TodoApp
-            val isAuthScreen = destination.id == R.id.pairingFragment ||
-                destination.id == R.id.loginFragment
+            val isAuthScreen = NavigationGuard.isAuthScreen(destination.id)
 
             // 配对/登录页隐藏底部导航，避免未登录用户误入任务列表/设置页（设置页含退出登录入口）
             bottomNav?.isVisible = !isAuthScreen
 
             if (isAuthScreen) return@addOnDestinationChangedListener
 
-            val requiredDestination = when {
-                !app.isUserPaired() -> R.id.pairingFragment
-                !app.isUserLoggedIn() -> R.id.loginFragment
-                else -> null
-            }
+            val requiredDestination = NavigationGuard.requiredDestination(
+                app.isUserPaired(),
+                app.isUserLoggedIn()
+            )
             if (requiredDestination != null && controller.currentDestination?.id != requiredDestination) {
                 // post 到下一帧执行，避免在导航分发过程中再次 navigate 引发状态异常
                 bindingRoot().post {
