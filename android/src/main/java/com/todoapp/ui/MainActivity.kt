@@ -5,8 +5,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.navigation.NavController
 import androidx.navigation.NavOptions
 import androidx.navigation.fragment.NavHostFragment
-import androidx.navigation.ui.AppBarConfiguration
-import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.todoapp.R
@@ -50,14 +48,9 @@ class MainActivity : AppCompatActivity() {
         val bottomNav = findViewById<BottomNavigationView>(R.id.bottom_navigation)
         bottomNav?.setupWithNavController(navController)
 
-        val appBarConfiguration = AppBarConfiguration(
-            setOf(
-                R.id.taskListFragment,
-                R.id.calendarFragment,
-                R.id.settingsFragment
-            )
-        )
-        setupActionBarWithNavController(navController, appBarConfiguration)
+        // 注意：主题为 NoActionBar，不能调用 setupActionBarWithNavController——
+        // 它内部会立即回调 setTitle 并要求 setSupportActionBar 已设置，
+        // 否则抛 IllegalStateException 导致冷启动闪退（CI 冒烟已复现）
     }
 
     private fun checkInitialNavigation() {
