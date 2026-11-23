@@ -57,7 +57,60 @@ jobs:
           api-level: 34
           arch: x86_64
           target: google_apis
-          script: cd android && ./gradlew connectedDebugAndroidTest -PSERVER_URL=http://10.0.2.2:8080/api/v1/ --no-daemon
+          script: |
+            cd android
+            ./gradlew connectedDebugAndroidTest -PSERVER_URL=http://10.0.2.2:8080/api/v1/ --no-daemon
+
+            # ===== 启动冒烟测试：全新安装后冷启动 MainActivity，深浅色两轮 =====
+            # 背景：CI 此前只覆盖 DAO，从未启动过 UI；线上曾出现"点图标立刻闪退"
+            APK=$(ls build/outputs/apk/debug/*.apk | head -1)
+            adb uninstall com.todoapp || true
+            adb install -r "$APK"
+
+            smoke() {
+              local label="$1"
+              echo "===== 启动冒烟: $label ====="
+              adb logcat -c
+              adb shell am start -W -n com.todoapp/.ui.MainActivity
+              sleep 10
+              PID=$(adb shell pidof com.todoapp | tr -d ' \r')
+              adb logcat -d -b crash > "crash_${label}.log" || true
+              adb logcat -d "*:E" > "errors_${label}.log" || true
+              if [ -z "$PID" ]; then
+                echo "❌ $label: 启动后进程已死亡（崩溃栈见 crash_${label}.log）"
+                FAILED=1
+              else
+                echo "✅ $label: 进程存活 pid=$PID"
+              fi
+              adb shell am force-stop com.todoapp
+            }
+
+            FAILED=0
+            adb shell cmd uimode night no
+            smoke light
+            adb shell cmd uimode night yes
+            smoke dark
+
+            if [ "$FAILED" -eq 1 ]; then
+              {
+                echo "## Android 启动冒烟失败"
+                echo '```'
+                tail -120 crash_light.log crash_dark.log 2>/dev/null
+                tail -40 errors_light.log errors_dark.log 2>/dev/null
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-smoke-logs
+          path: |
+            android/crash_*.log
+            android/errors_*.log
+          if-no-files-found: ignore
 
       - name: Upload test reports
         if: always()
