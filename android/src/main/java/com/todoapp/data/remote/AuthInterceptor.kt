@@ -74,6 +74,6 @@ internal class AuthInterceptor(
         }
 
         // 刷新失败：保留原始响应（不能 close 后再返回，否则调用方读取错误体时报 closed）
-        response
+        return response
     }
 }
