@@ -19,6 +19,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -225,10 +226,14 @@ class AuthInterceptorTest {
         val request = Request.Builder().url(server.url("/tasks")).build()
         val executor = Executors.newFixedThreadPool(2)
         try {
-            val first = executor.submit { client.newCall(request).execute() }
-            val second = executor.submit { client.newCall(request).execute() }
-            first.get(5, TimeUnit.SECONDS).use { assertEquals(200, it.code) }
-            second.get(5, TimeUnit.SECONDS).use { assertEquals(200, it.code) }
+            val first: Future<Response> = executor.submit { client.newCall(request).execute() }
+            val second: Future<Response> = executor.submit { client.newCall(request).execute() }
+            val firstResponse = first.get(5, TimeUnit.SECONDS)
+            assertEquals(200, firstResponse.code)
+            firstResponse.close()
+            val secondResponse = second.get(5, TimeUnit.SECONDS)
+            assertEquals(200, secondResponse.code)
+            secondResponse.close()
         } finally {
             executor.shutdownNow()
         }
