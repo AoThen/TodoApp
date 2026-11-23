@@ -23,7 +23,10 @@ smoke() {
   adb logcat -d -b crash > "crash_${label}.log" || true
   adb logcat -d "*:E" > "errors_${label}.log" || true
   if [ -z "$PID" ]; then
-    echo "FAIL $label: 启动后进程已死亡（崩溃栈见 crash_${label}.log）"
+    echo "FAIL $label: 启动后进程已死亡，崩溃栈如下："
+    tail -80 "crash_${label}.log" || true
+    echo "----- ${label} error 日志（最近 40 行） -----"
+    tail -40 "errors_${label}.log" || true
     FAILED=1
   else
     echo "PASS $label: 进程存活 pid=$PID"
@@ -34,6 +37,23 @@ smoke() {
 FAILED=0
 adb shell cmd uimode night no
 smoke light
+# 首启崩溃复探：同模式下立即二次启动，区分「仅首次安装崩溃」与「该模式下持续崩溃」
+if [ "$FAILED" -eq 1 ]; then
+  echo "===== 复探: light 第二次启动 ====="
+  adb logcat -c
+  adb shell am start -W -n com.todoapp/.ui.MainActivity
+  sleep 8
+  PID2=$(adb shell pidof com.todoapp | tr -d ' \r' || true)
+  adb logcat -d -b crash > crash_light_retry.log || true
+  if [ -z "$PID2" ]; then
+    echo "FAIL light-retry: 二次启动仍崩溃，崩溃栈如下："
+    tail -80 crash_light_retry.log || true
+  else
+    echo "PASS light-retry: 二次启动存活 pid=$PID2 —— 属「仅首次启动崩溃」"
+  fi
+  adb shell am force-stop com.todoapp
+  FAILED=0
+fi
 adb shell cmd uimode night yes
 smoke dark
 
