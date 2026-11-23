@@ -5,6 +5,7 @@ import androidx.work.Configuration
 import com.todoapp.config.AppConfig
 import com.todoapp.data.crypto.KeyStorage
 import com.todoapp.data.remote.RetrofitClient
+import com.todoapp.utils.JwtUtils
 import com.todoapp.utils.ThemeUtils
 import dagger.hilt.android.HiltAndroidApp
 
@@ -36,7 +37,14 @@ class TodoApp : Application(), Configuration.Provider {
     }
 
     fun isUserLoggedIn(): Boolean {
-        return RetrofitClient.hasToken(this) &&
-        RetrofitClient.getAccessToken(this).isNotEmpty()
+        val token = RetrofitClient.getAccessToken(this)
+        if (token.isEmpty()) return false
+        // Valid/Expired 均视为已登录：过期令牌由网络层 401→自动续期链路无感刷新，
+        // 仅格式/类型非法或为空才判定为未登录，避免"假登录"（过期后仍进主界面且接口全 401）
+        return when (JwtUtils.validateAccessToken(token)) {
+            is JwtUtils.TokenValidation.Valid,
+            is JwtUtils.TokenValidation.Expired -> true
+            else -> false
+        }
     }
 }

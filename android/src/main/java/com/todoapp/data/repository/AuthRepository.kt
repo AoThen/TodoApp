@@ -3,6 +3,7 @@ package com.todoapp.data.repository
 import android.content.Context
 import com.todoapp.data.remote.*
 import com.todoapp.data.remote.RetrofitClient
+import com.todoapp.utils.JwtUtils
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -74,7 +75,13 @@ class AuthRepository @Inject constructor(
     }
     
     fun isLoggedIn(): Boolean {
-        return RetrofitClient.hasToken(context) && 
-               RetrofitClient.getAccessToken(context).isNotEmpty()
+        val token = RetrofitClient.getAccessToken(context)
+        if (token.isEmpty()) return false
+        // 与 TodoApp.isUserLoggedIn 保持一致：过期令牌交给 401 自动续期链路，仅非法格式/类型视为未登录
+        return when (JwtUtils.validateAccessToken(token)) {
+            is JwtUtils.TokenValidation.Valid,
+            is JwtUtils.TokenValidation.Expired -> true
+            else -> false
+        }
     }
 }

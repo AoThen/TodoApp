@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavOptions
@@ -118,6 +119,8 @@ class SettingsFragment : Fragment() {
     }
 
     private fun setupLogout() {
+        // 防御：任何路径下未登录都不展示退出登录入口
+        binding.btnLogout.isVisible = authRepository.isLoggedIn()
         binding.btnLogout.setOnClickListener {
             MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.settings_logout_confirm_title)

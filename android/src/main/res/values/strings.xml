@@ -123,6 +123,7 @@
     <string name="settings_logout_confirm_title">退出登录</string>
     <string name="settings_logout_confirm_message">确定退出登录吗？本地尚未同步的修改将被清除。</string>
     <string name="settings_logout_done">已退出登录</string>
+    <string name="session_expired_relogin">登录已过期，请重新登录</string>
     <string name="settings_export_success">已导出 %1$d 条任务</string>
     <string name="settings_export_failed">导出失败，请重试</string>
     <string name="settings_import_success">成功导入 %1$d 条任务</string>

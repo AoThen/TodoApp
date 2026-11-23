@@ -15,6 +15,10 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 
 object RetrofitClient {
+
+    /** 刷新令牌结果：Success 成功续期；InvalidSession 服务端明确拒绝（需重新登录）；TransientError 网络等瞬态失败 */
+    enum class RefreshOutcome { Success, InvalidSession, TransientError }
+
     private var BASE_URL = com.todoapp.config.AppConfig.DEFAULT_BASE_URL
     private const val PREFS_NAME = "todoapp_prefs"
     private const val ACCESS_TOKEN_KEY = "access_token"
@@ -107,32 +111,57 @@ object RetrofitClient {
                 val currentToken = prefs.getString(ACCESS_TOKEN_KEY, null)
                 // 拿锁后发现 token 已被其他线程刷新时无需再次刷新，直接用最新 token 重试；
                 // 否则低概率下后来者会拿着新 token 仍收到 401，造成偶发同步失败/被登出假象
-                val refreshed = if (currentToken == token) tryRefreshToken(context) else true
-                if (refreshed) {
-                    response.close()
-                    val newToken = prefs.getString(ACCESS_TOKEN_KEY, null)
-                    val retryRequest = originalRequest.newBuilder().apply {
-                        addHeader("Accept", "application/json")
-                        header("Content-Type", "application/json")
-                        newToken?.let {
-                            addHeader("Authorization", "Bearer $it")
-                        }
-                    }.build()
+                val outcome = if (currentToken == token) {
+                    tryRefreshToken(context)
+                } else {
+                    RefreshOutcome.Success
+                }
+                when (outcome) {
+                    RefreshOutcome.Success -> {
+                        response.close()
+                        val newToken = prefs.getString(ACCESS_TOKEN_KEY, null)
+                        val retryRequest = originalRequest.newBuilder().apply {
+                            addHeader("Accept", "application/json")
+                            header("Content-Type", "application/json")
+                            newToken?.let {
+                                addHeader("Authorization", "Bearer $it")
+                            }
+                        }.build()
 
-                    return@Interceptor chain.proceed(retryRequest)
+                        return@Interceptor chain.proceed(retryRequest)
+                    }
+                    RefreshOutcome.InvalidSession -> {
+                        // 服务端明确拒绝刷新令牌：清除本地会话并广播失效事件，
+                        // 由 UI 层引导重新登录；离线等瞬态失败不动会话，避免误踢
+                        android.util.Log.e("RetrofitClient", "Refresh token rejected, session expired")
+                        clearToken(context)
+                        SessionEvents.notifyExpired()
+                    }
+                    RefreshOutcome.TransientError -> {
+                        android.util.Log.e("RetrofitClient", "Token refresh failed transiently, keep session")
+                    }
                 }
             }
 
             // 刷新失败：保留原始响应（不能 close 后再返回，否则调用方读取错误体时报 closed）
-            android.util.Log.e("RetrofitClient", "Token refresh failed, user needs to re-login")
             response
         }
     }
 
-    private fun tryRefreshToken(context: Context): Boolean {
+    /**
+     * 主动刷新访问令牌（如启动时检测到过期）。
+     * 与拦截器共用 refreshLock，避免并发触发服务端一次性 refresh token 轮换互踢。
+     */
+    fun refreshAccessToken(context: Context): RefreshOutcome {
+        return synchronized(refreshLock) {
+            tryRefreshToken(context)
+        }
+    }
+
+    private fun tryRefreshToken(context: Context): RefreshOutcome {
         return try {
             // refresh token 由服务端通过 HttpOnly Cookie 下发，随 CookieJar 自动携带；
-            // 无 Cookie 时服务端返回 401，本方法返回 false
+            // 无 Cookie 时服务端返回 401，本方法返回 InvalidSession
             // 注意：elvis 表达式必须加括号后再调用 create，否则公共类型退化为 Any
             val refreshApiService = (refreshRetrofit ?: synchronized(this) {
                 refreshRetrofit ?: Retrofit.Builder()
@@ -153,14 +182,19 @@ object RetrofitClient {
             if (response.isSuccessful && refreshedBody != null) {
                 saveAccessToken(context, refreshedBody.accessToken)
                 android.util.Log.d("RetrofitClient", "Token refreshed successfully")
-                true
+                RefreshOutcome.Success
             } else {
                 android.util.Log.e("RetrofitClient", "Token refresh failed: ${response.code()}")
-                false
+                // 401/403 表示 refresh token 已失效或被拒绝；其余（5xx 等）视为瞬态失败
+                if (response.code() == 401 || response.code() == 403) {
+                    RefreshOutcome.InvalidSession
+                } else {
+                    RefreshOutcome.TransientError
+                }
             }
         } catch (e: Exception) {
             android.util.Log.e("RetrofitClient", "Token refresh error", e)
-            false
+            RefreshOutcome.TransientError
         }
     }
 
@@ -239,6 +273,7 @@ object RetrofitClient {
         }
     }
 
+    /** 仅判断本地是否存有 token 字符串（不含有效性校验）；登录态判定请用 JwtUtils.validateAccessToken */
     fun hasToken(context: Context): Boolean {
         return try {
             val prefs = getEncryptedPrefs(context)
