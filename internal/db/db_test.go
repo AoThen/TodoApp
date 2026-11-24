@@ -43,12 +43,12 @@ func TestUpdateTaskFullOwnership(t *testing.T) {
 	}
 
 	// 用户A更新自己的任务：应成功
-	if err := UpdateTaskFull(taskID, int(userA), "任务A-更新", "", "todo", "high", "", false); err != nil {
+	if err := UpdateTaskFull(taskID, int(userA), "任务A-更新", "", "todo", "high", "", false, nil); err != nil {
 		t.Errorf("用户A更新自己的任务应成功，got: %v", err)
 	}
 
 	// 用户B尝试更新用户A的任务：应失败（越权防护）
-	if err := UpdateTaskFull(taskID, int(userB), "恶意修改", "", "done", "low", "", false); err == nil {
+	if err := UpdateTaskFull(taskID, int(userB), "恶意修改", "", "done", "low", "", false, nil); err == nil {
 		t.Error("用户B更新用户A的任务应被拒绝，但未报错")
 	}
 
@@ -122,7 +122,7 @@ func TestUpdateTaskFullDueAt(t *testing.T) {
 	}
 
 	// 不传 due_at（hasDueAt=false）：保持为空
-	if err := UpdateTaskFull(taskID, int(userID), "改标题", "", "todo", "high", "", false); err != nil {
+	if err := UpdateTaskFull(taskID, int(userID), "改标题", "", "todo", "high", "", false, nil); err != nil {
 		t.Fatalf("更新失败: %v", err)
 	}
 	task, err := GetTaskByID(taskID, int(userID))
@@ -134,7 +134,7 @@ func TestUpdateTaskFullDueAt(t *testing.T) {
 	}
 
 	// 传 due_at：设置截止日期
-	if err := UpdateTaskFull(taskID, int(userID), "", "", "", "", "2026-12-01", true); err != nil {
+	if err := UpdateTaskFull(taskID, int(userID), "", "", "", "", "2026-12-01", true, nil); err != nil {
 		t.Fatalf("设置 due_at 失败: %v", err)
 	}
 	task, err = GetTaskByID(taskID, int(userID))
@@ -148,7 +148,7 @@ func TestUpdateTaskFullDueAt(t *testing.T) {
 	}
 
 	// 传空串（hasDueAt=true）：清除截止日期
-	if err := UpdateTaskFull(taskID, int(userID), "", "", "", "", "", true); err != nil {
+	if err := UpdateTaskFull(taskID, int(userID), "", "", "", "", "", true, nil); err != nil {
 		t.Fatalf("清除 due_at 失败: %v", err)
 	}
 	task, err = GetTaskByID(taskID, int(userID))
@@ -175,7 +175,7 @@ func TestGetTasksFilteredSearch(t *testing.T) {
 		t.Fatalf("创建任务失败: %v", err)
 	}
 	// 描述中包含关键词，验证描述命中
-	if err := UpdateTaskFull(descID, int(userID), "", "午餐计划包含牛奶曲奇", "", "", "", false); err != nil {
+	if err := UpdateTaskFull(descID, int(userID), "", "午餐计划包含牛奶曲奇", "", "", "", false, nil); err != nil {
 		t.Fatalf("更新描述失败: %v", err)
 	}
 	if _, err := CreateTask(int(userID), "local-search-3", "无关任务"); err != nil {

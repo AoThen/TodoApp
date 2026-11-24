@@ -188,12 +188,42 @@ func handleTaskByID(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		if title == "" && status == "" && description == "" && priority == "" && !hasDueAt {
+		// 手动排序/循环任务字段：显式携带才更新
+		extra := &db.TaskExtraFields{}
+		hasExtra := false
+		if v, ok := updateData["sort_order"].(float64); ok {
+			sortOrder := v
+			extra.SortOrder = &sortOrder
+			hasExtra = true
+		}
+		if v, ok := updateData["recurrence_type"].(string); ok {
+			if v != "" && !db.IsValidRecurrenceRule(v) {
+				response.ErrorResponse(w, "循环规则无效", http.StatusBadRequest)
+				return
+			}
+			recurrenceType := v
+			extra.RecurrenceType = &recurrenceType
+			hasExtra = true
+		}
+		if v, ok := updateData["recurrence_series_id"].(string); ok {
+			series := v
+			extra.RecurrenceSeriesID = &series
+			hasExtra = true
+		}
+
+		if title == "" && status == "" && description == "" && priority == "" && !hasDueAt && !hasExtra {
 			response.ErrorResponse(w, "没有要更新的字段", http.StatusBadRequest)
 			return
 		}
 
-		err := db.UpdateTaskFull(taskID, userID, title, description, status, priority, dueAt, hasDueAt)
+		// 记录更新前状态，用于循环任务"完成时生成下一次"的迁移判断
+		oldTask, _ := db.GetTaskByID(taskID, userID)
+		oldStatus := ""
+		if oldTask != nil {
+			oldStatus, _ = oldTask["status"].(string)
+		}
+
+		err := db.UpdateTaskFull(taskID, userID, title, description, status, priority, dueAt, hasDueAt, extra)
 		if err != nil {
 			if strings.Contains(err.Error(), "任务不存在") {
 				response.ErrorResponse(w, "任务不存在", http.StatusNotFound)
@@ -201,6 +231,22 @@ func handleTaskByID(w http.ResponseWriter, r *http.Request) {
 			}
 			response.ErrorResponse(w, "更新任务失败", http.StatusInternalServerError)
 			return
+		}
+
+		// 循环任务衍生处理：补齐系列 ID；完成时物化下一次 occurrence（失败不阻断本次更新）
+		newStatus := oldStatus
+		if status != "" {
+			newStatus = status
+		}
+		if extra.RecurrenceType != nil && db.IsValidRecurrenceRule(*extra.RecurrenceType) {
+			if _, sErr := db.EnsureRecurrenceSeriesID(db.DB, userID, taskID); sErr != nil {
+				log.Printf("补齐循环系列 ID 失败: task_id=%d %v", taskID, sErr)
+			}
+		}
+		if newStatus == "done" && oldStatus != "done" {
+			if mErr := db.MaterializeNextIfRecurring(userID, taskID); mErr != nil {
+				log.Printf("生成循环任务下一次失败: task_id=%d %v", taskID, mErr)
+			}
 		}
 
 		task, _ := db.GetTaskByID(taskID, userID)

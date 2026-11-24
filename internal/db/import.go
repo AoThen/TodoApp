@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -39,6 +40,9 @@ func BatchInsertTasks(userID int, tasks []map[string]interface{}) ([]int64, erro
 		description := taskValue(taskData["description"])
 		status := taskValue(taskData["status"])
 		priority := taskValue(taskData["priority"])
+		dueAt := taskValue(taskData["due_at"])
+		recurrenceType := taskValue(taskData["recurrence_type"])
+		recurrenceSeriesID := taskValue(taskData["recurrence_series_id"])
 
 		// 导入数据可能不带 local_id，自动生成以保证幂等同步语义
 		if localID == "" {
@@ -57,9 +61,29 @@ func BatchInsertTasks(userID int, tasks []map[string]interface{}) ([]int64, erro
 			priority = "medium"
 		}
 
+		// sort_order 兼容 JSON 数值与 CSV 字符串两种来源
+		sortOrder := 0.0
+		switch v := taskData["sort_order"].(type) {
+		case float64:
+			sortOrder = v
+		case string:
+			sortOrder, _ = strconv.ParseFloat(v, 64)
+		}
+
+		// 循环规则非法时清空，避免导入脏数据
+		if recurrenceType != "" && !IsValidRecurrenceRule(recurrenceType) {
+			recurrenceType = ""
+			recurrenceSeriesID = ""
+		}
+
+		dueAtArg := interface{}(nil)
+		if dueAt != "" {
+			dueAtArg = dueAt
+		}
+
 		result, err := tx.Exec(
-			"INSERT INTO tasks (user_id, local_id, server_version, title, description, status, priority, created_at, updated_at, last_modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			userID, localID, 1, title, description, status, priority, now, now, now,
+			"INSERT INTO tasks (user_id, local_id, server_version, title, description, status, priority, due_at, created_at, updated_at, last_modified, sort_order, recurrence_type, recurrence_series_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			userID, localID, 1, title, description, status, priority, dueAtArg, now, now, now, sortOrder, recurrenceType, recurrenceSeriesID,
 		)
 
 		if err != nil {

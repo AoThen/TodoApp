@@ -48,9 +48,18 @@ func RecordConflict(userID int, localID string, serverID int64, reason string, o
 	return err
 }
 
+// TaskExtraFields 同步更新中"显式携带才更新"的扩展字段；
+// 指针为 nil 表示本次不更新该字段（保持服务端原值）
+type TaskExtraFields struct {
+	SortOrder          *float64
+	RecurrenceType     *string
+	RecurrenceSeriesID *string
+}
+
 // UpdateTaskWithVersion 更新任务并增加版本号（校验归属；q 传事务以纳入原子提交）
 // dueAt 非 nil 时一并更新 due_at（空串表示清除）；nil 表示保持原值
-func UpdateTaskWithVersion(q DBTX, userID int, taskID int64, title, description, status, priority string, dueAt *string, newVer int) error {
+// extra 非 nil 时按指针是否为 nil 决定是否更新手动排序/循环任务字段
+func UpdateTaskWithVersion(q DBTX, userID int, taskID int64, title, description, status, priority string, dueAt *string, newVer int, extra *TaskExtraFields) error {
 	now := time.Now().UTC()
 	query := "UPDATE tasks SET title=?, description=?, status=?, priority=?, server_version=?, updated_at=?, last_modified=?"
 	args := []interface{}{title, description, status, priority, newVer, now, now}
@@ -60,6 +69,20 @@ func UpdateTaskWithVersion(q DBTX, userID int, taskID int64, title, description,
 			args = append(args, nil)
 		} else {
 			args = append(args, *dueAt)
+		}
+	}
+	if extra != nil {
+		if extra.SortOrder != nil {
+			query += ", sort_order=?"
+			args = append(args, *extra.SortOrder)
+		}
+		if extra.RecurrenceType != nil {
+			query += ", recurrence_type=?"
+			args = append(args, *extra.RecurrenceType)
+		}
+		if extra.RecurrenceSeriesID != nil {
+			query += ", recurrence_series_id=?"
+			args = append(args, *extra.RecurrenceSeriesID)
 		}
 	}
 	query += " WHERE id=? AND user_id=?"

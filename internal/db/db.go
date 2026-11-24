@@ -114,6 +114,9 @@ func InitDB(dataSourceName string) error {
             completed_at DATETIME,
             is_deleted BOOLEAN DEFAULT 0,
             last_modified DATETIME,
+            sort_order REAL DEFAULT 0,
+            recurrence_type TEXT DEFAULT '',
+            recurrence_series_id TEXT DEFAULT '',
             FOREIGN KEY(user_id) REFERENCES users(id)
         );`,
 		`CREATE TABLE IF NOT EXISTS delta_queue (
@@ -212,6 +215,16 @@ func InitDB(dataSourceName string) error {
 	// 存量库迁移：devices 表补充配对密钥过期时间列（新库建表语句已包含，此处容错处理重复列）
 	if _, err := DB.Exec("ALTER TABLE devices ADD COLUMN pairing_expires_at DATETIME"); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 		return fmt.Errorf("迁移 devices.pairing_expires_at 失败: %w", err)
+	}
+	// 存量库迁移：tasks 表补充手动排序与循环任务列（新库建表语句已包含，此处容错处理重复列）
+	if _, err := DB.Exec("ALTER TABLE tasks ADD COLUMN sort_order REAL DEFAULT 0"); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("迁移 tasks.sort_order 失败: %w", err)
+	}
+	if _, err := DB.Exec("ALTER TABLE tasks ADD COLUMN recurrence_type TEXT DEFAULT ''"); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("迁移 tasks.recurrence_type 失败: %w", err)
+	}
+	if _, err := DB.Exec("ALTER TABLE tasks ADD COLUMN recurrence_series_id TEXT DEFAULT ''"); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("迁移 tasks.recurrence_series_id 失败: %w", err)
 	}
 	// 初始化任务全文索引（FTS5 不可用时自动退回 LIKE）
 	InitFTS()
@@ -342,9 +355,13 @@ func ConsumeRefreshToken(userID string, token string) (bool, error) {
 // 幂等回放 server_changes，重复下发无副作用，可彻底消除 <1s 的漏拉窗口。
 func GetTasksChangedSince(userID int, since time.Time) ([]map[string]interface{}, error) {
 	sinceStr := since.UTC().Format("2006-01-02 15:04:05")
+	// 注意：必须携带 due_at/created_at/completed_at，否则对端（安卓增量拉取）会丢失
+	// 截止时间与完成时间——服务端生成的循环任务下一次 occurrence 也会因此缺 due_at
 	rows, err := DB.Query(`
 		SELECT id, COALESCE(local_id,''), server_version, title, COALESCE(description,''),
-		       status, COALESCE(priority,'medium'), is_deleted, updated_at, last_modified
+		       status, COALESCE(priority,'medium'), is_deleted, updated_at, last_modified,
+		       COALESCE(due_at,''), COALESCE(created_at,''), COALESCE(completed_at,''),
+		       COALESCE(sort_order,0), COALESCE(recurrence_type,''), COALESCE(recurrence_series_id,'')
 		FROM tasks
 		WHERE user_id = ? AND strftime('%s', COALESCE(last_modified, updated_at)) >= strftime('%s', ?)
 		ORDER BY COALESCE(last_modified, updated_at) ASC
@@ -361,7 +378,12 @@ func GetTasksChangedSince(userID int, since time.Time) ([]map[string]interface{}
 		var serverVersion int
 		var isDeleted bool
 		var updatedAt, lastModified sql.NullTime
-		if err := rows.Scan(&id, &localID, &serverVersion, &title, &description, &status, &priority, &isDeleted, &updatedAt, &lastModified); err != nil {
+		var dueAt, createdAt, completedAt string
+		var sortOrder float64
+		var recurrenceType, recurrenceSeriesID string
+		if err := rows.Scan(&id, &localID, &serverVersion, &title, &description, &status, &priority,
+			&isDeleted, &updatedAt, &lastModified, &dueAt, &createdAt, &completedAt,
+			&sortOrder, &recurrenceType, &recurrenceSeriesID); err != nil {
 			return nil, err
 		}
 		results = append(results, map[string]interface{}{
@@ -375,12 +397,17 @@ func GetTasksChangedSince(userID int, since time.Time) ([]map[string]interface{}
 			"is_deleted":     isDeleted,
 			"updated_at":     nullTimeRFC3339(updatedAt),
 			"last_modified":  nullTimeRFC3339(lastModified),
+			"due_at":         dueAt,
+			"created_at":     createdAt,
+			"completed_at":   completedAt,
+			"sort_order":     sortOrder,
+			"recurrence_type":      recurrenceType,
+			"recurrence_series_id": recurrenceSeriesID,
 			"op":             "update",
 		})
 	}
 	return results, nil
 }
-
 // nullTimeRFC3339 将可空时间列格式化为 RFC3339，NULL 返回空串
 func nullTimeRFC3339(t sql.NullTime) string {
 	if !t.Valid {
@@ -513,7 +540,8 @@ func GetTasksStreaming(userID int, batchSize int, processFunc func([]map[string]
 	for {
 		query := `
 			SELECT id, local_id, server_version, title, description, status, priority,
-			       due_at, created_at, updated_at, completed_at, is_deleted, last_modified
+			       due_at, created_at, updated_at, completed_at, is_deleted, last_modified,
+			       sort_order, recurrence_type, recurrence_series_id
 			FROM tasks
 			WHERE user_id = ? AND is_deleted = 0
 			ORDER BY created_at DESC
@@ -539,7 +567,10 @@ func GetTasksStreaming(userID int, batchSize int, processFunc func([]map[string]
 			var completedAt sql.NullString
 			var isDeleted sql.NullBool
 			var lastModified sql.NullString
-			if err := rows.Scan(&id, &localID, &serverVersion, &title, &description, &status, &priority, &dueAt, &createdAt, &updatedAt, &completedAt, &isDeleted, &lastModified); err != nil {
+			var sortOrderVal sql.NullFloat64
+			var recurrenceType, recurrenceSeriesID sql.NullString
+			if err := rows.Scan(&id, &localID, &serverVersion, &title, &description, &status, &priority, &dueAt, &createdAt, &updatedAt, &completedAt, &isDeleted, &lastModified,
+				&sortOrderVal, &recurrenceType, &recurrenceSeriesID); err != nil {
 				rows.Close()
 				return err
 			}
@@ -562,6 +593,14 @@ func GetTasksStreaming(userID int, batchSize int, processFunc func([]map[string]
 				"completed_at":  completedAt.String,
 				"is_deleted":    isDeleted.Bool,
 				"last_modified": lastModified.String,
+				"sort_order": func() interface{} {
+					if sortOrderVal.Valid {
+						return sortOrderVal.Float64
+					}
+					return 0
+				}(),
+				"recurrence_type":      recurrenceType.String,
+				"recurrence_series_id": recurrenceSeriesID.String,
 			}
 			batch = append(batch, row)
 		}
@@ -626,26 +665,34 @@ func GetTasksFiltered(userID int, page, pageSize int, status, priority, search, 
 		return nil, 0, err
 	}
 
-	sortField := "created_at"
-	if sortBy == "updated_at" {
-		sortField = "updated_at"
-	} else if sortBy == "priority" {
-		sortField = "CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END"
-	}
+	// manual 排序按用户拖拽顺序（sort_order 升序），同序值回退创建时间倒序，保证老数据（sort_order 全 0）平滑过渡
+	var orderBy string
+	if sortBy == "manual" {
+		orderBy = "sort_order ASC, created_at DESC"
+	} else {
+		sortField := "created_at"
+		if sortBy == "updated_at" {
+			sortField = "updated_at"
+		} else if sortBy == "priority" {
+			sortField = "CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END"
+		}
 
-	order := "DESC"
-	if sortOrder == "asc" {
-		order = "ASC"
+		order := "DESC"
+		if sortOrder == "asc" {
+			order = "ASC"
+		}
+		orderBy = fmt.Sprintf("%s %s", sortField, order)
 	}
 
 	query := fmt.Sprintf(`
 		SELECT id, local_id, server_version, title, description, status, priority,
-			due_at, created_at, updated_at, completed_at, is_deleted, last_modified
+			due_at, created_at, updated_at, completed_at, is_deleted, last_modified,
+			sort_order, recurrence_type, recurrence_series_id
 		FROM tasks
 		%s
-		ORDER BY %s %s
+		ORDER BY %s
 		LIMIT ? OFFSET ?
-	`, whereClause, sortField, order)
+	`, whereClause, orderBy)
 
 	args = append(args, pageSize, offset)
 	rows, err := DB.Query(query, args...)
@@ -663,9 +710,12 @@ func GetTasksFiltered(userID int, page, pageSize int, status, priority, search, 
 		var dueAt, createdAt, updatedAt, completedAt sql.NullString
 		var isDeleted sql.NullBool
 		var lastModified sql.NullString
+		var sortOrderVal sql.NullFloat64
+		var recurrenceType, recurrenceSeriesID sql.NullString
 
 		if err := rows.Scan(&id, &localID, &serverVersion, &title, &description, &statusVal, &priorityVal,
-			&dueAt, &createdAt, &updatedAt, &completedAt, &isDeleted, &lastModified); err != nil {
+			&dueAt, &createdAt, &updatedAt, &completedAt, &isDeleted, &lastModified,
+			&sortOrderVal, &recurrenceType, &recurrenceSeriesID); err != nil {
 			return nil, 0, err
 		}
 
@@ -688,6 +738,14 @@ func GetTasksFiltered(userID int, page, pageSize int, status, priority, search, 
 			"completed_at":  completedAt.String,
 			"is_deleted":    isDeleted.Bool,
 			"last_modified": lastModified.String,
+			"sort_order": func() interface{} {
+				if sortOrderVal.Valid {
+					return sortOrderVal.Float64
+				}
+				return 0
+			}(),
+			"recurrence_type":       recurrenceType.String,
+			"recurrence_series_id":  recurrenceSeriesID.String,
 		}
 		results = append(results, row)
 	}
@@ -703,14 +761,18 @@ func GetTaskByID(taskID int64, userID int) (map[string]interface{}, error) {
 	var dueAt, createdAt, updatedAt, completedAt sql.NullString
 	var isDeleted sql.NullBool
 	var lastModified sql.NullString
+	var sortOrderVal sql.NullFloat64
+	var recurrenceType, recurrenceSeriesID sql.NullString
 
 	err := DB.QueryRow(`
 		SELECT id, local_id, server_version, title, description, status, priority, 
-		       due_at, created_at, updated_at, completed_at, is_deleted, last_modified
+		       due_at, created_at, updated_at, completed_at, is_deleted, last_modified,
+		       sort_order, recurrence_type, recurrence_series_id
 		FROM tasks 
 		WHERE id = ? AND user_id = ?
 	`, taskID, userID).Scan(&id, &localID, &serverVersion, &title, &description,
-		&status, &priority, &dueAt, &createdAt, &updatedAt, &completedAt, &isDeleted, &lastModified)
+		&status, &priority, &dueAt, &createdAt, &updatedAt, &completedAt, &isDeleted, &lastModified,
+		&sortOrderVal, &recurrenceType, &recurrenceSeriesID)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -738,6 +800,14 @@ func GetTaskByID(taskID int64, userID int) (map[string]interface{}, error) {
 		"completed_at":  completedAt.String,
 		"is_deleted":    isDeleted.Bool,
 		"last_modified": lastModified.String,
+		"sort_order": func() interface{} {
+			if sortOrderVal.Valid {
+				return sortOrderVal.Float64
+			}
+			return 0
+		}(),
+		"recurrence_type":      recurrenceType.String,
+		"recurrence_series_id": recurrenceSeriesID.String,
 	}, nil
 }
 
@@ -755,7 +825,8 @@ func CreateTask(userID int, localID, title string) (int64, error) {
 }
 
 // dueAt/hasDueAt：hasDueAt 为 true 时更新 due_at（空串表示清除），否则保持原值
-func UpdateTaskFull(taskID int64, userID int, title, description, status, priority string, dueAt string, hasDueAt bool) error {
+// extra 非 nil 时按指针是否为 nil 决定是否更新手动排序/循环任务字段
+func UpdateTaskFull(taskID int64, userID int, title, description, status, priority string, dueAt string, hasDueAt bool, extra *TaskExtraFields) error {
 	now := time.Now().UTC()
 
 	query := "UPDATE tasks SET "
@@ -783,6 +854,20 @@ func UpdateTaskFull(taskID int64, userID int, title, description, status, priori
 			args = append(args, nil)
 		} else {
 			args = append(args, dueAt)
+		}
+	}
+	if extra != nil {
+		if extra.SortOrder != nil {
+			query += "sort_order = ?, "
+			args = append(args, *extra.SortOrder)
+		}
+		if extra.RecurrenceType != nil {
+			query += "recurrence_type = ?, "
+			args = append(args, *extra.RecurrenceType)
+		}
+		if extra.RecurrenceSeriesID != nil {
+			query += "recurrence_series_id = ?, "
+			args = append(args, *extra.RecurrenceSeriesID)
 		}
 	}
 

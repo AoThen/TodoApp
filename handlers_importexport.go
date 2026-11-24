@@ -148,6 +148,10 @@ func handleImport(w http.ResponseWriter, r *http.Request) {
 				"description": description,
 				"status":      status,
 				"priority":    priority,
+				"due_at":      record["due_at"],
+				"sort_order":  record["sort_order"],
+				"recurrence_type":      record["recurrence_type"],
+				"recurrence_series_id": record["recurrence_series_id"],
 			}
 			tasks = append(tasks, task)
 		}
@@ -283,6 +287,7 @@ func handleExport(w http.ResponseWriter, r *http.Request) {
 			"id", "local_id", "server_version", "title", "description",
 			"status", "priority", "due_at", "created_at", "updated_at",
 			"completed_at", "is_deleted", "last_modified",
+			"sort_order", "recurrence_type", "recurrence_series_id",
 		}
 		if err := streamer.WriteHeader(headers); err != nil {
 			response.ErrorResponse(w, "导出错误", http.StatusInternalServerError)

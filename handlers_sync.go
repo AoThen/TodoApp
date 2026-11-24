@@ -34,6 +34,49 @@ func conflictOptions(includeMerge bool) []types.ConflictResolution {
 	return []types.ConflictResolution{types.ConflictKeepServer, types.ConflictKeepClient}
 }
 
+// payloadString 从 delta payload 安全读取字符串字段
+func payloadString(p map[string]interface{}, key string) (string, bool) {
+	if v, ok := p[key].(string); ok {
+		return v, true
+	}
+	return "", false
+}
+
+// collectTaskExtra 从 delta payload 提取"显式携带才更新"的扩展字段（手动排序/循环任务），
+// 缺省字段由 UpdateTaskWithVersion 保持原值，避免旧客户端 payload 误清服务端已有配置
+func collectTaskExtra(payload map[string]interface{}) *db.TaskExtraFields {
+	extra := &db.TaskExtraFields{}
+	if v, ok := payload["sort_order"].(float64); ok {
+		sortOrder := v
+		extra.SortOrder = &sortOrder
+	}
+	if v, ok := payload["recurrence_type"].(string); ok {
+		recurrenceType := v
+		extra.RecurrenceType = &recurrenceType
+	}
+	if v, ok := payload["recurrence_series_id"].(string); ok {
+		series := v
+		extra.RecurrenceSeriesID = &series
+	}
+	return extra
+}
+
+// afterTaskUpdate 处理任务更新后的循环任务衍生逻辑：
+// - 客户端设置了循环规则但未带系列 ID 时，服务端补齐
+// - 状态从非 done 迁移到 done 时，物化下一次 occurrence（失败仅记录日志，不阻断同步主体）
+func afterTaskUpdate(q *sql.Tx, userID int, taskID int64, oldStatus, newStatus string, extra *db.TaskExtraFields) {
+	if extra != nil && extra.RecurrenceType != nil && db.IsValidRecurrenceRule(*extra.RecurrenceType) {
+		if _, err := db.EnsureRecurrenceSeriesID(q, userID, taskID); err != nil {
+			log.Printf("补齐循环系列 ID 失败: task_id=%d %v", taskID, err)
+		}
+	}
+	if newStatus == "done" && oldStatus != "done" {
+		if err := db.MaterializeNextTx(q, userID, taskID); err != nil {
+			log.Printf("生成循环任务下一次失败: task_id=%d %v", taskID, err)
+		}
+	}
+}
+
 func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 	var s syncReq
 	if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
@@ -104,6 +147,28 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 				priority = v
 			}
 
+			// 修复：插入路径必须读取 due_at，否则安卓端带截止日期的新任务会丢失 due_at；
+			// 同时透传手动排序与循环任务字段
+			dueAt, hasDueAt := payloadString(c.Payload, "due_at")
+			dueAtArg := interface{}(nil)
+			if hasDueAt && dueAt != "" {
+				dueAtArg = dueAt
+			}
+			sortOrderVal := 0.0
+			if v, ok := c.Payload["sort_order"].(float64); ok {
+				sortOrderVal = v
+			}
+			recurrenceType, hasRecurrence := payloadString(c.Payload, "recurrence_type")
+			recurrenceSeriesID, _ := payloadString(c.Payload, "recurrence_series_id")
+			if hasRecurrence && db.IsValidRecurrenceRule(recurrenceType) {
+				if recurrenceSeriesID == "" {
+					recurrenceSeriesID = db.NewSeriesID()
+				}
+			} else {
+				recurrenceType = ""
+				recurrenceSeriesID = ""
+			}
+
 			// ✅ 检查 local_id 是否已存在（冲突检测）
 			existingID, _, checkErr := db.TaskExistsByLocalID(tx, userID, c.LocalID)
 			if checkErr != nil && !errors.Is(checkErr, sql.ErrNoRows) {
@@ -114,8 +179,8 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 				// 冲突：local_id重复，使用生成的新标题插入
 				newTitle := fmt.Sprintf("%s (副本: %d)", title, existingID)
 				res, insertErr := tx.Exec(
-					"INSERT INTO tasks (user_id, local_id, server_version, title, description, status, priority, created_at, updated_at, last_modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-					userID, c.LocalID+"_"+randomString(8), 1, newTitle, description, status, priority, now, now, now,
+					"INSERT INTO tasks (user_id, local_id, server_version, title, description, status, priority, due_at, created_at, updated_at, last_modified, sort_order, recurrence_type, recurrence_series_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+					userID, c.LocalID+"_"+randomString(8), 1, newTitle, description, status, priority, dueAtArg, now, now, now, sortOrderVal, recurrenceType, recurrenceSeriesID,
 				)
 
 				if insertErr == nil {
@@ -128,6 +193,8 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 						serverChanges = append(serverChanges, map[string]interface{}{
 							"id": serverID, "server_version": 1, "title": newTitle, "updated_at": now.Format(time.RFC3339),
 							"description": description, "status": status, "priority": priority, "is_deleted": false,
+							"due_at": dueAtArg, "sort_order": sortOrderVal,
+							"recurrence_type": recurrenceType, "recurrence_series_id": recurrenceSeriesID,
 						})
 						clientChanges = append(clientChanges, map[string]interface{}{
 							"local_id": c.LocalID, "server_id": serverID, "op": "insert",
@@ -150,8 +217,8 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 			} else {
 				// 正常插入
 				res, insertErr := tx.Exec(
-					"INSERT INTO tasks (user_id, local_id, server_version, title, description, status, priority, created_at, updated_at, last_modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-					userID, c.LocalID, 1, title, description, status, priority, now, now, now,
+					"INSERT INTO tasks (user_id, local_id, server_version, title, description, status, priority, due_at, created_at, updated_at, last_modified, sort_order, recurrence_type, recurrence_series_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+					userID, c.LocalID, 1, title, description, status, priority, dueAtArg, now, now, now, sortOrderVal, recurrenceType, recurrenceSeriesID,
 				)
 
 				if insertErr == nil {
@@ -159,6 +226,8 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 						serverChanges = append(serverChanges, map[string]interface{}{
 							"id": serverID, "server_version": 1, "title": title, "updated_at": now.Format(time.RFC3339),
 							"description": description, "status": status, "priority": priority, "is_deleted": false,
+							"due_at": dueAtArg, "sort_order": sortOrderVal,
+							"recurrence_type": recurrenceType, "recurrence_series_id": recurrenceSeriesID,
 						})
 						clientChanges = append(clientChanges, map[string]interface{}{
 							"local_id": c.LocalID, "server_id": serverID, "op": "insert",
@@ -234,11 +303,15 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 						priority = v
 					}
 
-					updateErr := db.UpdateTaskWithVersion(tx, userID, id, mergedTitle, mergedDesc, mergedStatus, priority, clientDueAt, newVer)
+					// 手动排序/循环字段：显式携带才更新，避免缺省 payload 误清已有配置
+					extra := collectTaskExtra(c.Payload)
+
+					updateErr := db.UpdateTaskWithVersion(tx, userID, id, mergedTitle, mergedDesc, mergedStatus, priority, clientDueAt, newVer, extra)
 					if updateErr != nil {
 						syncFail("应用合并结果失败", updateErr)
 						return
 					} else {
+						afterTaskUpdate(tx, userID, id, serverStatus, mergedStatus, extra)
 						serverChanges = append(serverChanges, map[string]interface{}{
 							"id": id, "server_version": newVer, "title": mergedTitle, "description": mergedDesc,
 							"status": mergedStatus, "priority": priority, "updated_at": now.Format(time.RFC3339), "is_deleted": false,
@@ -296,11 +369,15 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 						priority = v
 					}
 
-					updateErr := db.UpdateTaskWithVersion(tx, userID, id, title, description, status, priority, clientDueAt, newVer)
+					// 手动排序/循环字段：显式携带才更新，避免缺省 payload 误清已有配置
+					extra := collectTaskExtra(c.Payload)
+
+					updateErr := db.UpdateTaskWithVersion(tx, userID, id, title, description, status, priority, clientDueAt, newVer, extra)
 					if updateErr != nil {
 						syncFail("更新任务失败", updateErr)
 						return
 					} else {
+						afterTaskUpdate(tx, userID, id, serverStatus, status, extra)
 						serverChanges = append(serverChanges, map[string]interface{}{
 							"id": id, "server_version": newVer, "title": title, "updated_at": now.Format(time.RFC3339),
 							"description": description, "status": status, "priority": priority, "is_deleted": false,
