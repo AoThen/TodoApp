@@ -30,7 +30,6 @@ interface DevicePairingProps {
 
 const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
   const [key, setKey] = useState<string>('');
-  const [deviceId, setDeviceId] = useState<string>('');
   const [serverUrl, setServerUrl] = useState<string>('');
   const [qrData, setQrData] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
@@ -53,26 +52,19 @@ const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
 
   const initPairingFlow = async (baseUrl: string) => {
     try {
-      const pairingInfo = await apiService.initPairing('web');
-      
-      setKey(pairingInfo.key);
-      setDeviceId(pairingInfo.device_id);
+      // 第一把钥匙仅用于生成二维码，交由手机扫码消费，网页自身不得占用
+      const qrInfo = await apiService.initPairing('web');
 
-      const pairingData: PairingData = {
-        v: 1,
-        type: 'todoapp-pairing',
-        key: pairingInfo.key,
-        server: pairingInfo.server_url,
-        expires: Math.floor(new Date(pairingInfo.expires_at).getTime() / 1000),
-        encryption_key: pairingInfo.encryption_key
-      };
+      setKey(qrInfo.key);
+      setQrData(buildPairingData(qrInfo));
 
-      setQrData(JSON.stringify(pairingData));
-
+      // 第二把钥匙用于网页自身注册：避免消耗二维码上的一次性钥匙，
+      // 否则手机扫码时服务端会以「该设备已配对」(409) 拒绝
+      const selfInfo = await apiService.initPairing('web');
       await apiService.pairDevice({
-        key: pairingInfo.key,
+        key: selfInfo.key,
         device_type: 'web',
-        device_id: pairingInfo.device_id
+        device_id: getOrCreateDeviceId()
       });
 
       setPaired(true);
@@ -83,6 +75,23 @@ const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
         setPaired(true);
       }
     }
+  };
+
+  const buildPairingData = (info: {
+    key: string;
+    server_url: string;
+    expires_at: string;
+    encryption_key: string;
+  }): string => {
+    const pairingData: PairingData = {
+      v: 1,
+      type: 'todoapp-pairing',
+      key: info.key,
+      server: info.server_url,
+      expires: Math.floor(new Date(info.expires_at).getTime() / 1000),
+      encryption_key: info.encryption_key
+    };
+    return JSON.stringify(pairingData);
   };
 
   const loadDevices = async () => {
@@ -97,24 +106,24 @@ const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
     }
   };
 
-  const registerWithServer = async (keyVal: string, url: string) => {
+  // 网页设备编号持久化：避免每次打开配对面板都注册一台新网页设备，
+  // 造成设备列表堆积重复记录
+  const DEVICE_ID_KEY = 'todoapp_web_device_id';
+
+  const getOrCreateDeviceId = (): string => {
     try {
-      const deviceId = generateDeviceId();
-      await apiService.pairDevice({
-        key: keyVal,
-        device_type: 'web',
-        device_id: deviceId
-      });
-      setPaired(true);
-      setSuccess('设备配对成功！');
-      setTimeout(() => setSuccess(''), 3000);
-      loadDevices();
-    } catch (err: any) {
-      console.error('设备配对失败:', err);
-      if (err.response?.status === 409) {
-        setPaired(true);
-      }
+      const existing = window.localStorage.getItem(DEVICE_ID_KEY);
+      if (existing) return existing;
+    } catch {
+      // 隐私模式下 localStorage 可能不可用，退化为每次生成
     }
+    const id = generateDeviceId();
+    try {
+      window.localStorage.setItem(DEVICE_ID_KEY, id);
+    } catch {
+      // 存储失败不影响本次注册，下轮再生成
+    }
+    return id;
   };
 
   const generateDeviceId = (): string => {
@@ -140,26 +149,10 @@ const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
       const pairingInfo = await apiService.initPairing('web');
       
       setKey(pairingInfo.key);
-      setDeviceId(pairingInfo.device_id);
 
-      const pairingData: PairingData = {
-        v: 1,
-        type: 'todoapp-pairing',
-        key: pairingInfo.key,
-        server: pairingInfo.server_url,
-        expires: Math.floor(new Date(pairingInfo.expires_at).getTime() / 1000),
-        encryption_key: pairingInfo.encryption_key
-      };
+      setQrData(buildPairingData(pairingInfo));
 
-      setQrData(JSON.stringify(pairingData));
-
-      await apiService.pairDevice({
-        key: pairingInfo.key,
-        device_type: 'web',
-        device_id: pairingInfo.device_id
-      });
-      
-      setSuccess('密钥已重新生成并配对');
+      setSuccess('二维码已刷新');
       setTimeout(() => setSuccess(''), 3000);
 
       setShowRefreshConfirm(false);
