@@ -89,13 +89,15 @@ class TaskListFragment : Fragment() {
             ItemTouchHelper.UP or ItemTouchHelper.DOWN,
             0
         ) {
+            // 注：recyclerview 经传递依赖版本低于 1.2，无 bindingAdapterPosition，
+            // 使用等价的 adapterPosition（1.2 起标记过时，仅产生编译警告不影响构建）
             override fun onMove(
                 recyclerView: RecyclerView,
                 viewHolder: RecyclerView.ViewHolder,
                 target: RecyclerView.ViewHolder
             ): Boolean {
-                val from = viewHolder.bindingAdapterPosition
-                val to = target.bindingAdapterPosition
+                val from = viewHolder.adapterPosition
+                val to = target.adapterPosition
                 if (from == RecyclerView.NO_POSITION || to == RecyclerView.NO_POSITION) return false
                 val current = taskAdapter.currentList.toMutableList()
                 if (from !in current.indices || to !in current.indices) return false
@@ -113,13 +115,13 @@ class TaskListFragment : Fragment() {
             override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
                 super.onSelectedChanged(viewHolder, actionState)
                 if (actionState == ItemTouchHelper.ACTION_STATE_DRAG && viewHolder != null) {
-                    dragFrom = viewHolder.bindingAdapterPosition
+                    dragFrom = viewHolder.adapterPosition
                 }
             }
 
             override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
                 super.clearView(recyclerView, viewHolder)
-                val to = viewHolder.bindingAdapterPosition
+                val to = viewHolder.adapterPosition
                 if (dragFrom != RecyclerView.NO_POSITION && to != RecyclerView.NO_POSITION && dragFrom != to) {
                     // currentList 已是 onMove 提交后的移动结果，被拖任务就在 to 位置，
                     // 直接按其新邻居计算中点，不能再用拖拽前索引重复模拟移动
