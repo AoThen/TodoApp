@@ -1,8 +1,17 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+}
+
+// 正式签名：CI 经环境变量注入（KEYSTORE_FILE/KEYSTORE_PASSWORD/KEY_ALIAS/KEY_PASSWORD），
+// 本地可放 android/keystore.properties（已被 .gitignore 忽略，勿提交仓库）
+val keystoreProps = Properties().apply {
+    rootProject.file("keystore.properties").takeIf { it.exists() }
+        ?.inputStream()?.use { load(it) }
 }
 
 android {
@@ -13,8 +22,9 @@ android {
         applicationId = "com.todoapp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        // CI release 构建经 -PVERSION_CODE/-PVERSION_NAME 注入（run_number 单调递增），本地默认 1/1.0
+        versionCode = (project.findProperty("VERSION_CODE") ?: "1").toString().toInt()
+        versionName = project.findProperty("VERSION_NAME")?.toString() ?: "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -27,6 +37,18 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val storePath = System.getenv("KEYSTORE_FILE") ?: keystoreProps.getProperty("storeFile")
+            if (storePath != null) {
+                storeFile = file(storePath)
+                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: keystoreProps.getProperty("storePassword")
+                keyAlias = System.getenv("KEY_ALIAS") ?: keystoreProps.getProperty("keyAlias")
+                keyPassword = System.getenv("KEY_PASSWORD") ?: keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -35,10 +57,19 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // 临时使用 debug 签名产出"内部验证包"，解决无签名包无法安装的问题。
-            // 正式发布前必须替换为正式证书（经 keystore.properties / CI 环境变量注入，勿提交仓库）；
+            // 四项签名信息齐全才用正式证书；否则回退 debug 签名产出"内部验证包"。
             // 内部验证包与正式包签名不同，切换时用户需卸载重装。
-            signingConfig = signingConfigs.getByName("debug")
+            val releaseSigning = signingConfigs.getByName("release")
+            val hasReleaseSigning = releaseSigning.storeFile != null &&
+                releaseSigning.storePassword != null &&
+                releaseSigning.keyAlias != null &&
+                releaseSigning.keyPassword != null
+            if (hasReleaseSigning) {
+                signingConfig = releaseSigning
+            } else {
+                logger.warn("release 未提供完整正式签名，回退 debug 签名（仅限本地内部验证，禁止分发）")
+                signingConfig = signingConfigs.getByName("debug")
+            }
         }
         debug {
             isMinifyEnabled = false
@@ -99,9 +130,21 @@ afterEvaluate {
             it.name == "connectedReleaseAndroidTest"
     }.configureEach {
         doFirst {
-            if (project.findProperty("SERVER_URL") == null) {
+            val serverUrl = project.findProperty("SERVER_URL")?.toString()
+            if (serverUrl.isNullOrBlank()) {
                 throw GradleException(
                     "release 构建需要通过 -PSERVER_URL=https://your-host/api/v1/ 指定正式服务端地址"
+                )
+            }
+            val signing = signingConfigs.getByName("release")
+            val hasReleaseSigning = signing.storeFile != null &&
+                signing.storePassword != null &&
+                signing.keyAlias != null &&
+                signing.keyPassword != null
+            if (project.findProperty("requireReleaseSigning") == "true" && !hasReleaseSigning) {
+                throw GradleException(
+                    "release 构建要求正式签名：请配置 GitHub Secrets " +
+                        "(KEYSTORE_BASE64/KEYSTORE_PASSWORD/KEY_ALIAS/KEY_PASSWORD) 或本地 keystore.properties"
                 )
             }
         }

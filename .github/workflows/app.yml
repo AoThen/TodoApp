@@ -62,16 +62,6 @@ jobs:
         run: ./gradlew assembleDebug  --no-daemon
         working-directory: android
 
-      # - name: Build Android Release APK
-      #   run: ./gradlew assembleRelease
-      #   working-directory: android
-      #   env:
-      #     # Release keystore configuration (optional)
-      #     KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-      #     KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-      #     KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-      #     KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -79,13 +69,130 @@ jobs:
           path: android/build/outputs/apk/debug/
           retention-days: 7
 
-      # - name: Upload Release APKs
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: release-apk
-      #     path: android/build/outputs/apk/release/
-      #     retention-days: 7
-
       - name: Run unit tests
         run: ./gradlew test
         working-directory: android
+
+  release:
+    name: Release 正式签名构建
+    # push main 且仓库变量 RELEASE_SERVER_URL 已配置时自动出正式包；
+    # 变量未配置时本 job 自动跳过（日常 CI 不变红）；
+    # 手动 workflow_dispatch 不受变量判断限制，便于配置完成后首次验证
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.RELEASE_SERVER_URL != '')
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper/dists
+            android/.gradle
+          key: ${{ runner.os }}-gradle-${{ hashFiles('android/build.gradle.kts') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # secrets/vars 一律经 env 块传递，避免内插进脚本；缺失时给出明确中文提示
+      - name: Validate release inputs
+        env:
+          RELEASE_SERVER_URL: ${{ vars.RELEASE_SERVER_URL }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          missing=0
+          for v in RELEASE_SERVER_URL KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!v}" ]; then
+              echo "缺少配置: $v"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then
+            echo "请在仓库 Settings → Secrets and variables → Actions 中补齐上述项"
+            exit 1
+          fi
+
+      - name: Decode keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          chmod 600 "$RUNNER_TEMP/release.jks"
+          if [ ! -s "$RUNNER_TEMP/release.jks" ]; then
+            echo "KEYSTORE_BASE64 解码后为空，请检查 Secret（需 base64 单行内容）"
+            exit 1
+          fi
+
+      - name: Build release APK (signed)
+        working-directory: android
+        env:
+          KEYSTORE_FILE: ${{ runner.temp }}/release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          RELEASE_SERVER_URL: ${{ vars.RELEASE_SERVER_URL }}
+        run: |
+          ./gradlew assembleRelease --no-daemon \
+            -PSERVER_URL="$RELEASE_SERVER_URL" \
+            -PVERSION_CODE=${{ github.run_number }} \
+            -PVERSION_NAME=1.0.${{ github.run_number }} \
+            -PrequireReleaseSigning=true
+
+      - name: Verify APK signature
+        run: |
+          APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
+          APK_PATH="$(ls android/build/outputs/apk/release/*.apk | head -1)"
+          echo "校验签名: $APK_PATH"
+          "$APKSIGNER" verify --print-certs "$APK_PATH"
+
+      # GitHub 托管 runner 自带 /dev/kvm，只需 udev 规则放行 kvm 节点权限
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Cold-start smoke on emulator
+        uses: reactivecircus/android-emulator-runner@v2.38.0
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          script: bash android/release_smoke.sh
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: |
+            android/build/outputs/apk/release/*.apk
+            android/build/outputs/mapping/release/mapping.txt
+          retention-days: 30
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-smoke-logs
+          path: crash_release_*.log
+          if-no-files-found: ignore
+
+      - name: Cleanup keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
