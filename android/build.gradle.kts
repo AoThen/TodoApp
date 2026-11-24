@@ -136,7 +136,7 @@ afterEvaluate {
                     "release 构建需要通过 -PSERVER_URL=https://your-host/api/v1/ 指定正式服务端地址"
                 )
             }
-            val signing = signingConfigs.getByName("release")
+            val signing = android.signingConfigs.getByName("release")
             val hasReleaseSigning = signing.storeFile != null &&
                 signing.storePassword != null &&
                 signing.keyAlias != null &&
