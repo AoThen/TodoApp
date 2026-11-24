@@ -9,9 +9,11 @@ interface TaskListProps {
   onEditTask: (task: Task) => void;
   onToggleStatus: (task: Task) => void;
   selectedTasks: Set<string>;
+  /** 手动排序（拖拽）：仅手动排序模式传入 */
+  onReorder?: (draggedLocalId: string, targetLocalId: string) => void;
 }
 
-const TaskList: React.FC<TaskListProps> = memo(({ tasks, onDeleteTask, onToggleSelect, onEditTask, onToggleStatus, selectedTasks }) => {
+const TaskList: React.FC<TaskListProps> = memo(({ tasks, onDeleteTask, onToggleSelect, onEditTask, onToggleStatus, selectedTasks, onReorder }) => {
   const handleToggleSelect = useCallback((localId: string, checked: boolean) => {
     onToggleSelect(localId, checked);
   }, [onToggleSelect]);
@@ -47,6 +49,7 @@ const TaskList: React.FC<TaskListProps> = memo(({ tasks, onDeleteTask, onToggleS
           onEdit={handleEdit}
           onToggleStatus={handleToggleStatus}
           isSelected={selectedTasks.has(task.local_id)}
+          onReorder={onReorder}
         />
       ))}
     </div>

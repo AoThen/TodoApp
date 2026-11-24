@@ -60,6 +60,7 @@ const TaskFilter: React.FC<TaskFilterProps> = ({ filters, onFilterChange }) => {
           <option value="created_at">创建时间</option>
           <option value="updated_at">更新时间</option>
           <option value="priority">优先级</option>
+          <option value="manual">手动排序</option>
         </select>
 
         <select

@@ -15,6 +15,12 @@ interface Task {
   completed_at?: string;
   is_deleted: boolean;
   last_modified: string;
+  /** 手动排序值：越小越靠前；缺省 0（回退创建时间序） */
+  sort_order?: number;
+  /** 循环规则：'' / daily / weekly / monthly / weekdays */
+  recurrence_type?: string;
+  /** 循环系列 ID：同一系列的任务共享，服务端据此生成下一次 */
+  recurrence_series_id?: string;
 }
 
 interface DeltaChange {

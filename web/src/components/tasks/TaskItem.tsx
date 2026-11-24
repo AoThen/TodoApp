@@ -8,9 +8,18 @@ interface TaskItemProps {
   onEdit: (task: Task) => void;
   onToggleStatus: (task: Task) => void;
   isSelected: boolean;
+  /** 手动排序（拖拽）：仅手动排序模式传入 */
+  onReorder?: (draggedLocalId: string, targetLocalId: string) => void;
 }
 
-const TaskItem: React.FC<TaskItemProps> = memo(({ task, onDelete, onToggleSelect, onEdit, onToggleStatus, isSelected }) => {
+const RECURRENCE_LABELS: Record<string, string> = {
+  daily: '每天',
+  weekly: '每周',
+  monthly: '每月',
+  weekdays: '工作日',
+};
+
+const TaskItem: React.FC<TaskItemProps> = memo(({ task, onDelete, onToggleSelect, onEdit, onToggleStatus, isSelected, onReorder }) => {
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
     const confirmed = window.confirm(`确定要删除任务"${task.title}"吗？`);
@@ -20,12 +29,38 @@ const TaskItem: React.FC<TaskItemProps> = memo(({ task, onDelete, onToggleSelect
     onDelete(task);
   };
 
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const draggedLocalId = e.dataTransfer.getData('text/plain');
+    if (draggedLocalId && draggedLocalId !== task.local_id) {
+      onReorder?.(draggedLocalId, task.local_id);
+    }
+  };
+
   const dueLabel = task.due_at ? task.due_at.slice(0, 10) : '';
+  const recurrenceLabel = task.recurrence_type ? RECURRENCE_LABELS[task.recurrence_type] : '';
+
+  const dragProps = onReorder
+    ? {
+        draggable: true,
+        onDragStart: (e: React.DragEvent) => {
+          e.dataTransfer.setData('text/plain', task.local_id);
+          e.dataTransfer.effectAllowed = 'move';
+        },
+        onDragOver: (e: React.DragEvent) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+        },
+        onDrop: handleDrop,
+      }
+    : {};
 
   return (
     <div
       className={`task-item ${task.is_deleted ? 'deleted' : ''} ${isSelected ? 'selected' : ''}`}
       onClick={() => onEdit(task)}
+      {...dragProps}
     >
       <input
         type="checkbox"
@@ -38,6 +73,9 @@ const TaskItem: React.FC<TaskItemProps> = memo(({ task, onDelete, onToggleSelect
         <span className="task-title">{task.title}</span>
         {task.description && <div className="task-desc">{task.description}</div>}
         {dueLabel && <div className="task-due">截止: {dueLabel}</div>}
+        {recurrenceLabel && (
+          <div className="task-recurrence" title="循环任务">↻ {recurrenceLabel}</div>
+        )}
       </div>
       {task.status && (
         <span

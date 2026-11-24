@@ -118,6 +118,8 @@ class SyncManager {
         last_server_version: 0,
       });
 
+      // 通知 UI 层刷新列表（如服务端生成的循环任务、其他设备变更需要重新拉取）
+      window.dispatchEvent(new CustomEvent('todoapp:synced'));
       console.log('同步成功完成');
     } catch (error) {
       console.error('同步失败:', error);

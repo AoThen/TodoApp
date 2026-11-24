@@ -57,4 +57,14 @@ describe('TaskList', () => {
     expect(items[0].className).toContain('selected');
     expect(items[1].className).not.toContain('selected');
   });
+
+  it('透传 onReorder 到任务卡片（手动排序）', () => {
+    const onReorder = vi.fn();
+    const task = makeTask('target-1', '目标卡片');
+    render(<TaskList {...handlers} tasks={[task]} selectedTasks={new Set()} onReorder={onReorder} />);
+    const card = screen.getByText('目标卡片').closest('.task-item') as HTMLElement;
+    const dataTransfer = { getData: () => 'dragged-1', setData: vi.fn(), effectAllowed: '', dropEffect: '' };
+    fireEvent.drop(card, { dataTransfer });
+    expect(onReorder).toHaveBeenCalledWith('dragged-1', 'target-1');
+  });
 });

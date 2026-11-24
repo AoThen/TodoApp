@@ -21,12 +21,31 @@ const PRIORITY_OPTIONS: Array<{ value: Task['priority']; label: string }> = [
   { value: 'high', label: '高' },
 ];
 
+const RECURRENCE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '', label: '不重复' },
+  { value: 'daily', label: '每天' },
+  { value: 'weekly', label: '每周' },
+  { value: 'monthly', label: '每月' },
+  { value: 'weekdays', label: '工作日' },
+];
+
+// 生成循环系列 ID：同一系列的任务由服务端据此串成循环链
+const generateSeriesId = (): string => {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch { /* ignore */ }
+  return `series-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
 const TaskEditModal: React.FC<TaskEditModalProps> = ({ task, onSave, onClose }) => {
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description || '');
   const [status, setStatus] = useState<Task['status']>(task.status);
   const [priority, setPriority] = useState<Task['priority']>(task.priority);
   const [dueAt, setDueAt] = useState(task.due_at ? task.due_at.slice(0, 10) : '');
+  const [recurrenceType, setRecurrenceType] = useState(task.recurrence_type || '');
 
   useEffect(() => {
     setTitle(task.title);
@@ -34,6 +53,7 @@ const TaskEditModal: React.FC<TaskEditModalProps> = ({ task, onSave, onClose }) 
     setStatus(task.status);
     setPriority(task.priority);
     setDueAt(task.due_at ? task.due_at.slice(0, 10) : '');
+    setRecurrenceType(task.recurrence_type || '');
   }, [task]);
 
   const handleSave = () => {
@@ -44,6 +64,11 @@ const TaskEditModal: React.FC<TaskEditModalProps> = ({ task, onSave, onClose }) 
       status,
       priority,
       due_at: dueAt,
+      recurrence_type: recurrenceType,
+      // 首次设置循环时生成系列 ID；清除循环时不携带（服务端保留旧值但规则为空即不循环）
+      recurrence_series_id: recurrenceType
+        ? (task.recurrence_series_id || generateSeriesId())
+        : undefined,
     });
   };
 
@@ -97,6 +122,14 @@ const TaskEditModal: React.FC<TaskEditModalProps> = ({ task, onSave, onClose }) 
                 value={dueAt}
                 onChange={(e) => setDueAt(e.target.value)}
               />
+            </div>
+            <div className="task-edit-field">
+              <label>循环</label>
+              <select value={recurrenceType} onChange={(e) => setRecurrenceType(e.target.value)}>
+                {RECURRENCE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
             </div>
           </div>
         </div>

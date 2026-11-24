@@ -110,4 +110,38 @@ describe('TaskItem', () => {
     expect(screen.getByRole('checkbox')).toBeChecked();
     expect(screen.getByText('写周报').closest('.task-item')).toHaveClass('selected');
   });
+
+  it('循环任务渲染循环角标', () => {
+    render(
+      <TaskItem task={makeTask({ recurrence_type: 'weekly' })} onDelete={onDelete} onToggleSelect={onToggleSelect} onEdit={onEdit} onToggleStatus={onToggleStatus} isSelected={false} />
+    );
+    expect(screen.getByText('↻ 每周')).toBeInTheDocument();
+  });
+
+  it('手动排序：drop 到目标卡片触发 onReorder', () => {
+    const onReorder = vi.fn();
+    render(
+      <TaskItem task={makeTask({ local_id: 'target-1' })} onDelete={onDelete} onToggleSelect={onToggleSelect} onEdit={onEdit} onToggleStatus={onToggleStatus} isSelected={false} onReorder={onReorder} />
+    );
+    const card = screen.getByText('写周报').closest('.task-item') as HTMLElement;
+
+    const dataTransfer = {
+      getData: () => 'dragged-1',
+      setData: vi.fn(),
+      effectAllowed: '',
+      dropEffect: '',
+    };
+    fireEvent.dragStart(card, { dataTransfer });
+    fireEvent.dragOver(card, { dataTransfer });
+    fireEvent.drop(card, { dataTransfer });
+    expect(onReorder).toHaveBeenCalledWith('dragged-1', 'target-1');
+  });
+
+  it('未启用手动排序时卡片不可拖拽', () => {
+    render(
+      <TaskItem task={makeTask()} onDelete={onDelete} onToggleSelect={onToggleSelect} onEdit={onEdit} onToggleStatus={onToggleStatus} isSelected={false} />
+    );
+    const card = screen.getByText('写周报').closest('.task-item') as HTMLElement;
+    expect(card.getAttribute('draggable')).toBeNull();
+  });
 });

@@ -145,6 +145,13 @@ const AppContent: React.FC = () => {
     queryClient.invalidateQueries({ queryKey: ['tasks'] });
   }, []);
 
+  // 同步成功后刷新列表缓存：服务端生成的循环任务、其他设备变更需要重新拉取
+  useEffect(() => {
+    const onSynced = () => refreshTasks();
+    window.addEventListener('todoapp:synced', onSynced);
+    return () => window.removeEventListener('todoapp:synced', onSynced);
+  }, [refreshTasks]);
+
   // 筛选/搜索/排序变化时重置回第 1 页
   const handleFilterChange = (next: FilterState) => {
     setFilters(next);
@@ -267,6 +274,41 @@ const AppContent: React.FC = () => {
       await enqueueTaskChange(editingTask, 'update', { ...updates });
     }
   };
+
+  // 手动排序：拖拽落点以中点插入法计算新 sort_order，仅产生一条 update delta；
+  // 服务端分页/筛选下取可视相邻项中点仍等价于全局正确位置
+  const handleReorderTasks = useCallback(async (draggedLocalId: string, targetLocalId: string) => {
+    if (draggedLocalId === targetLocalId) return;
+    const fromIndex = tasks.findIndex(t => t.local_id === draggedLocalId);
+    const toIndex = tasks.findIndex(t => t.local_id === targetLocalId);
+    if (fromIndex < 0 || toIndex < 0) return;
+
+    const next = [...tasks];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+
+    const prev = next[toIndex - 1];
+    const follow = next[toIndex + 1];
+    let newSortOrder: number;
+    if (prev && follow) {
+      newSortOrder = ((prev.sort_order ?? 0) + (follow.sort_order ?? 0)) / 2;
+    } else if (prev) {
+      newSortOrder = (prev.sort_order ?? 0) + 1000;
+    } else if (follow) {
+      newSortOrder = (follow.sort_order ?? 0) - 1000;
+    } else {
+      newSortOrder = 0;
+    }
+
+    const patched: Task = { ...moved, sort_order: newSortOrder };
+    setTasks(next.map(t => (t.local_id === moved.local_id ? patched : t)));
+
+    // 本地立即生效（offline-first），再入 delta 队列同步
+    await indexedDBService.updateTask(moved.local_id, { sort_order: newSortOrder });
+    if (authToken) {
+      await enqueueTaskChange(patched, 'update', { sort_order: newSortOrder });
+    }
+  }, [tasks, authToken, enqueueTaskChange]);
 
   const handleDeleteTask = async (task: Task) => {
     const confirmed = window.confirm(`确定要删除任务"${task.title}"吗？`);
@@ -449,6 +491,7 @@ const AppContent: React.FC = () => {
           onEditTask={setEditingTask}
           onToggleStatus={handleToggleStatus}
           selectedTasks={selectedTasks}
+          onReorder={filters.sortBy === 'manual' ? handleReorderTasks : undefined}
         />
       </main>
 

@@ -36,7 +36,7 @@ describe('TaskEditModal', () => {
   it('编辑后保存回调携带合并字段', () => {
     const { onSave } = setup();
     fireEvent.change(screen.getByDisplayValue('旧标题'), { target: { value: '新标题' } });
-    // 状态/优先级是 select（role=combobox）：[0]=状态，[1]=优先级
+    // 状态/优先级/循环是 select（role=combobox）：[0]=状态，[1]=优先级，[2]=循环
     fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'done' } });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
     expect(onSave).toHaveBeenCalledTimes(1);
@@ -46,7 +46,28 @@ describe('TaskEditModal', () => {
       status: 'done',
       priority: 'medium',
       due_at: '2026-12-01',
+      recurrence_type: '',
+      recurrence_series_id: undefined,
     });
+  });
+
+  it('设置循环规则后保存携带 recurrence_type 与新生成的系列 ID', () => {
+    const { onSave } = setup();
+    // 组合框：[0]=状态，[1]=优先级，[2]=循环
+    fireEvent.change(screen.getAllByRole('combobox')[2], { target: { value: 'weekly' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    const payload = onSave.mock.calls[0][0] as Partial<Task>;
+    expect(payload.recurrence_type).toBe('weekly');
+    expect(payload.recurrence_series_id).toBeTruthy();
+  });
+
+  it('已有系列 ID 的任务保存时保持系列不变', () => {
+    const { onSave } = setup({ recurrence_type: 'weekly', recurrence_series_id: 'series-keep' });
+    fireEvent.change(screen.getAllByRole('combobox')[2], { target: { value: 'weekly' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    const payload = onSave.mock.calls[0][0] as Partial<Task>;
+    expect(payload.recurrence_type).toBe('weekly');
+    expect(payload.recurrence_series_id).toBe('series-keep');
   });
 
   it('标题为空白时保存按钮禁用', () => {
