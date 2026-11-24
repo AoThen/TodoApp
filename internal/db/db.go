@@ -387,27 +387,28 @@ func GetTasksChangedSince(userID int, since time.Time) ([]map[string]interface{}
 			return nil, err
 		}
 		results = append(results, map[string]interface{}{
-			"id":             id,
-			"local_id":       localID,
-			"server_version": serverVersion,
-			"title":          title,
-			"description":    description,
-			"status":         status,
-			"priority":       priority,
-			"is_deleted":     isDeleted,
-			"updated_at":     nullTimeRFC3339(updatedAt),
-			"last_modified":  nullTimeRFC3339(lastModified),
-			"due_at":         dueAt,
-			"created_at":     createdAt,
-			"completed_at":   completedAt,
-			"sort_order":     sortOrder,
+			"id":                   id,
+			"local_id":             localID,
+			"server_version":       serverVersion,
+			"title":                title,
+			"description":          description,
+			"status":               status,
+			"priority":             priority,
+			"is_deleted":           isDeleted,
+			"updated_at":           nullTimeRFC3339(updatedAt),
+			"last_modified":        nullTimeRFC3339(lastModified),
+			"due_at":               dueAt,
+			"created_at":           createdAt,
+			"completed_at":         completedAt,
+			"sort_order":           sortOrder,
 			"recurrence_type":      recurrenceType,
 			"recurrence_series_id": recurrenceSeriesID,
-			"op":             "update",
+			"op":                   "update",
 		})
 	}
 	return results, nil
 }
+
 // nullTimeRFC3339 将可空时间列格式化为 RFC3339，NULL 返回空串
 func nullTimeRFC3339(t sql.NullTime) string {
 	if !t.Valid {
@@ -744,8 +745,8 @@ func GetTasksFiltered(userID int, page, pageSize int, status, priority, search, 
 				}
 				return 0
 			}(),
-			"recurrence_type":       recurrenceType.String,
-			"recurrence_series_id":  recurrenceSeriesID.String,
+			"recurrence_type":      recurrenceType.String,
+			"recurrence_series_id": recurrenceSeriesID.String,
 		}
 		results = append(results, row)
 	}
