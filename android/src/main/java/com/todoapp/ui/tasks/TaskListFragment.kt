@@ -7,6 +7,7 @@ import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.PopupMenu
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
@@ -15,7 +16,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.todoapp.R
 import com.todoapp.config.AppConfig
 import com.todoapp.data.local.Task
@@ -74,6 +77,78 @@ class TaskListFragment : Fragment() {
         binding.recyclerViewTasks.apply {
             adapter = taskAdapter
             layoutManager = LinearLayoutManager(requireContext())
+        }
+        setupDragAndDrop()
+        setupSortMenu()
+    }
+
+    /** 手动排序：长按拖拽（仅 manual 模式启用），释放时按相邻 sort_order 中点持久化 */
+    private fun setupDragAndDrop() {
+        var dragFrom = RecyclerView.NO_POSITION
+        val callback = object : ItemTouchHelper.SimpleCallback(
+            ItemTouchHelper.UP or ItemTouchHelper.DOWN,
+            0
+        ) {
+            override fun onMove(
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder,
+                target: RecyclerView.ViewHolder
+            ): Boolean {
+                val from = viewHolder.bindingAdapterPosition
+                val to = target.bindingAdapterPosition
+                if (from == RecyclerView.NO_POSITION || to == RecyclerView.NO_POSITION) return false
+                val current = taskAdapter.currentList.toMutableList()
+                if (from !in current.indices || to !in current.indices) return false
+                val item = current.removeAt(from)
+                current.add(to, item)
+                taskAdapter.submitList(current)
+                return true
+            }
+
+            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {}
+
+            override fun isLongPressDragEnabled(): Boolean =
+                viewModel.sortMode.value == TaskListViewModel.SORT_MODE_MANUAL
+
+            override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
+                super.onSelectedChanged(viewHolder, actionState)
+                if (actionState == ItemTouchHelper.ACTION_STATE_DRAG && viewHolder != null) {
+                    dragFrom = viewHolder.bindingAdapterPosition
+                }
+            }
+
+            override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+                super.clearView(recyclerView, viewHolder)
+                val to = viewHolder.bindingAdapterPosition
+                if (dragFrom != RecyclerView.NO_POSITION && to != RecyclerView.NO_POSITION && dragFrom != to) {
+                    viewModel.persistReorder(taskAdapter.currentList, dragFrom, to)
+                }
+                dragFrom = RecyclerView.NO_POSITION
+            }
+        }
+        ItemTouchHelper(callback).attachToRecyclerView(binding.recyclerViewTasks)
+    }
+
+    /** 排序模式入口：弹出菜单切换，manual 模式同时启用长按拖拽 */
+    private fun setupSortMenu() {
+        binding.btnSortMode.setOnClickListener { anchor ->
+            val modes = listOf(
+                TaskListViewModel.SORT_MODE_CREATED to R.string.sort_created_at,
+                TaskListViewModel.SORT_MODE_MANUAL to R.string.sort_manual,
+                TaskListViewModel.SORT_MODE_UPDATED to R.string.sort_updated_at,
+                TaskListViewModel.SORT_MODE_PRIORITY to R.string.sort_priority,
+            )
+            val popup = PopupMenu(requireContext(), anchor)
+            modes.forEachIndexed { index, (_, labelRes) ->
+                popup.menu.add(0, index, 0, labelRes)
+            }
+            popup.setOnMenuItemClickListener { item ->
+                modes.getOrNull(item.itemId)?.let { (mode, _) ->
+                    viewModel.setSortMode(mode)
+                }
+                true
+            }
+            popup.show()
         }
     }
 

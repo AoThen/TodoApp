@@ -79,7 +79,10 @@ data class TaskResponse(
     @SerializedName("due_at") val dueAt: String?,
     @SerializedName("created_at") val createdAt: String?,
     @SerializedName("updated_at") val updatedAt: String?,
-    @SerializedName("completed_at") val completedAt: String?
+    @SerializedName("completed_at") val completedAt: String?,
+    @SerializedName("sort_order") val sortOrder: Double? = null,
+    @SerializedName("recurrence_type") val recurrenceType: String? = null,
+    @SerializedName("recurrence_series_id") val recurrenceSeriesId: String? = null
 )
 
 data class CreateTaskRequest(
@@ -95,7 +98,10 @@ data class UpdateTaskRequest(
     @SerializedName("description") val description: String? = null,
     @SerializedName("status") val status: String? = null,
     @SerializedName("priority") val priority: String? = null,
-    @SerializedName("due_at") val dueAt: String? = null
+    @SerializedName("due_at") val dueAt: String? = null,
+    @SerializedName("sort_order") val sortOrder: Double? = null,
+    @SerializedName("recurrence_type") val recurrenceType: String? = null,
+    @SerializedName("recurrence_series_id") val recurrenceSeriesId: String? = null
 )
 
 data class SyncRequest(
@@ -128,8 +134,12 @@ data class ServerChange(
     @SerializedName("status") val status: String? = null,
     @SerializedName("priority") val priority: String? = null,
     @SerializedName("due_at") val dueAt: String? = null,
+    @SerializedName("completed_at") val completedAt: String? = null,
     @SerializedName("updated_at") val updatedAt: String,
-    @SerializedName("is_deleted") val isDeleted: Boolean = false
+    @SerializedName("is_deleted") val isDeleted: Boolean = false,
+    @SerializedName("sort_order") val sortOrder: Double? = null,
+    @SerializedName("recurrence_type") val recurrenceType: String? = null,
+    @SerializedName("recurrence_series_id") val recurrenceSeriesId: String? = null
 )
 
 data class ClientChange(

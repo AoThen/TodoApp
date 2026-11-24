@@ -93,6 +93,21 @@ class TaskAdapter(
                     }
                 }
 
+                // 循环任务角标（每天/每周/每月/工作日）
+                val recurrenceLabelRes = when (task.recurrenceType) {
+                    "daily" -> R.string.recurrence_daily
+                    "weekly" -> R.string.recurrence_weekly
+                    "monthly" -> R.string.recurrence_monthly
+                    "weekdays" -> R.string.recurrence_weekdays
+                    else -> null
+                }
+                if (recurrenceLabelRes != null) {
+                    tvRecurrence.visibility = View.VISIBLE
+                    tvRecurrence.text = "↻ " + root.context.getString(recurrenceLabelRes)
+                } else {
+                    tvRecurrence.visibility = View.GONE
+                }
+
                 // Completion state（原型 .t-card.done：绿色勾选 + 标题删除线置灰）
                 val isCompleted = task.status == "done"
                 checkboxTask.isChecked = isCompleted
@@ -103,6 +118,7 @@ class TaskAdapter(
                     tvTaskStatus.alpha = 0.6f
                     tvTaskPriority.alpha = 0.6f
                     tvDueDate.alpha = 0.6f
+                    tvRecurrence.alpha = 0.6f
                     cardTask.strokeColor = ContextCompat.getColor(root.context, R.color.success)
                 } else {
                     tvTaskTitle.paintFlags = tvTaskTitle.paintFlags and Paint.STRIKE_THRU_TEXT_FLAG.inv()
@@ -111,6 +127,7 @@ class TaskAdapter(
                     tvTaskStatus.alpha = 1.0f
                     tvTaskPriority.alpha = 1.0f
                     tvDueDate.alpha = 1.0f
+                    tvRecurrence.alpha = 1.0f
                     cardTask.strokeColor = ContextCompat.getColor(root.context, R.color.app_border)
                 }
 

@@ -124,6 +124,22 @@
     <string name="settings_logout_confirm_message">确定退出登录吗？本地尚未同步的修改将被清除。</string>
     <string name="settings_logout_done">已退出登录</string>
     <string name="session_expired_relogin">登录已过期，请重新登录</string>
+
+    <!-- 任务排序模式 -->
+    <string name="sort_mode">排序方式</string>
+    <string name="sort_created_at">按创建时间</string>
+    <string name="sort_manual">手动排序（长按拖动）</string>
+    <string name="sort_updated_at">按更新时间</string>
+    <string name="sort_priority">按优先级</string>
+
+    <!-- 循环任务 -->
+    <string name="label_recurrence">循环</string>
+    <string name="recurrence_none">不重复</string>
+    <string name="recurrence_daily">每天</string>
+    <string name="recurrence_weekly">每周</string>
+    <string name="recurrence_monthly">每月</string>
+    <string name="recurrence_weekdays">工作日</string>
+    <string name="task_recurrence_badge">循环任务</string>
     <string name="settings_export_success">已导出 %1$d 条任务</string>
     <string name="settings_export_failed">导出失败，请重试</string>
     <string name="settings_import_success">成功导入 %1$d 条任务</string>

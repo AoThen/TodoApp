@@ -5,6 +5,11 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * delta payload → 服务端字段映射测试。
+ * 服务端 /sync 按下划线键读取（due_at/sort_order/recurrence_type 等），
+ * 本地 Task 实体序列化为 camelCase，转换器必须完成键名翻译且不丢新字段。
+ */
 class SyncPayloadConverterTest {
 
     @Test
@@ -52,6 +57,56 @@ class SyncPayloadConverterTest {
         val json = """{"serverId":9,"title":"t","description":"","status":"todo","priority":"medium","dueAt":""}"""
         val payload = SyncPayloadConverter.payloadForServer(json)
         assertEquals("", payload["due_at"])
+    }
+
+    @Test
+    fun `手动排序与循环字段翻译为服务端 snake_case 键`() {
+        val json = """
+            {"serverId":42,"title":"任务","status":"todo","priority":"high",
+             "dueAt":"2026-01-01T00:00:00Z","completedAt":"",
+             "sortOrder":3.5,"recurrenceType":"weekly","recurrenceSeriesId":"series-1"}
+        """.trimIndent()
+
+        val payload = SyncPayloadConverter.payloadForServer(json)
+
+        assertEquals(42L, payload["id"])
+        assertEquals("2026-01-01T00:00:00Z", payload["due_at"])
+        assertEquals("", payload["completed_at"])
+        assertEquals(3.5, payload["sort_order"])
+        assertEquals("weekly", payload["recurrence_type"])
+        assertEquals("series-1", payload["recurrence_series_id"])
+        // 不应把本地 camelCase 键原样透传
+        assertFalse(payload.containsKey("dueAt"))
+        assertFalse(payload.containsKey("sortOrder"))
+        assertFalse(payload.containsKey("recurrenceType"))
+    }
+
+    @Test
+    fun `snake_case 滞留 payload 同样兼容（升级过渡期）`() {
+        val json = """
+            {"server_id":7,"title":"任务","due_at":"2026-02-01T00:00:00Z",
+             "sort_order":1.5,"recurrence_type":"daily"}
+        """.trimIndent()
+
+        val payload = SyncPayloadConverter.payloadForServer(json)
+
+        assertEquals(7L, payload["id"])
+        assertEquals("2026-02-01T00:00:00Z", payload["due_at"])
+        assertEquals(1.5, payload["sort_order"])
+        assertEquals("daily", payload["recurrence_type"])
+    }
+
+    @Test
+    fun `缺省新字段不出现在结果中（服务端保持原值）`() {
+        val json = """{"serverId":1,"title":"仅标题"}"""
+
+        val payload = SyncPayloadConverter.payloadForServer(json)
+
+        assertEquals(1L, payload["id"])
+        assertEquals("仅标题", payload["title"])
+        assertFalse(payload.containsKey("sort_order"))
+        assertFalse(payload.containsKey("recurrence_type"))
+        assertFalse(payload.containsKey("recurrence_series_id"))
     }
 
     @Test

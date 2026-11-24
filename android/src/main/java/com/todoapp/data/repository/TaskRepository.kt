@@ -21,6 +21,7 @@ class TaskRepository(
     private val syncMetaDao: SyncMetaDao,
     private val context: Context
 ) {
+
     /** 任务流：按当前登录用户过滤，避免多账号在同设备上互相可见 */
     fun getAllTasks(): Flow<List<Task>> = taskDao.getAllTasks(getCurrentUserId())
 
@@ -71,6 +72,22 @@ class TaskRepository(
             taskDao.updateTask(updatedTask)
 
             // 编辑同样进入同步队列，避免服务器变更下发时用旧值覆盖本地编辑
+            addToDeltaQueue("update", updatedTask)
+        }
+    }
+
+    /**
+     * 手动排序：更新任务 sort_order 并入 delta 队列。
+     * payload 为全量任务快照（snake_case），服务端显式读取 sort_order 字段后向其他端下发。
+     */
+    suspend fun persistSortOrder(task: Task, newSortOrder: Double): Result<Unit> {
+        return Result.runCatching {
+            val updatedTask = task.copy(
+                sortOrder = newSortOrder,
+                updatedAt = DateTimeUtils.getCurrentTimestamp(),
+                lastModified = DateTimeUtils.getCurrentTimestamp()
+            )
+            taskDao.updateTask(updatedTask)
             addToDeltaQueue("update", updatedTask)
         }
     }

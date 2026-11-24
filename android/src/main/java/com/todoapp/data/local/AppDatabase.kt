@@ -33,7 +33,13 @@ data class Task(
     val isDeleted: Boolean = false,
     val isArchived: Boolean = false,
     val archivedAt: String? = null,
-    val lastModified: String
+    val lastModified: String,
+    // 手动排序值：越小越靠前；缺省 0（manual 模式下同值回退创建时间倒序）
+    val sortOrder: Double = 0.0,
+    // 循环规则："" / daily / weekly / monthly / weekdays（与服务端约定）
+    val recurrenceType: String = "",
+    // 循环系列 ID：同一系列任务共享，服务端据此生成下一次 occurrence
+    val recurrenceSeriesId: String = ""
 )
 
 @Entity(tableName = "delta_queue")
@@ -222,7 +228,7 @@ interface NotificationDao {
 
 @Database(
     entities = [Task::class, DeltaChange::class, SyncMeta::class, Conflict::class, Notification::class],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -238,6 +244,7 @@ abstract class AppDatabase : RoomDatabase() {
         private const val VERSION_2 = 2
         private const val VERSION_3 = 3
         private const val VERSION_4 = 4
+        private const val VERSION_5 = 5
 
         @Volatile
         private var INSTANCE: AppDatabase? = null
@@ -270,6 +277,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(VERSION_4, VERSION_5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Version 4 to 5: tasks 增加手动排序与循环任务列
+                db.execSQL("ALTER TABLE tasks ADD COLUMN sortOrder REAL NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN recurrenceType TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN recurrenceSeriesId TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -277,7 +293,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { INSTANCE = it }
             }
@@ -289,7 +305,7 @@ abstract class AppDatabase : RoomDatabase() {
                 context.applicationContext,
                 AppDatabase::class.java
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
         }
     }

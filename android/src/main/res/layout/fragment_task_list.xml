@@ -107,8 +107,9 @@
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/etSearch"
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
             android:background="@android:color/transparent"
             android:hint="@string/search_hint"
             android:imeOptions="actionSearch"
@@ -117,6 +118,15 @@
             android:textAppearance="?attr/textAppearanceBodyMedium"
             android:textColor="@color/text_primary"
             android:textColorHint="@color/text_muted" />
+
+        <ImageButton
+            android:id="@+id/btnSortMode"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_marginStart="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/sort_mode"
+            android:src="@drawable/ic_sort" />
     </LinearLayout>
 
     <!-- 同步操作行 -->

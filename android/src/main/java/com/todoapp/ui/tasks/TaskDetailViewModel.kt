@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.UUID
 import javax.inject.Inject
 
 sealed class TaskDetailState {
@@ -48,6 +49,7 @@ class TaskDetailViewModel @Inject constructor(
     private var currentDueDate: String = ""
     private var currentStatus: String = "todo"
     private var currentPriority: String = "medium"
+    private var currentRecurrenceType: String = ""
 
     fun loadTask(taskId: String, context: android.content.Context) {
         viewModelScope.launch {
@@ -61,6 +63,7 @@ class TaskDetailViewModel @Inject constructor(
                     currentDueDate = task.dueAt?.substringBefore("T")?.takeIf { it.isNotBlank() } ?: ""
                     currentStatus = task.status
                     currentPriority = task.priority
+                    currentRecurrenceType = task.recurrenceType
                     hasUnsavedChanges = false
                     validateForm(currentTitle, currentDescription, currentDueDate, context)
                     _uiState.value = TaskDetailState.Success(task)
@@ -115,6 +118,11 @@ class TaskDetailViewModel @Inject constructor(
         checkUnsavedChanges()
     }
 
+    fun updateRecurrence(rule: String) {
+        currentRecurrenceType = rule
+        checkUnsavedChanges()
+    }
+
     fun validateForm(title: String, description: String, dueDate: String, context: android.content.Context) {
         validateTitle(title, context)
         validateDescription(description, context)
@@ -127,7 +135,8 @@ class TaskDetailViewModel @Inject constructor(
             currentDescription != task.description ||
             currentDueDate != task.dueAt?.substringBefore("T")?.takeIf { it.isNotBlank() } ?: "" ||
             currentStatus != task.status ||
-            currentPriority != task.priority
+            currentPriority != task.priority ||
+            currentRecurrenceType != task.recurrenceType
         } ?: false
     }
 
@@ -153,7 +162,14 @@ class TaskDetailViewModel @Inject constructor(
                 dueAt = if (currentDueDate.isNotBlank()) "${currentDueDate}T00:00:00Z" else null,
                 updatedAt = DateTimeUtils.getCurrentTimestamp(),
                 serverVersion = task.serverVersion + 1,
-                lastModified = DateTimeUtils.getCurrentTimestamp()
+                lastModified = DateTimeUtils.getCurrentTimestamp(),
+                recurrenceType = currentRecurrenceType,
+                // 首次设置循环时生成系列 ID；清除循环时保留旧值（规则为空即不参与循环）
+                recurrenceSeriesId = when {
+                    currentRecurrenceType.isBlank() -> task.recurrenceSeriesId
+                    task.recurrenceSeriesId.isBlank() -> UUID.randomUUID().toString()
+                    else -> task.recurrenceSeriesId
+                }
             )
 
             taskRepository.updateTask(updated)
@@ -196,6 +212,7 @@ class TaskDetailViewModel @Inject constructor(
             currentDueDate = task.dueAt?.substringBefore("T")?.takeIf { it.isNotBlank() } ?: ""
             currentStatus = task.status
             currentPriority = task.priority
+            currentRecurrenceType = task.recurrenceType
             hasUnsavedChanges = false
             _formState.value = TaskFormState(titleError = null, descriptionError = null, isFormValid = true)
         }
@@ -207,7 +224,8 @@ class TaskDetailViewModel @Inject constructor(
             "description" to currentDescription,
             "due_date" to currentDueDate,
             "status" to currentStatus,
-            "priority" to currentPriority
+            "priority" to currentPriority,
+            "recurrence_type" to currentRecurrenceType
         )
     }
 

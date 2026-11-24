@@ -90,6 +90,12 @@ class TaskEditBottomSheet : BottomSheetDialogFragment(), DatePickerDialog.OnDate
         binding.chipPriorityLow.setOnClickListener { selectPriority("low") }
         binding.chipPriorityMedium.setOnClickListener { selectPriority("medium") }
         binding.chipPriorityHigh.setOnClickListener { selectPriority("high") }
+
+        binding.chipRecurrenceNone.setOnClickListener { selectRecurrence("") }
+        binding.chipRecurrenceDaily.setOnClickListener { selectRecurrence("daily") }
+        binding.chipRecurrenceWeekly.setOnClickListener { selectRecurrence("weekly") }
+        binding.chipRecurrenceMonthly.setOnClickListener { selectRecurrence("monthly") }
+        binding.chipRecurrenceWeekdays.setOnClickListener { selectRecurrence("weekdays") }
     }
 
     private fun setupObservers() {
@@ -142,6 +148,7 @@ class TaskEditBottomSheet : BottomSheetDialogFragment(), DatePickerDialog.OnDate
         binding.etDueDate.setText(task.dueAt?.takeIf { it.isNotBlank() }?.substringBefore("T") ?: "")
         selectStatus(task.status)
         selectPriority(task.priority)
+        selectRecurrence(task.recurrenceType)
     }
 
     private fun selectStatus(status: String) {
@@ -157,6 +164,15 @@ class TaskEditBottomSheet : BottomSheetDialogFragment(), DatePickerDialog.OnDate
         binding.chipPriorityLow.isChecked = priority == "low"
         binding.chipPriorityMedium.isChecked = priority == "medium"
         binding.chipPriorityHigh.isChecked = priority == "high"
+    }
+
+    private fun selectRecurrence(rule: String) {
+        viewModel.updateRecurrence(rule)
+        binding.chipRecurrenceNone.isChecked = rule.isBlank()
+        binding.chipRecurrenceDaily.isChecked = rule == "daily"
+        binding.chipRecurrenceWeekly.isChecked = rule == "weekly"
+        binding.chipRecurrenceMonthly.isChecked = rule == "monthly"
+        binding.chipRecurrenceWeekdays.isChecked = rule == "weekdays"
     }
 
     private fun showDatePicker() {

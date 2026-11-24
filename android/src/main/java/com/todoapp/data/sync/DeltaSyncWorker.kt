@@ -199,8 +199,12 @@ class DeltaSyncWorker(
                             status = serverChange.status ?: existing.status,
                             priority = serverChange.priority ?: existing.priority,
                             dueAt = serverChange.dueAt ?: existing.dueAt,
+                            completedAt = serverChange.completedAt ?: existing.completedAt,
                             updatedAt = serverChange.updatedAt,
-                            isDeleted = false
+                            isDeleted = false,
+                            sortOrder = serverChange.sortOrder ?: existing.sortOrder,
+                            recurrenceType = serverChange.recurrenceType ?: existing.recurrenceType,
+                            recurrenceSeriesId = serverChange.recurrenceSeriesId ?: existing.recurrenceSeriesId
                         )
                     )
                 } else if (!serverChange.isDeleted) {
@@ -219,8 +223,12 @@ class DeltaSyncWorker(
                                 status = serverChange.status ?: ghost.status,
                                 priority = serverChange.priority ?: ghost.priority,
                                 dueAt = serverChange.dueAt ?: ghost.dueAt,
+                                completedAt = serverChange.completedAt ?: ghost.completedAt,
                                 updatedAt = serverChange.updatedAt,
-                                lastModified = serverChange.updatedAt
+                                lastModified = serverChange.updatedAt,
+                                sortOrder = serverChange.sortOrder ?: ghost.sortOrder,
+                                recurrenceType = serverChange.recurrenceType ?: ghost.recurrenceType,
+                                recurrenceSeriesId = serverChange.recurrenceSeriesId ?: ghost.recurrenceSeriesId
                             )
                         )
                     } else {
@@ -237,7 +245,10 @@ class DeltaSyncWorker(
                                 dueAt = serverChange.dueAt,
                                 createdAt = timestamp,
                                 updatedAt = timestamp,
-                                lastModified = timestamp
+                                lastModified = timestamp,
+                                sortOrder = serverChange.sortOrder ?: 0.0,
+                                recurrenceType = serverChange.recurrenceType ?: "",
+                                recurrenceSeriesId = serverChange.recurrenceSeriesId ?: ""
                             )
                         )
                     }

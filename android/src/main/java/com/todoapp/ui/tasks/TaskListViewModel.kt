@@ -46,9 +46,35 @@ class TaskListViewModel @Inject constructor(
     /** 当前搜索词（供界面区分「暂无任务」与「无匹配结果」） */
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    /** 任务流：按搜索词过滤标题/描述（空词返回全量） */
-    val tasks = combine(taskRepository.getAllTasks(), _searchQuery) { list, query ->
-        filterTasks(list, query)
+    // 排序模式持久化：默认创建时间倒序（与历史行为一致），手动排序需用户显式切换
+    private val sortPrefs = context.getSharedPreferences("task_ui", Context.MODE_PRIVATE)
+    private val _sortMode = MutableStateFlow(
+        sortPrefs.getString(SORT_MODE_KEY, SORT_MODE_CREATED) ?: SORT_MODE_CREATED
+    )
+    val sortMode: StateFlow<String> = _sortMode.asStateFlow()
+
+    fun setSortMode(mode: String) {
+        _sortMode.value = mode
+        sortPrefs.edit().putString(SORT_MODE_KEY, mode).apply()
+    }
+
+    /** 任务流：按搜索词过滤后按排序模式排列 */
+    val tasks = combine(taskRepository.getAllTasks(), _searchQuery, _sortMode) { list, query, mode ->
+        sortTasks(filterTasks(list, query), mode)
+    }
+
+    /** 拖拽落点：以相邻任务 sort_order 中点为新值（边界用 ±1000），仅被拖任务产生一条 delta */
+    fun persistReorder(list: List<Task>, fromIndex: Int, toIndex: Int) {
+        val newSortOrder = computeNewSortOrder(list, fromIndex, toIndex) ?: return
+        val moved = list[fromIndex]
+        viewModelScope.launch {
+            taskRepository.persistSortOrder(moved, newSortOrder)
+                .onError { e ->
+                    _syncState.value = SyncState.Error(
+                        context.getString(R.string.sync_update_failed, e.message)
+                    )
+                }
+        }
     }
 
     fun setSearchQuery(query: String) {
@@ -188,6 +214,12 @@ class TaskListViewModel @Inject constructor(
     }
 
     companion object {
+        const val SORT_MODE_KEY = "task_sort_mode"
+        const val SORT_MODE_CREATED = "created_at"
+        const val SORT_MODE_MANUAL = "manual"
+        const val SORT_MODE_UPDATED = "updated_at"
+        const val SORT_MODE_PRIORITY = "priority"
+
         /** 搜索过滤：空词返回全量；命中标题或描述（忽略大小写） */
         fun filterTasks(list: List<Task>, query: String): List<Task> {
             if (query.isBlank()) return list
@@ -195,6 +227,39 @@ class TaskListViewModel @Inject constructor(
                 task.title.contains(query, ignoreCase = true) ||
                     task.description.contains(query, ignoreCase = true)
             }
+        }
+
+        /** 排序：manual 按 sortOrder 升序（同值回退创建时间倒序，与后端 manual 一致） */
+        fun sortTasks(list: List<Task>, mode: String): List<Task> = when (mode) {
+            SORT_MODE_MANUAL -> list.sortedWith(
+                compareBy<Task> { it.sortOrder }.thenByDescending { it.createdAt }
+            )
+            SORT_MODE_UPDATED -> list.sortedByDescending { it.updatedAt }
+            SORT_MODE_PRIORITY -> list.sortedBy { priorityRank(it.priority) }
+            else -> list.sortedByDescending { it.createdAt }
+        }
+
+        /** 拖拽落点 sort_order 计算：相邻中点插入；边界 ±1000；非法位置返回 null */
+        fun computeNewSortOrder(list: List<Task>, fromIndex: Int, toIndex: Int): Double? {
+            if (fromIndex == toIndex) return null
+            if (fromIndex !in list.indices || toIndex !in list.indices) return null
+            val mutable = list.toMutableList()
+            val moved = mutable.removeAt(fromIndex)
+            mutable.add(toIndex, moved)
+            val prev = mutable.getOrNull(toIndex - 1)
+            val follow = mutable.getOrNull(toIndex + 1)
+            return when {
+                prev != null && follow != null -> (prev.sortOrder + follow.sortOrder) / 2.0
+                prev != null -> prev.sortOrder + 1000.0
+                follow != null -> follow.sortOrder - 1000.0
+                else -> 0.0
+            }
+        }
+
+        private fun priorityRank(priority: String): Int = when (priority) {
+            "high" -> 1
+            "medium" -> 2
+            else -> 3
         }
     }
 }
