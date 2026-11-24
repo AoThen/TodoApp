@@ -408,6 +408,7 @@ MIT License
 - [docs/ui_revamp_plan.md](docs/ui_revamp_plan.md) - UI 改版与工程化实施方案
 - [SECURITY_REVIEW.md](SECURITY_REVIEW.md) - 安全审查报告
 - [ANDROID_INTEGRATION_GUIDE.md](ANDROID_INTEGRATION_GUIDE.md) - Android 集成指南
+- [docs/android-device-acceptance.md](docs/android-device-acceptance.md) - Android 真机验收人工测试流程
 - [NOTIFICATION_IMPLEMENTATION_COMPLETE.md](NOTIFICATION_IMPLEMENTATION_COMPLETE.md) - 通知系统实现报告
 
 ---

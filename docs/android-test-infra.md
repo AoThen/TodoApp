@@ -69,6 +69,8 @@ cd android
 
 真机需与电脑同一网段，`SERVER_URL` 不能使用 `10.0.2.2`（该地址仅模拟器宿主回环有效）。
 
+> 注：真机上完整的人工验收流程（环境搭建、登录配对、P0/P1/P2 用例矩阵、代码链路审查表）见 [android-device-acceptance.md](android-device-acceptance.md)。该文档推荐 `adb reverse` + `localhost` 方案解决真机明文访问问题。
+
 ## 常见失败排查
 
 - **模拟器启动超时**：确认 KVM 步骤生效（`kvm-ok` 输出 `/dev/kvm is accessible`）。
