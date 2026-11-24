@@ -6,13 +6,16 @@ set -u
 
 PKG="com.todoapp"
 ACTIVITY="$PKG/.ui.MainActivity"
-APK="android/build/outputs/apk/release/app-release.apk"
+APK_DIR="android/build/outputs/apk/release"
 FAILED=0
 
-if [ ! -f "$APK" ]; then
-  echo "FAIL: 未找到 release APK: $APK"
+APK="$(ls "$APK_DIR"/*.apk 2>/dev/null | head -1)"
+if [ -z "$APK" ]; then
+  echo "FAIL: 未找到 release APK，目录内容："
+  ls -la "$APK_DIR" 2>/dev/null || echo "目录不存在: $APK_DIR"
   exit 1
 fi
+echo "使用 APK: $APK"
 
 adb install -r "$APK" || exit 1
 
