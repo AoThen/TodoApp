@@ -78,7 +78,7 @@ class TaskRepository(
 
     /**
      * 手动排序：更新任务 sort_order 并入 delta 队列。
-     * payload 为全量任务快照（snake_case），服务端显式读取 sort_order 字段后向其他端下发。
+     * payload 为 Task 全量快照（camelCase），由 SyncPayloadConverter 翻译为服务端 snake_case 字段。
      */
     suspend fun persistSortOrder(task: Task, newSortOrder: Double): Result<Unit> {
         return Result.runCatching {

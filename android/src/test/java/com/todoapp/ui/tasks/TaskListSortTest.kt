@@ -8,7 +8,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * 手动排序纯函数测试：sortTasks 排序模式与 computeNewSortOrder 中点插入。
+ * 手动排序纯函数测试：sortTasks 排序模式与 computeSortOrderForPosition 中点插入。
+ * computeSortOrderForPosition 的入参约定为"已完成移动"的列表（与 ItemTouchHelper.onMove
+ * 提交后的 currentList 一致），被拖任务位于 position 位置。
  */
 @RunWith(RobolectricTestRunner::class)
 class TaskListSortTest {
@@ -69,8 +71,8 @@ class TaskListSortTest {
         val b = task("b", sortOrder = 10.0)
         val c = task("c", sortOrder = 20.0)
 
-        // 把 c 拖到 a、b 之间 → 新值 5.0
-        val result = TaskListViewModel.computeNewSortOrder(listOf(a, b, c), fromIndex = 2, toIndex = 1)
+        // [a, b, c] 把 c 拖到 a、b 之间 → 移动后 [a, c, b]，c 在位置 1 → 新值 5.0
+        val result = TaskListViewModel.computeSortOrderForPosition(listOf(a, c, b), position = 1)
 
         assertEquals(5.0, result)
     }
@@ -80,7 +82,8 @@ class TaskListSortTest {
         val a = task("a", sortOrder = 5.0)
         val b = task("b", sortOrder = 10.0)
 
-        val result = TaskListViewModel.computeNewSortOrder(listOf(a, b), fromIndex = 1, toIndex = 0)
+        // [a, b] 把 b 拖到顶部 → [b, a]，b 在位置 0 → follow=a → 5-1000
+        val result = TaskListViewModel.computeSortOrderForPosition(listOf(b, a), position = 0)
 
         assertEquals(-995.0, result)
     }
@@ -90,19 +93,18 @@ class TaskListSortTest {
         val a = task("a", sortOrder = 5.0)
         val b = task("b", sortOrder = 10.0)
 
-        // [a, b] 把 a 拖到 b 之后 → [b, a]，a 的新值 = b.sortOrder + 1000
-        val result = TaskListViewModel.computeNewSortOrder(listOf(a, b), fromIndex = 0, toIndex = 1)
+        // [a, b] 把 a 拖到底部 → [b, a]，a 在位置 1 → prev=b → 10+1000
+        val result = TaskListViewModel.computeSortOrderForPosition(listOf(b, a), position = 1)
 
         assertEquals(1010.0, result)
     }
 
     @Test
-    fun `原位与越界返回 null`() {
+    fun `越界位置返回 null`() {
         val a = task("a")
         val b = task("b")
 
-        assertNull(TaskListViewModel.computeNewSortOrder(listOf(a, b), 0, 0))
-        assertNull(TaskListViewModel.computeNewSortOrder(listOf(a, b), 0, 5))
-        assertNull(TaskListViewModel.computeNewSortOrder(listOf(a, b), -1, 1))
+        assertNull(TaskListViewModel.computeSortOrderForPosition(listOf(a, b), 5))
+        assertNull(TaskListViewModel.computeSortOrderForPosition(listOf(a, b), -1))
     }
 }

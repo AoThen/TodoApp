@@ -63,10 +63,10 @@ class TaskListViewModel @Inject constructor(
         sortTasks(filterTasks(list, query), mode)
     }
 
-    /** 拖拽落点：以相邻任务 sort_order 中点为新值（边界用 ±1000），仅被拖任务产生一条 delta */
-    fun persistReorder(list: List<Task>, fromIndex: Int, toIndex: Int) {
-        val newSortOrder = computeNewSortOrder(list, fromIndex, toIndex) ?: return
-        val moved = list[fromIndex]
+    /** 拖拽释放：按移动后列表中该位置的相邻 sort_order 中点持久化，仅被拖任务产生一条 delta */
+    fun persistReorderAt(list: List<Task>, position: Int) {
+        val moved = list.getOrNull(position) ?: return
+        val newSortOrder = computeSortOrderForPosition(list, position) ?: return
         viewModelScope.launch {
             taskRepository.persistSortOrder(moved, newSortOrder)
                 .onError { e ->
@@ -239,15 +239,15 @@ class TaskListViewModel @Inject constructor(
             else -> list.sortedByDescending { it.createdAt }
         }
 
-        /** 拖拽落点 sort_order 计算：相邻中点插入；边界 ±1000；非法位置返回 null */
-        fun computeNewSortOrder(list: List<Task>, fromIndex: Int, toIndex: Int): Double? {
-            if (fromIndex == toIndex) return null
-            if (fromIndex !in list.indices || toIndex !in list.indices) return null
-            val mutable = list.toMutableList()
-            val moved = mutable.removeAt(fromIndex)
-            mutable.add(toIndex, moved)
-            val prev = mutable.getOrNull(toIndex - 1)
-            val follow = mutable.getOrNull(toIndex + 1)
+        /**
+         * 拖拽落点 sort_order 计算：取移动后列表中 position 位置的相邻任务中点；边界 ±1000；越界返回 null。
+         * 注意 list 必须是"已完成移动"的列表（与 ItemTouchHelper.onMove 提交后的 currentList 一致），
+         * 被拖任务即 list[position]，不可再模拟一次移动。
+         */
+        fun computeSortOrderForPosition(list: List<Task>, position: Int): Double? {
+            if (position !in list.indices) return null
+            val prev = list.getOrNull(position - 1)
+            val follow = list.getOrNull(position + 1)
             return when {
                 prev != null && follow != null -> (prev.sortOrder + follow.sortOrder) / 2.0
                 prev != null -> prev.sortOrder + 1000.0

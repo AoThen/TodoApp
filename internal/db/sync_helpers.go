@@ -12,18 +12,20 @@ type DBTX interface {
 	QueryRow(query string, args ...interface{}) *sql.Row
 }
 
-// GetTaskForSync 获取任务用于同步检查（按 user_id 校验归属，防止越权访问他人任务）
-func GetTaskForSync(q DBTX, userID int, taskID int64) (int, string, string, string, bool, error) {
+// GetTaskForSync 获取任务用于同步检查（按 user_id 校验归属，防止越权访问他人任务）。
+// 返回 priority 供 update 合并时兜底：客户端 delta 可能不带 priority（如仅拖拽排序），
+// 服务端必须保持原值而不是重置为默认值。
+func GetTaskForSync(q DBTX, userID int, taskID int64) (int, string, string, string, string, bool, error) {
 	var serverVersion int
-	var title, description, status string
+	var title, description, status, priority string
 	var isDeleted bool
 
 	err := q.QueryRow(
-		"SELECT server_version, title, description, status, is_deleted FROM tasks WHERE id = ? AND user_id = ?",
+		"SELECT server_version, title, description, status, COALESCE(priority,'medium'), is_deleted FROM tasks WHERE id = ? AND user_id = ?",
 		taskID, userID,
-	).Scan(&serverVersion, &title, &description, &status, &isDeleted)
+	).Scan(&serverVersion, &title, &description, &status, &priority, &isDeleted)
 
-	return serverVersion, title, description, status, isDeleted, err
+	return serverVersion, title, description, status, priority, isDeleted, err
 }
 
 // TaskExistsByLocalID 检查local_id是否存在（限定当前用户）

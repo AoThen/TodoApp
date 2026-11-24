@@ -51,8 +51,11 @@ func collectTaskExtra(payload map[string]interface{}) *db.TaskExtraFields {
 		extra.SortOrder = &sortOrder
 	}
 	if v, ok := payload["recurrence_type"].(string); ok {
-		recurrenceType := v
-		extra.RecurrenceType = &recurrenceType
+		// 非空且非法的规则直接丢弃（保持服务端原值），避免脏数据入库；空串表示清除循环，允许
+		if v == "" || db.IsValidRecurrenceRule(v) {
+			recurrenceType := v
+			extra.RecurrenceType = &recurrenceType
+		}
 	}
 	if v, ok := payload["recurrence_series_id"].(string); ok {
 		series := v
@@ -186,7 +189,7 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 				if insertErr == nil {
 					if serverID, err2 := res.LastInsertId(); err2 == nil {
 						// 附带既有任务的当前版本号，供客户端"保留本地"时作为 CV 重放
-						existVer, _, _, _, _, verErr := db.GetTaskForSync(tx, userID, existingID)
+						existVer, _, _, _, _, _, verErr := db.GetTaskForSync(tx, userID, existingID)
 						if verErr != nil {
 							existVer = 0
 						}
@@ -250,7 +253,7 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 				}
 
 				// ✅ 获取服务器当前版本和数据（校验任务归属，防止越权修改他人任务）
-				oldVer, serverTitle, serverDesc, serverStatus, _, queryErr := db.GetTaskForSync(tx, userID, id)
+				oldVer, serverTitle, serverDesc, serverStatus, serverPriority, _, queryErr := db.GetTaskForSync(tx, userID, id)
 
 				if queryErr != nil {
 					if errors.Is(queryErr, sql.ErrNoRows) {
@@ -297,8 +300,8 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 						"status":      clientStatus,
 					})
 
-					// 应用合并结果
-					priority := "medium"
+					// 应用合并结果；priority 缺省保持服务端原值（拖拽排序等 delta 不携带该字段，禁止重置为默认值）
+					priority := serverPriority
 					if v, ok := c.Payload["priority"].(string); ok {
 						priority = v
 					}
@@ -354,7 +357,8 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 					title := serverTitle
 					description := serverDesc
 					status := serverStatus
-					priority := "medium"
+					// priority 缺省保持服务端原值（拖拽排序等 delta 不携带该字段，禁止重置为默认值）
+					priority := serverPriority
 
 					if v, ok := c.Payload["title"].(string); ok {
 						title = v
@@ -399,7 +403,7 @@ func handleSync(w http.ResponseWriter, r *http.Request, wsHub *wsclient.Hub) {
 			if idVal, ok := c.Payload["id"].(float64); ok {
 				id := int64(idVal)
 
-				oldVer, _, _, _, isDeleted, queryErr := db.GetTaskForSync(tx, userID, id)
+				oldVer, _, _, _, _, isDeleted, queryErr := db.GetTaskForSync(tx, userID, id)
 
 				if queryErr != nil {
 					if errors.Is(queryErr, sql.ErrNoRows) {

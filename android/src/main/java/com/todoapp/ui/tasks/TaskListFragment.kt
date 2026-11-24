@@ -121,7 +121,9 @@ class TaskListFragment : Fragment() {
                 super.clearView(recyclerView, viewHolder)
                 val to = viewHolder.bindingAdapterPosition
                 if (dragFrom != RecyclerView.NO_POSITION && to != RecyclerView.NO_POSITION && dragFrom != to) {
-                    viewModel.persistReorder(taskAdapter.currentList, dragFrom, to)
+                    // currentList 已是 onMove 提交后的移动结果，被拖任务就在 to 位置，
+                    // 直接按其新邻居计算中点，不能再用拖拽前索引重复模拟移动
+                    viewModel.persistReorderAt(taskAdapter.currentList, to)
                 }
                 dragFrom = RecyclerView.NO_POSITION
             }

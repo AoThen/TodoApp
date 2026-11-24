@@ -199,7 +199,8 @@ class DeltaSyncWorker(
                             status = serverChange.status ?: existing.status,
                             priority = serverChange.priority ?: existing.priority,
                             dueAt = serverChange.dueAt ?: existing.dueAt,
-                            completedAt = serverChange.completedAt ?: existing.completedAt,
+                            // 服务端对 NULL completed_at 下发空串：空串不覆盖本地完成时间
+                            completedAt = serverChange.completedAt?.takeIf { it.isNotBlank() } ?: existing.completedAt,
                             updatedAt = serverChange.updatedAt,
                             isDeleted = false,
                             sortOrder = serverChange.sortOrder ?: existing.sortOrder,
@@ -223,7 +224,7 @@ class DeltaSyncWorker(
                                 status = serverChange.status ?: ghost.status,
                                 priority = serverChange.priority ?: ghost.priority,
                                 dueAt = serverChange.dueAt ?: ghost.dueAt,
-                                completedAt = serverChange.completedAt ?: ghost.completedAt,
+                                completedAt = serverChange.completedAt?.takeIf { it.isNotBlank() } ?: ghost.completedAt,
                                 updatedAt = serverChange.updatedAt,
                                 lastModified = serverChange.updatedAt,
                                 sortOrder = serverChange.sortOrder ?: ghost.sortOrder,

@@ -40,6 +40,9 @@ func (cs *CSVStreamer) WriteRow(task map[string]interface{}) error {
 		toCSVCell(task["completed_at"]),
 		toCSVCell(task["is_deleted"]),
 		toCSVCell(task["last_modified"]),
+		toCSVCell(task["sort_order"]),
+		toCSVCell(task["recurrence_type"]),
+		toCSVCell(task["recurrence_series_id"]),
 	}
 
 	if err := cs.writer.Write(row); err != nil {

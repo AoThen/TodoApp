@@ -107,6 +107,11 @@ func handleImport(w http.ResponseWriter, r *http.Request) {
 				"description": toImportString(jsonTask["description"]),
 				"status":      toImportString(jsonTask["status"]),
 				"priority":    toImportString(jsonTask["priority"]),
+				"due_at":      toImportString(jsonTask["due_at"]),
+				// sort_order 保留原始数值类型（float64），BatchInsertTasks 内做数值/字符串兼容
+				"sort_order":           jsonTask["sort_order"],
+				"recurrence_type":      toImportString(jsonTask["recurrence_type"]),
+				"recurrence_series_id": toImportString(jsonTask["recurrence_series_id"]),
 			}
 
 			if task["title"] != "" {
@@ -143,13 +148,13 @@ func handleImport(w http.ResponseWriter, r *http.Request) {
 			}
 
 			task := map[string]interface{}{
-				"local_id":    fmt.Sprintf("import-%d", time.Now().UnixNano()),
-				"title":       title,
-				"description": description,
-				"status":      status,
-				"priority":    priority,
-				"due_at":      record["due_at"],
-				"sort_order":  record["sort_order"],
+				"local_id":             fmt.Sprintf("import-%d", time.Now().UnixNano()),
+				"title":                title,
+				"description":          description,
+				"status":               status,
+				"priority":             priority,
+				"due_at":               record["due_at"],
+				"sort_order":           record["sort_order"],
 				"recurrence_type":      record["recurrence_type"],
 				"recurrence_series_id": record["recurrence_series_id"],
 			}
