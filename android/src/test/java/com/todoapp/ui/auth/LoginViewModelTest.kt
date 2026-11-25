@@ -57,7 +57,7 @@ class LoginViewModelTest {
         apiService = mockk()
         taskRepository = mockk(relaxed = true)
         // 显式打桩：migrateGuestTasks 返回 value class，不依赖 relaxed mock 的默认答案
-        coEvery { taskRepository.migrateGuestTasks(any()) } returns Result.success(0)
+        coEvery { taskRepository.migrateGuestTasks(any()) } returns com.todoapp.utils.Result.Success(0)
         guestTaskReconciler = mockk(relaxed = true) {
             coEvery { reconcile() } returns 0
         }
