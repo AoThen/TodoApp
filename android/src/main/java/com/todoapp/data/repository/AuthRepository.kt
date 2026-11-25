@@ -12,7 +12,6 @@ import javax.inject.Singleton
 
 @Singleton
 class AuthRepository @Inject constructor(
-    private val apiService: ApiService,
     // Hilt 只提供 @ApplicationContext 限定的 Context 绑定，裸 Context 无法注入
     @ApplicationContext private val context: Context
 ) {
@@ -21,7 +20,8 @@ class AuthRepository @Inject constructor(
         return withContext(Dispatchers.IO) {
             try {
                 val request = LoginRequest(email, password)
-                val response = apiService.login(request)
+                // 动态解析：切换服务器后立刻指向新地址，避免单例缓存导致请求仍打到旧服务端
+                val response = RetrofitClient.getApiService(context).login(request)
                 
                 val loginBody = response.body()
                 if (response.isSuccessful && loginBody != null) {
@@ -44,7 +44,7 @@ class AuthRepository @Inject constructor(
     suspend fun logout(): Result<Unit> {
         return withContext(Dispatchers.IO) {
             try {
-                apiService.logout()
+                RetrofitClient.getApiService(context).logout()
             } catch (e: Exception) {
                 // 离线或会话已失效时也允许本地登出
                 android.util.Log.w("AuthRepository", "Server logout failed, clearing local session anyway", e)
@@ -59,7 +59,7 @@ class AuthRepository @Inject constructor(
     suspend fun refreshToken(): Result<RefreshResponse> {
         return withContext(Dispatchers.IO) {
             try {
-                val response = apiService.refreshToken()
+                val response = RetrofitClient.getApiService(context).refreshToken()
                 
                 val refreshBody = response.body()
                 if (response.isSuccessful && refreshBody != null) {

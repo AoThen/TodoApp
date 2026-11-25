@@ -5,7 +5,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.todoapp.R
 import com.todoapp.config.AppConfig
-import com.todoapp.data.remote.ApiService
 import com.todoapp.data.remote.LoginRequest
 import com.todoapp.data.remote.RetrofitClient
 import com.todoapp.data.repository.TaskRepository
@@ -36,7 +35,6 @@ sealed class LoginState {
 @HiltViewModel
 class LoginViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val apiService: ApiService,
     private val taskRepository: TaskRepository,
     private val guestTaskReconciler: GuestTaskReconciler
 ) : ViewModel() {
@@ -52,7 +50,8 @@ class LoginViewModel @Inject constructor(
             _loginState.value = LoginState.Loading
 
             val result = Result.runCatching {
-                val response = apiService.login(
+                // 动态解析：切换服务器后立刻指向新地址，避免持有旧服务端的接口实例
+                val response = RetrofitClient.getApiService(context).login(
                     LoginRequest(
                         email = email,
                         password = password

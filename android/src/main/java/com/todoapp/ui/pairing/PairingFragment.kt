@@ -22,12 +22,17 @@ import com.todoapp.BuildConfig
 import com.todoapp.R
 import com.todoapp.TodoApp
 import com.todoapp.config.AppConfig
+import com.todoapp.data.notify.NotificationSocketController
 import com.todoapp.data.remote.RetrofitClient
+import com.todoapp.data.remote.ServerSwitchHelper
 import com.todoapp.databinding.FragmentPairingBinding
 import com.todoapp.ui.QRScannerActivity
 import com.todoapp.utils.ServerUrlValidator
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 @AndroidEntryPoint
 class PairingFragment : Fragment() {
@@ -248,16 +253,36 @@ class PairingFragment : Fragment() {
      * 未登录则引导先登录，登录后回到本页再次点击即可完成配对。
      */
     private fun applyCustomServer(url: String) {
-        AppConfig.setBaseUrl(requireContext(), url)
-        RetrofitClient.setBaseUrl(url)
-
+        val appContext = requireContext().applicationContext
         val app = requireActivity().application as TodoApp
-        if (app.isUserLoggedIn()) {
-            val pairingJson = "{\"type\":\"todoapp-pairing\",\"v\":1,\"server\":\"$url\"}"
-            viewModel.pairDevice(pairingJson, requireContext())
-        } else {
-            Toast.makeText(requireContext(), R.string.pairing_login_required_message, Toast.LENGTH_LONG).show()
-            findNavController().navigate(R.id.loginFragment)
+        // 与当前生效地址比较：确实切换服务器时才重置会话（同地址重新配对不受影响）
+        val switchingServer = RetrofitClient.getBaseUrl() != ServerUrlValidator.normalizeBaseUrl(url)
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            if (switchingServer) {
+                // 切换服务器 = 重置会话：清除旧服务器的登录凭据/配对密钥/待同步修改（游客态保留队列）
+                withContext(Dispatchers.IO) {
+                    ServerSwitchHelper.resetSession(appContext, clearPendingDeltas = app.isUserLoggedIn())
+                }
+                AppConfig.setBaseUrl(appContext, url)
+                RetrofitClient.setBaseUrl(url)
+                NotificationSocketController.stop()
+            }
+
+            if (app.isUserLoggedIn()) {
+                // 复用 pairDevice：无配对凭据时由服务端 initPairing 下发通道密钥
+                val pairingJson = JSONObject(
+                    mapOf(
+                        "type" to "todoapp-pairing",
+                        "v" to 1,
+                        "server" to url
+                    )
+                ).toString()
+                viewModel.pairDevice(pairingJson, requireContext())
+            } else {
+                Toast.makeText(requireContext(), R.string.pairing_login_required_message, Toast.LENGTH_LONG).show()
+                findNavController().navigate(R.id.loginFragment)
+            }
         }
     }
 

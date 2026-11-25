@@ -17,10 +17,9 @@ import com.todoapp.BuildConfig
 import com.todoapp.R
 import com.todoapp.config.AppConfig
 import com.todoapp.data.backup.ImportExportManager
-import com.todoapp.data.crypto.CryptoInterceptor
-import com.todoapp.data.crypto.KeyStorage
 import com.todoapp.data.notify.NotificationSocketController
 import com.todoapp.data.remote.RetrofitClient
+import com.todoapp.data.remote.ServerSwitchHelper
 import com.todoapp.data.repository.AuthRepository
 import com.todoapp.data.repository.TaskRepository
 import com.todoapp.databinding.FragmentSettingsBinding
@@ -132,7 +131,7 @@ class SettingsFragment : Fragment() {
                     Toast.makeText(requireContext(), R.string.settings_server_url_invalid, Toast.LENGTH_LONG).show()
                     return@setPositiveButton
                 }
-                val normalized = normalizeServerUrl(url)
+                val normalized = ServerUrlValidator.normalizeBaseUrl(url)
                 if (normalized == AppConfig.getBaseUrl()) return@setPositiveButton
                 showConfirmServerChangeDialog(normalized)
             }
@@ -158,12 +157,11 @@ class SettingsFragment : Fragment() {
         val appContext = requireContext().applicationContext
         viewLifecycleOwner.lifecycleScope.launch {
             withContext(Dispatchers.IO) {
-                if (authRepository.isLoggedIn()) {
-                    taskRepository.clearDeltaQueue()
-                }
-                RetrofitClient.clearToken(appContext)
-                KeyStorage.clearKey(appContext)
-                CryptoInterceptor.getInstance(appContext).refreshKey()
+                // 切换服务器 = 重置会话：已登录需清空待同步队列，游客态保留队列待登录后合并
+                ServerSwitchHelper.resetSession(
+                    appContext,
+                    clearPendingDeltas = authRepository.isLoggedIn()
+                )
                 AppConfig.setBaseUrl(appContext, newUrl)
                 RetrofitClient.setBaseUrl(newUrl)
             }
@@ -181,11 +179,6 @@ class SettingsFragment : Fragment() {
                 )
             }
         }
-    }
-
-    private fun normalizeServerUrl(url: String): String {
-        val withSlash = if (url.endsWith("/")) url else "$url/"
-        return if (withSlash.endsWith("/api/v1/")) withSlash else "${withSlash}api/v1/"
     }
 
     private fun setupDataActions() {

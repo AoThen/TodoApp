@@ -7,13 +7,16 @@ import com.todoapp.data.local.AppDatabase
 import com.todoapp.data.local.DeltaChange
 import com.todoapp.data.local.Task
 import com.todoapp.data.remote.ApiService
+import com.todoapp.data.remote.RetrofitClient
 import com.todoapp.data.remote.TaskResponse
 import com.todoapp.data.remote.TasksPageData
 import com.todoapp.data.remote.TasksPageResponse
 import com.todoapp.data.remote.TasksPagination
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkObject
 import io.mockk.unmockkAll
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -40,7 +43,10 @@ class GuestTaskReconcilerTest {
     fun setUp() {
         db = AppDatabase.getInMemoryInstance(context)
         apiService = mockk()
-        reconciler = GuestTaskReconciler(apiService, db)
+        // ApiService 经 RetrofitClient 动态解析（切服务器后指向新地址），测试中固定返回 mock
+        mockkObject(RetrofitClient)
+        every { RetrofitClient.getApiService(any()) } returns apiService
+        reconciler = GuestTaskReconciler(context, db)
     }
 
     @After

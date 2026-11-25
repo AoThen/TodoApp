@@ -18,4 +18,11 @@ object ServerUrlValidator {
 
         return !uri.host.isNullOrBlank()
     }
+
+    /** 规范化为以 /api/v1/ 结尾的基址，与 AppConfig/RetrofitClient 的持久化规则一致，用于切换前后比较 */
+    fun normalizeBaseUrl(url: String): String {
+        val trimmed = url.trim()
+        val withSlash = if (trimmed.endsWith("/")) trimmed else "$trimmed/"
+        return if (withSlash.endsWith("/api/v1/")) withSlash else "${withSlash}api/v1/"
+    }
 }

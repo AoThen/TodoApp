@@ -56,12 +56,16 @@ class LoginViewModelTest {
         Dispatchers.setMain(UnconfinedTestDispatcher())
         apiService = mockk()
         taskRepository = mockk(relaxed = true)
+        // 显式打桩：migrateGuestTasks 返回 value class，不依赖 relaxed mock 的默认答案
+        coEvery { taskRepository.migrateGuestTasks(any()) } returns Result.success(0)
         guestTaskReconciler = mockk(relaxed = true) {
             coEvery { reconcile() } returns 0
         }
         mockkObject(RetrofitClient)
         every { RetrofitClient.saveAccessToken(any(), any()) } returns Unit
         every { RetrofitClient.saveRefreshToken(any(), any()) } returns Unit
+        // ApiService 经 RetrofitClient 动态解析（切服务器后指向新地址），测试中固定返回 mock
+        every { RetrofitClient.getApiService(any()) } returns apiService
         // getString 走 mock；SharedPreferences 转发到 Robolectric 真实实现，
         // 供 AppConfig 的游客标记等读写使用，并在用例间清场
         appContext.getSharedPreferences("app_config", Context.MODE_PRIVATE).edit().clear().commit()
@@ -70,7 +74,7 @@ class LoginViewModelTest {
             every { getSharedPreferences(any(), any()) } returns
                 appContext.getSharedPreferences("app_config", Context.MODE_PRIVATE)
         }
-        viewModel = LoginViewModel(context, apiService, taskRepository, guestTaskReconciler)
+        viewModel = LoginViewModel(context, taskRepository, guestTaskReconciler)
     }
 
     @After

@@ -1,10 +1,11 @@
 package com.todoapp.data.sync
 
+import android.content.Context
 import android.util.Log
 import com.todoapp.data.local.AppDatabase
 import com.todoapp.data.local.Task
-import com.todoapp.data.remote.ApiService
-import com.todoapp.data.remote.TaskResponse
+import com.todoapp.data.remote.RetrofitClient
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 
 /**
@@ -15,7 +16,7 @@ import javax.inject.Inject
  * 失败语义：任一环节异常均整体跳过对账，回退为原样上传，绝不阻塞登录流程。
  */
 class GuestTaskReconciler @Inject constructor(
-    private val apiService: ApiService,
+    @ApplicationContext private val context: Context,
     private val database: AppDatabase
 ) {
 
@@ -27,6 +28,8 @@ class GuestTaskReconciler @Inject constructor(
                 .mapNotNull { delta ->
                     database.taskDao().getTaskByLocalId(delta.localId)?.takeIf { it.serverId == null }
                 }
+                // 防御：同一任务残留多条 insert delta 时只对账一次
+                .distinctBy { it.localId }
             // 无待上传的离线新增时不必请求服务端
             if (candidates.isEmpty()) return 0
 
@@ -60,13 +63,15 @@ class GuestTaskReconciler @Inject constructor(
             val all = mutableListOf<TaskResponse>()
             var page = 1
             while (true) {
-                val response = apiService.getTasksPage(page, PAGE_SIZE)
+                // 动态解析：切换服务器后立刻指向新地址
+                val response = RetrofitClient.getApiService(context).getTasksPage(page, PAGE_SIZE)
                 val body = response.body()
                 if (!response.isSuccessful || body == null) return null
                 val data = body.data ?: return null
                 all += data.tasks
-                val pages = data.pagination?.pages ?: 1
-                if (page >= pages) break
+                // 服务端 pages 异常时的本地保护：限制最大页数，空页提前终止
+                val pages = (data.pagination?.pages ?: 1).coerceIn(1, MAX_PAGES)
+                if (data.tasks.isEmpty() || page >= pages) break
                 page++
             }
             all
@@ -88,5 +93,6 @@ class GuestTaskReconciler @Inject constructor(
     companion object {
         private const val TAG = "GuestTaskReconciler"
         private const val PAGE_SIZE = 100
+        private const val MAX_PAGES = 1000
     }
 }
