@@ -29,6 +29,9 @@
     <string name="pairing_device_success">设备配对成功</string>
     <string name="pairing_code_hint">请输入配对代码</string>
     <string name="pairing_guide">请扫描二维码或手动输入配对代码以连接到服务器</string>
+    <string name="pairing_custom_server">使用自定义服务器</string>
+    <string name="pairing_custom_server_hint">输入你的服务器地址，登录与同步将指向该服务端</string>
+    <string name="pairing_invalid_server">服务器地址无效，请以 https:// 开头输入</string>
     
     <!-- Authentication -->
     <string name="login_title">登录</string>

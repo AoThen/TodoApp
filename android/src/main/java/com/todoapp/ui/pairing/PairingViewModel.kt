@@ -68,7 +68,8 @@ class PairingViewModel @Inject constructor() : ViewModel() {
                     val initBody = response.body()
                     if (response.isSuccessful && initBody != null) {
                         channelKey = initBody.encryptionKey
-                        serverUrl = initBody.serverUrl
+                        // 服务端未回传地址时兜底用二维码/用户输入的地址，避免保存空地址导致配对态失效
+                        serverUrl = initBody.serverUrl.ifBlank { serverUrl }
                     } else {
                         _pairingState.value = PairingState.Error(
                             context.getString(R.string.pairing_failed) + ": 无法获取配对密钥"

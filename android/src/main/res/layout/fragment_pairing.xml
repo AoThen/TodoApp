@@ -75,6 +75,18 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/btnScanQR" />
 
+    <!-- Custom Server Button：自建服务器用户手动指定地址，无需扫码即可指向自己的服务端 -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnCustomServer"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/pairing_custom_server"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/btnManualPair" />
+
     <!-- Progress Bar -->
     <com.google.android.material.progressindicator.CircularProgressIndicator
         android:id="@+id/progressBar"
@@ -85,6 +97,6 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/btnManualPair" />
+        app:layout_constraintTop_toBottomOf="@id/btnCustomServer" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

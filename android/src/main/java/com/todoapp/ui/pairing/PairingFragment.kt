@@ -17,10 +17,14 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.todoapp.BuildConfig
 import com.todoapp.R
 import com.todoapp.TodoApp
+import com.todoapp.config.AppConfig
+import com.todoapp.data.remote.RetrofitClient
 import com.todoapp.databinding.FragmentPairingBinding
 import com.todoapp.ui.QRScannerActivity
+import com.todoapp.utils.ServerUrlValidator
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
@@ -66,6 +70,10 @@ class PairingFragment : Fragment() {
         binding.btnManualPair.setOnClickListener {
             ensureLoggedInThen { showManualPairDialog() }
         }
+
+        binding.btnCustomServer.setOnClickListener {
+            showCustomServerDialog()
+        }
     }
 
     /**
@@ -92,11 +100,13 @@ class PairingFragment : Fragment() {
                             binding.progressBar.visibility = View.GONE
                             binding.btnScanQR.isEnabled = true
                             binding.btnManualPair.isEnabled = true
+                            binding.btnCustomServer.isEnabled = true
                         }
                         is PairingState.Loading -> {
                             binding.progressBar.visibility = View.VISIBLE
                             binding.btnScanQR.isEnabled = false
                             binding.btnManualPair.isEnabled = false
+                            binding.btnCustomServer.isEnabled = false
                         }
                         is PairingState.Success -> {
                             binding.progressBar.visibility = View.GONE
@@ -115,6 +125,7 @@ class PairingFragment : Fragment() {
                             binding.progressBar.visibility = View.GONE
                             binding.btnScanQR.isEnabled = true
                             binding.btnManualPair.isEnabled = true
+                            binding.btnCustomServer.isEnabled = true
                             Toast.makeText(requireContext(), state.message, Toast.LENGTH_LONG).show()
                         }
                     }
@@ -187,6 +198,48 @@ class PairingFragment : Fragment() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    private fun showCustomServerDialog() {
+        val view = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_custom_server, null)
+        val editText = view.findViewById<com.google.android.material.textfield.TextInputEditText>(
+            R.id.editCustomServerUrl
+        )
+        // 预填当前地址（去掉接口前缀，便于直接编辑主机部分）
+        editText.setText(AppConfig.getBaseUrl().removeSuffix("/api/v1/"))
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.pairing_custom_server)
+            .setView(view)
+            .setPositiveButton(R.string.ok) { _, _ ->
+                val url = editText.text.toString().trim()
+                if (!ServerUrlValidator.isValidServerUrl(url, BuildConfig.DEBUG)) {
+                    Toast.makeText(requireContext(), R.string.pairing_invalid_server, Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                applyCustomServer(url)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /**
+     * 自定义服务器：先持久化地址（登录/同步通道随之指向新服务端），
+     * 已登录则直接复用 pairDevice 完成配对（无配对凭据时由服务端 initPairing 下发通道密钥），
+     * 未登录则引导先登录，登录后回到本页再次点击即可完成配对。
+     */
+    private fun applyCustomServer(url: String) {
+        AppConfig.setBaseUrl(requireContext(), url)
+        RetrofitClient.setBaseUrl(url)
+
+        val app = requireActivity().application as TodoApp
+        if (app.isUserLoggedIn()) {
+            val pairingJson = "{\"type\":\"todoapp-pairing\",\"v\":1,\"server\":\"$url\"}"
+            viewModel.pairDevice(pairingJson, requireContext())
+        } else {
+            Toast.makeText(requireContext(), R.string.pairing_login_required_message, Toast.LENGTH_LONG).show()
+            findNavController().navigate(R.id.loginFragment)
+        }
     }
 
     private fun navigateToLogin() {
