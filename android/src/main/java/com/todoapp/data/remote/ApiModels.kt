@@ -16,7 +16,10 @@ interface ApiService {
     suspend fun logout(): Response<Unit>
 
     @GET("tasks")
-    suspend fun getTasks(): Response<List<TaskResponse>>
+    suspend fun getTasksPage(
+        @Query("page") page: Int,
+        @Query("page_size") pageSize: Int
+    ): Response<TasksPageResponse>
 
     @POST("tasks")
     suspend fun createTask(@Body task: CreateTaskRequest): Response<TaskResponse>
@@ -83,6 +86,24 @@ data class TaskResponse(
     @SerializedName("sort_order") val sortOrder: Double? = null,
     @SerializedName("recurrence_type") val recurrenceType: String? = null,
     @SerializedName("recurrence_series_id") val recurrenceSeriesId: String? = null
+)
+
+/** GET /tasks 响应：{success, data:{tasks, pagination}} */
+data class TasksPageResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("data") val data: TasksPageData? = null
+)
+
+data class TasksPageData(
+    @SerializedName("tasks") val tasks: List<TaskResponse> = emptyList(),
+    @SerializedName("pagination") val pagination: TasksPagination? = null
+)
+
+data class TasksPagination(
+    @SerializedName("page") val page: Int = 1,
+    @SerializedName("page_size") val pageSize: Int = 20,
+    @SerializedName("total") val total: Int = 0,
+    @SerializedName("pages") val pages: Int = 1
 )
 
 data class CreateTaskRequest(

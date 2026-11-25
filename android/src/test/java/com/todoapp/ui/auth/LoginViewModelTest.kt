@@ -8,6 +8,7 @@ import com.todoapp.data.remote.LoginRequest
 import com.todoapp.data.remote.LoginResponse
 import com.todoapp.data.remote.RetrofitClient
 import com.todoapp.data.repository.TaskRepository
+import com.todoapp.data.sync.GuestTaskReconciler
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -42,6 +43,7 @@ class LoginViewModelTest {
     private lateinit var viewModel: LoginViewModel
     private lateinit var apiService: ApiService
     private lateinit var taskRepository: TaskRepository
+    private lateinit var guestTaskReconciler: GuestTaskReconciler
     private val appContext: Context = ApplicationProvider.getApplicationContext()
 
     private val loginResponse = mockk<LoginResponse> {
@@ -54,6 +56,9 @@ class LoginViewModelTest {
         Dispatchers.setMain(UnconfinedTestDispatcher())
         apiService = mockk()
         taskRepository = mockk(relaxed = true)
+        guestTaskReconciler = mockk(relaxed = true) {
+            coEvery { reconcile() } returns 0
+        }
         mockkObject(RetrofitClient)
         every { RetrofitClient.saveAccessToken(any(), any()) } returns Unit
         every { RetrofitClient.saveRefreshToken(any(), any()) } returns Unit
@@ -65,7 +70,7 @@ class LoginViewModelTest {
             every { getSharedPreferences(any(), any()) } returns
                 appContext.getSharedPreferences("app_config", Context.MODE_PRIVATE)
         }
-        viewModel = LoginViewModel(context, apiService, taskRepository)
+        viewModel = LoginViewModel(context, apiService, taskRepository, guestTaskReconciler)
     }
 
     @After
@@ -173,17 +178,19 @@ class LoginViewModelTest {
 
         assertTrue(viewModel.loginState.value is LoginState.Success)
         coVerify { taskRepository.migrateGuestTasks(any()) }
+        coVerify { guestTaskReconciler.reconcile() }
         assertFalse(AppConfig.isGuestMode(appContext))
     }
 
     @Test
-    fun `login 非游客模式不触发迁移`() {
+    fun `login 非游客模式不触发迁移与对账`() {
         coEvery { apiService.login(any<LoginRequest>()) } returns Response.success(loginResponse)
 
         viewModel.login("user@example.com", "password123")
 
         assertTrue(viewModel.loginState.value is LoginState.Success)
         coVerify(exactly = 0) { taskRepository.migrateGuestTasks(any()) }
+        coVerify(exactly = 0) { guestTaskReconciler.reconcile() }
         assertFalse(AppConfig.isGuestMode(appContext))
     }
 }
