@@ -114,6 +114,12 @@
     <string name="settings_dark_mode_desc">切换应用的深色/浅色外观，保存后立即生效</string>
     <string name="settings_section_connection">连接</string>
     <string name="settings_server_url">服务器地址</string>
+    <string name="settings_edit_server_url">修改服务器地址</string>
+    <string name="settings_server_url_hint">请输入服务器地址，如 https://example.com</string>
+    <string name="settings_server_url_invalid">服务器地址无效，请以 https:// 开头输入</string>
+    <string name="settings_server_url_confirm_title">修改服务器地址</string>
+    <string name="settings_server_url_confirm_message">切换服务器将退出登录、清除设备配对，并丢弃尚未同步的本地修改。确定继续吗？</string>
+    <string name="settings_server_url_changed">服务器地址已更新，请重新登录并配对</string>
     <string name="settings_version">版本号</string>
     <string name="settings_re_pair">重新配对设备</string>
     <string name="settings_section_data">数据</string>

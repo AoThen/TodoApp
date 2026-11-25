@@ -93,6 +93,14 @@
             android:textIsSelectable="true"
             android:textSize="14sp" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnEditServerUrl"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/settings_edit_server_url" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

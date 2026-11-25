@@ -17,10 +17,14 @@ import com.todoapp.BuildConfig
 import com.todoapp.R
 import com.todoapp.config.AppConfig
 import com.todoapp.data.backup.ImportExportManager
+import com.todoapp.data.crypto.CryptoInterceptor
+import com.todoapp.data.crypto.KeyStorage
 import com.todoapp.data.notify.NotificationSocketController
+import com.todoapp.data.remote.RetrofitClient
 import com.todoapp.data.repository.AuthRepository
 import com.todoapp.data.repository.TaskRepository
 import com.todoapp.databinding.FragmentSettingsBinding
+import com.todoapp.utils.ServerUrlValidator
 import com.todoapp.utils.ThemeUtils
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
@@ -97,6 +101,11 @@ class SettingsFragment : Fragment() {
         // 服务器地址（只读展示，来自构建配置或本地覆盖）
         binding.tvServerUrl.text = AppConfig.getBaseUrl()
 
+        // 修改服务器地址（切换后需重新登录并配对）
+        binding.btnEditServerUrl.setOnClickListener {
+            showEditServerUrlDialog()
+        }
+
         // 应用版本号
         binding.tvVersion.text = BuildConfig.VERSION_NAME
 
@@ -104,6 +113,79 @@ class SettingsFragment : Fragment() {
         binding.btnRePair.setOnClickListener {
             findNavController().navigate(R.id.action_settingsFragment_to_pairingFragment)
         }
+    }
+
+    private fun showEditServerUrlDialog() {
+        val view = LayoutInflater.from(requireContext())
+            .inflate(R.layout.dialog_edit_server_url, null)
+        val editText = view.findViewById<com.google.android.material.textfield.TextInputEditText>(
+            R.id.editServerUrl
+        )
+        editText.setText(AppConfig.getBaseUrl())
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.settings_edit_server_url)
+            .setView(view)
+            .setPositiveButton(R.string.ok) { _, _ ->
+                val url = editText.text.toString().trim()
+                if (!ServerUrlValidator.isValidServerUrl(url, BuildConfig.DEBUG)) {
+                    Toast.makeText(requireContext(), R.string.settings_server_url_invalid, Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                val normalized = normalizeServerUrl(url)
+                if (normalized == AppConfig.getBaseUrl()) return@setPositiveButton
+                showConfirmServerChangeDialog(normalized)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showConfirmServerChangeDialog(newUrl: String) {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.settings_server_url_confirm_title)
+            .setMessage(R.string.settings_server_url_confirm_message)
+            .setPositiveButton(R.string.ok) { _, _ -> performServerUrlChange(newUrl) }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /**
+     * 切换服务器 = 重置会话：旧服务器的登录凭据、设备配对密钥与待同步修改全部作废，
+     * 防止旧账号数据以新账号身份上传到新服务器造成串写。
+     * 游客态没有登录凭据，保留其待同步队列，登录后仍可合并上传。
+     */
+    private fun performServerUrlChange(newUrl: String) {
+        val appContext = requireContext().applicationContext
+        viewLifecycleOwner.lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                if (authRepository.isLoggedIn()) {
+                    taskRepository.clearDeltaQueue()
+                }
+                RetrofitClient.clearToken(appContext)
+                KeyStorage.clearKey(appContext)
+                CryptoInterceptor.getInstance(appContext).refreshKey()
+                AppConfig.setBaseUrl(appContext, newUrl)
+                RetrofitClient.setBaseUrl(newUrl)
+            }
+            NotificationSocketController.stop()
+            Toast.makeText(requireContext(), R.string.settings_server_url_changed, Toast.LENGTH_LONG).show()
+            if (AppConfig.isGuestMode(appContext)) {
+                // 游客态无会话可重置：原地刷新展示地址即可
+                binding.tvServerUrl.text = AppConfig.getBaseUrl()
+            } else {
+                // 已配对信息随切换作废，回到配对入口重新走"登录 + 配对"流程
+                findNavController().navigate(
+                    R.id.pairingFragment,
+                    null,
+                    NavOptions.Builder().setPopUpTo(0, true).build()
+                )
+            }
+        }
+    }
+
+    private fun normalizeServerUrl(url: String): String {
+        val withSlash = if (url.endsWith("/")) url else "$url/"
+        return if (withSlash.endsWith("/api/v1/")) withSlash else "${withSlash}api/v1/"
     }
 
     private fun setupDataActions() {

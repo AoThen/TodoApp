@@ -11,6 +11,7 @@ import com.todoapp.data.crypto.AesGcmManager
 import com.todoapp.data.crypto.KeyStorage
 import com.todoapp.data.remote.InitPairingRequest
 import com.todoapp.data.remote.RetrofitClient
+import com.todoapp.utils.ServerUrlValidator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -125,9 +126,7 @@ class PairingViewModel @Inject constructor() : ViewModel() {
 
         // 服务端地址校验：release 强制 https，防止恶意二维码把流量导向任意主机；
         // debug 构建放行 http 以便本地/模拟器调试
-        val serverOk = data.server.startsWith("https://") ||
-            (com.todoapp.BuildConfig.DEBUG && data.server.startsWith("http://"))
-        if (!serverOk) {
+        if (!ServerUrlValidator.isValidServerUrl(data.server, com.todoapp.BuildConfig.DEBUG)) {
             return false
         }
 
