@@ -13,9 +13,11 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.NavOptions
 import androidx.navigation.fragment.findNavController
 import com.todoapp.R
 import com.todoapp.TodoApp
+import com.todoapp.config.AppConfig
 import com.todoapp.databinding.FragmentLoginBinding
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -58,6 +60,21 @@ class LoginFragment : Fragment() {
                 viewModel.login(email, password)
             }
         }
+
+        binding.btnGuestMode.setOnClickListener { enterGuestMode() }
+    }
+
+    /**
+     * 游客模式：跳过登录直接离线使用，任务先落在本地，之后登录会自动并入账号并同步
+     */
+    private fun enterGuestMode() {
+        AppConfig.setGuestMode(requireContext(), true)
+        Toast.makeText(requireContext(), R.string.guest_mode_entered, Toast.LENGTH_SHORT).show()
+        findNavController().navigate(
+            R.id.taskListFragment,
+            null,
+            NavOptions.Builder().setPopUpTo(0, true).build()
+        )
     }
 
     private fun setupObservers() {

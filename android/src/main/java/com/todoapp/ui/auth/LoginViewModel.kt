@@ -8,6 +8,8 @@ import com.todoapp.config.AppConfig
 import com.todoapp.data.remote.ApiService
 import com.todoapp.data.remote.LoginRequest
 import com.todoapp.data.remote.RetrofitClient
+import com.todoapp.data.repository.TaskRepository
+import com.todoapp.utils.JwtUtils
 import com.todoapp.utils.Result
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -33,7 +35,8 @@ sealed class LoginState {
 @HiltViewModel
 class LoginViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val apiService: ApiService
+    private val apiService: ApiService,
+    private val taskRepository: TaskRepository
 ) : ViewModel() {
 
     private val _loginState = MutableStateFlow<LoginState>(LoginState.Idle)
@@ -69,6 +72,14 @@ class LoginViewModel @Inject constructor(
                 }
                 // 记录登录邮箱，供首页问候语展示
                 AppConfig.setUserEmail(context, email)
+
+                // 游客模式任务并入登录账号：迁移归属并保留待同步队列，联网后自动上传。
+                // 迁移失败不阻断登录，仅影响本次合并
+                if (AppConfig.isGuestMode(context)) {
+                    val userId = JwtUtils.parseUserId(loginResponse.accessToken)
+                    taskRepository.migrateGuestTasks(userId)
+                    AppConfig.setGuestMode(context, false)
+                }
 
                 loginResponse.accessToken
             }

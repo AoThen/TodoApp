@@ -113,6 +113,18 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/tilPassword" />
 
+    <!-- Guest Mode：离线体验入口（登录后自动合并同步） -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnGuestMode"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/guest_mode_button"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/btnLogin" />
+
     <!-- 底部提示（原型 .login .hint） -->
     <com.google.android.material.textview.MaterialTextView
         android:id="@+id/tvHint"
@@ -124,7 +136,7 @@
         android:textColor="?attr/colorOnSurfaceVariant"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/btnLogin" />
+        app:layout_constraintTop_toBottomOf="@id/btnGuestMode" />
 
     <!-- Progress Bar -->
     <com.google.android.material.progressindicator.CircularProgressIndicator

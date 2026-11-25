@@ -19,6 +19,7 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.work.WorkManager
 import com.todoapp.R
 import com.todoapp.config.AppConfig
 import com.todoapp.data.local.Task
@@ -54,8 +55,13 @@ class TaskListFragment : Fragment() {
         setupSearch()
         setupObservers()
 
-        // 进入主页面即确保周期同步已调度（KEEP 策略下重复调用无副作用）
-        DeltaSyncWorker.schedule(requireContext())
+        // 进入主页面即确保周期同步已调度（KEEP 策略下重复调用无副作用）；
+        // 游客模式无登录态，取消周期同步避免无谓失败，登录后再恢复调度
+        if (AppConfig.isGuestMode(requireContext())) {
+            WorkManager.getInstance(requireContext()).cancelUniqueWork(DeltaSyncWorker.WORK_NAME)
+        } else {
+            DeltaSyncWorker.schedule(requireContext())
+        }
     }
 
     private fun setupRecyclerView() {
@@ -162,6 +168,10 @@ class TaskListFragment : Fragment() {
         }
         
         binding.btnSyncNow.setOnClickListener {
+            if (AppConfig.isGuestMode(requireContext())) {
+                Toast.makeText(requireContext(), R.string.guest_sync_disabled, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             viewModel.triggerManualSync()
         }
     }
@@ -234,7 +244,7 @@ class TaskListFragment : Fragment() {
     /** 问候区：时段问候 + 登录邮箱前缀 + 未完成任务数（原型 .greet） */
     private fun updateGreeting(tasks: List<Task>) {
         val email = AppConfig.getUserEmail(requireContext())
-        val displayName = email.substringBefore("@").ifBlank { getString(R.string.app_name) }
+        val displayName = email.substringBefore("@").ifBlank { getString(R.string.guest_display_name) }
         val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
         val greetingRes = when (hour) {
             in 6..11 -> R.string.greeting_morning

@@ -9,6 +9,7 @@ import com.todoapp.data.local.Task
 import com.todoapp.data.remote.DeltaChangeRequest
 import com.todoapp.data.remote.RetrofitClient
 import com.todoapp.data.remote.SyncRequest
+import com.todoapp.config.AppConfig
 import com.todoapp.config.SyncConfig
 import com.todoapp.utils.DateTimeUtils
 import com.todoapp.utils.JwtUtils
@@ -40,6 +41,11 @@ class DeltaSyncWorker(
 
     private suspend fun doSync(): Result = withContext(Dispatchers.IO) {
         try {
+            // 游客模式无登录态：直接跳过同步，任务保留在本地待登录后合并上传
+            if (AppConfig.isGuestMode(applicationContext)) {
+                return@withContext Result.success()
+            }
+
             // 仅拦截未登录/凭据异常；过期 token 放行，
             // 由网络层的 401→自动续期→重试链路统一处理（预检拦截会导致过期后同步永久失效）
             val token = RetrofitClient.getAccessToken(applicationContext)
@@ -297,10 +303,10 @@ class DeltaSyncWorker(
             if (token.isNotEmpty()) {
                 JwtUtils.parseUserId(token)
             } else {
-                "unknown-user"
+                AppConfig.GUEST_USER_ID
             }
         } catch (e: Exception) {
-            "unknown-user"
+            AppConfig.GUEST_USER_ID
         }
     }
 

@@ -125,6 +125,10 @@ interface TaskDao {
 
     @Query("DELETE FROM tasks")
     suspend fun deleteAllTasks()
+
+    /** 游客任务并入登录账号：按用户标识批量迁移归属，返回迁移条数 */
+    @Query("UPDATE tasks SET userId = :newUserId WHERE userId = :guestUserId")
+    suspend fun migrateTasksUserId(guestUserId: String, newUserId: String): Int
 }
 
 @Dao

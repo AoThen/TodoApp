@@ -1,6 +1,7 @@
 package com.todoapp.data.repository
 
 import android.content.Context
+import com.todoapp.config.AppConfig
 import com.todoapp.data.local.DeltaChange
 import com.todoapp.data.local.DeltaQueueDao
 import com.todoapp.data.local.SyncMeta
@@ -31,10 +32,10 @@ class TaskRepository(
             if (token.isNotEmpty()) {
                 JwtUtils.parseUserId(token)
             } else {
-                "unknown-user"
+                AppConfig.GUEST_USER_ID
             }
         } catch (e: Exception) {
-            "unknown-user"
+            AppConfig.GUEST_USER_ID
         }
     }
 
@@ -188,6 +189,17 @@ class TaskRepository(
     suspend fun clearDeltaQueue(): Result<Unit> {
         return Result.runCatching {
             deltaQueueDao.deleteAllDeltas()
+        }
+    }
+
+    /**
+     * 游客任务并入登录账号：仅迁移任务归属，待同步队列原样保留，
+     * 后续同步会以新账号身份自动上传，实现"离线记账、登录后合并"。
+     * @return 迁移的任务条数
+     */
+    suspend fun migrateGuestTasks(newUserId: String): Result<Int> {
+        return Result.runCatching {
+            taskDao.migrateTasksUserId(AppConfig.GUEST_USER_ID, newUserId)
         }
     }
 

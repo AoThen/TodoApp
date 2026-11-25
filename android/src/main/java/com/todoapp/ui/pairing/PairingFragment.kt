@@ -15,6 +15,7 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.NavOptions
 import androidx.navigation.fragment.findNavController
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.todoapp.BuildConfig
@@ -74,6 +75,21 @@ class PairingFragment : Fragment() {
         binding.btnCustomServer.setOnClickListener {
             showCustomServerDialog()
         }
+
+        binding.btnGuestMode.setOnClickListener { enterGuestMode() }
+    }
+
+    /**
+     * 游客模式：跳过登录直接离线使用，任务先落在本地，之后登录会自动并入账号并同步
+     */
+    private fun enterGuestMode() {
+        AppConfig.setGuestMode(requireContext(), true)
+        Toast.makeText(requireContext(), R.string.guest_mode_entered, Toast.LENGTH_SHORT).show()
+        findNavController().navigate(
+            R.id.taskListFragment,
+            null,
+            NavOptions.Builder().setPopUpTo(0, true).build()
+        )
     }
 
     /**
@@ -101,12 +117,14 @@ class PairingFragment : Fragment() {
                             binding.btnScanQR.isEnabled = true
                             binding.btnManualPair.isEnabled = true
                             binding.btnCustomServer.isEnabled = true
+                            binding.btnGuestMode.isEnabled = true
                         }
                         is PairingState.Loading -> {
                             binding.progressBar.visibility = View.VISIBLE
                             binding.btnScanQR.isEnabled = false
                             binding.btnManualPair.isEnabled = false
                             binding.btnCustomServer.isEnabled = false
+                            binding.btnGuestMode.isEnabled = false
                         }
                         is PairingState.Success -> {
                             binding.progressBar.visibility = View.GONE
@@ -126,6 +144,7 @@ class PairingFragment : Fragment() {
                             binding.btnScanQR.isEnabled = true
                             binding.btnManualPair.isEnabled = true
                             binding.btnCustomServer.isEnabled = true
+                            binding.btnGuestMode.isEnabled = true
                             Toast.makeText(requireContext(), state.message, Toast.LENGTH_LONG).show()
                         }
                     }

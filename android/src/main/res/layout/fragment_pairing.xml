@@ -87,6 +87,18 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/btnManualPair" />
 
+    <!-- Guest Mode：离线体验入口（登录后自动合并同步） -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnGuestMode"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/guest_mode_button"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/btnCustomServer" />
+
     <!-- Progress Bar -->
     <com.google.android.material.progressindicator.CircularProgressIndicator
         android:id="@+id/progressBar"
@@ -97,6 +109,6 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/btnCustomServer" />
+        app:layout_constraintTop_toBottomOf="@id/btnGuestMode" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

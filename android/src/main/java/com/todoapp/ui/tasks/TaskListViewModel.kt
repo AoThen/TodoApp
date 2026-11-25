@@ -14,6 +14,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.todoapp.R
+import com.todoapp.config.AppConfig
 import com.todoapp.data.local.Task
 import com.todoapp.data.repository.TaskRepository
 import com.todoapp.data.sync.DeltaSyncWorker
@@ -148,6 +149,12 @@ class TaskListViewModel @Inject constructor(
     }
 
     fun triggerManualSync(): UUID? {
+        // 游客模式无登录态，同步无意义；保持空闲态避免进度条误转
+        if (AppConfig.isGuestMode(context)) {
+            _syncState.value = SyncState.Idle
+            return null
+        }
+
         _syncState.value = SyncState.Syncing
 
         return try {

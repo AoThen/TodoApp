@@ -8,6 +8,10 @@ object AppConfig {
     private const val KEY_BASE_URL = "base_url"
     private const val KEY_IS_FIRST_LAUNCH = "is_first_launch"
     private const val KEY_USER_EMAIL = "user_email"
+    private const val KEY_GUEST_MODE = "guest_mode"
+
+    /** 游客态任务归属标识：登录后统一迁移到真实用户名下 */
+    const val GUEST_USER_ID = "unknown-user"
 
     // 默认服务端地址来自构建时注入的 BuildConfig.SERVER_URL（可用 -PSERVER_URL 覆盖）
     val DEFAULT_BASE_URL = BuildConfig.SERVER_URL
@@ -64,6 +68,19 @@ object AppConfig {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_IS_FIRST_LAUNCH, false)
+            .apply()
+    }
+
+    /** 游客模式：未登录也可离线使用，任务先落在本地，登录后合并同步 */
+    fun isGuestMode(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_GUEST_MODE, false)
+    }
+
+    fun setGuestMode(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_GUEST_MODE, enabled)
             .apply()
     }
 }

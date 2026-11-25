@@ -15,6 +15,7 @@ import androidx.navigation.ui.setupWithNavController
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.todoapp.R
 import com.todoapp.TodoApp
+import com.todoapp.config.AppConfig
 import com.todoapp.data.notify.NotificationSocketController
 import com.todoapp.data.remote.RetrofitClient
 import com.todoapp.data.remote.SessionEvents
@@ -67,7 +68,8 @@ class MainActivity : AppCompatActivity() {
 
             val requiredDestination = NavigationGuard.requiredDestination(
                 app.isUserPaired(),
-                app.isUserLoggedIn()
+                app.isUserLoggedIn(),
+                AppConfig.isGuestMode(this)
             )
             if (requiredDestination != null && controller.currentDestination?.id != requiredDestination) {
                 // post 到下一帧执行，避免在导航分发过程中再次 navigate 引发状态异常
@@ -111,6 +113,9 @@ class MainActivity : AppCompatActivity() {
      * - 网络瞬态失败：保留会话，等待下次请求重试
      */
     private fun refreshTokenInBackgroundIfExpired() {
+        // 游客模式无登录态，不参与令牌续期
+        if (AppConfig.isGuestMode(this)) return
+
         val token = RetrofitClient.getAccessToken(this)
         if (JwtUtils.validateAccessToken(token) !is JwtUtils.TokenValidation.Expired) return
 

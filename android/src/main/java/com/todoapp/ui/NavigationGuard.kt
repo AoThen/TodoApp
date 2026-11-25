@@ -11,8 +11,14 @@ object NavigationGuard {
     fun isAuthScreen(destinationId: Int): Boolean =
         destinationId == R.id.pairingFragment || destinationId == R.id.loginFragment
 
-    fun requiredDestination(isUserPaired: Boolean, isUserLoggedIn: Boolean): Int? =
+    fun requiredDestination(
+        isUserPaired: Boolean,
+        isUserLoggedIn: Boolean,
+        isGuestMode: Boolean = false
+    ): Int? =
         when {
+            // 游客模式：不强制登录/配对，直接放行主界面（同步与实时通知内部会安全跳过）
+            isGuestMode -> null
             !isUserPaired -> R.id.pairingFragment
             !isUserLoggedIn -> R.id.loginFragment
             else -> null

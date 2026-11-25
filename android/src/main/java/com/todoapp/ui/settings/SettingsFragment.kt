@@ -201,6 +201,12 @@ class SettingsFragment : Fragment() {
     }
 
     private fun setupLogout() {
+        // 游客/未登录态提供登录入口；已登录则展示退出登录
+        binding.btnLogin.isVisible = !authRepository.isLoggedIn()
+        binding.btnLogin.setOnClickListener {
+            findNavController().navigate(R.id.loginFragment)
+        }
+
         // 防御：任何路径下未登录都不展示退出登录入口
         binding.btnLogout.isVisible = authRepository.isLoggedIn()
         binding.btnLogout.setOnClickListener {

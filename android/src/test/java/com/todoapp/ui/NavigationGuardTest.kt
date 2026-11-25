@@ -35,4 +35,12 @@ class NavigationGuardTest {
     fun `已配对且已登录时无需跳转`() {
         assertEquals(null, NavigationGuard.requiredDestination(true, true))
     }
+
+    @Test
+    fun `游客模式直接放行主界面`() {
+        assertEquals(null, NavigationGuard.requiredDestination(false, false, true))
+        assertEquals(null, NavigationGuard.requiredDestination(true, false, true))
+        assertEquals(null, NavigationGuard.requiredDestination(false, true, true))
+        assertEquals(null, NavigationGuard.requiredDestination(true, true, true))
+    }
 }

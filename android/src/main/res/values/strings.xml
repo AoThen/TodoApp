@@ -134,6 +134,13 @@
     <string name="settings_logout_done">已退出登录</string>
     <string name="session_expired_relogin">登录已过期，请重新登录</string>
 
+    <!-- 游客模式 -->
+    <string name="settings_login">登录</string>
+    <string name="guest_mode_button">游客模式（离线使用）</string>
+    <string name="guest_mode_entered">已进入离线模式，登录后自动同步</string>
+    <string name="guest_sync_disabled">离线模式暂不同步，登录后自动同步</string>
+    <string name="guest_display_name">游客</string>
+
     <!-- 任务排序模式 -->
     <string name="sort_mode">排序方式</string>
     <string name="sort_created_at">按创建时间</string>

@@ -1,10 +1,13 @@
 package com.todoapp.ui.auth
 
 import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import com.todoapp.config.AppConfig
 import com.todoapp.data.remote.ApiService
 import com.todoapp.data.remote.LoginRequest
 import com.todoapp.data.remote.LoginResponse
 import com.todoapp.data.remote.RetrofitClient
+import com.todoapp.data.repository.TaskRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -38,6 +41,8 @@ class LoginViewModelTest {
 
     private lateinit var viewModel: LoginViewModel
     private lateinit var apiService: ApiService
+    private lateinit var taskRepository: TaskRepository
+    private val appContext: Context = ApplicationProvider.getApplicationContext()
 
     private val loginResponse = mockk<LoginResponse> {
         every { accessToken } returns "access-token-x"
@@ -48,14 +53,19 @@ class LoginViewModelTest {
     fun setup() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
         apiService = mockk()
+        taskRepository = mockk(relaxed = true)
         mockkObject(RetrofitClient)
         every { RetrofitClient.saveAccessToken(any(), any()) } returns Unit
         every { RetrofitClient.saveRefreshToken(any(), any()) } returns Unit
-        // mock getString，避免依赖 Robolectric 资源加载
+        // getString 走 mock；SharedPreferences 转发到 Robolectric 真实实现，
+        // 供 AppConfig 的游客标记等读写使用，并在用例间清场
+        appContext.getSharedPreferences("app_config", Context.MODE_PRIVATE).edit().clear().commit()
         val context = mockk<Context> {
             every { getString(any<Int>()) } returns "校验提示"
+            every { getSharedPreferences(any(), any()) } returns
+                appContext.getSharedPreferences("app_config", Context.MODE_PRIVATE)
         }
-        viewModel = LoginViewModel(context, apiService)
+        viewModel = LoginViewModel(context, apiService, taskRepository)
     }
 
     @After
@@ -152,5 +162,28 @@ class LoginViewModelTest {
         val state = viewModel.loginState.value
         assertTrue(state is LoginState.Error)
         assertNotNull((state as LoginState.Error).message)
+    }
+
+    @Test
+    fun `login 游客模式下迁移任务并清除游客标记`() {
+        AppConfig.setGuestMode(appContext, true)
+        coEvery { apiService.login(any<LoginRequest>()) } returns Response.success(loginResponse)
+
+        viewModel.login("user@example.com", "password123")
+
+        assertTrue(viewModel.loginState.value is LoginState.Success)
+        coVerify { taskRepository.migrateGuestTasks(any()) }
+        assertFalse(AppConfig.isGuestMode(appContext))
+    }
+
+    @Test
+    fun `login 非游客模式不触发迁移`() {
+        coEvery { apiService.login(any<LoginRequest>()) } returns Response.success(loginResponse)
+
+        viewModel.login("user@example.com", "password123")
+
+        assertTrue(viewModel.loginState.value is LoginState.Success)
+        coVerify(exactly = 0) { taskRepository.migrateGuestTasks(any()) }
+        assertFalse(AppConfig.isGuestMode(appContext))
     }
 }
