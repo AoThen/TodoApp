@@ -1,5 +1,6 @@
 package com.todoapp.ui.pairing
 
+import android.provider.Settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
@@ -7,9 +8,10 @@ import com.google.gson.JsonSyntaxException
 import com.google.gson.annotations.SerializedName
 import com.todoapp.R
 import com.todoapp.config.AppConfig
-import com.todoapp.data.crypto.AesGcmManager
+import com.todoapp.data.crypto.EcdhKeyWrap
 import com.todoapp.data.crypto.KeyStorage
 import com.todoapp.data.remote.InitPairingRequest
+import com.todoapp.data.remote.PairingRequest
 import com.todoapp.data.remote.RetrofitClient
 import com.todoapp.utils.ServerUrlValidator
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -25,9 +27,7 @@ data class PairingData(
     @SerializedName("v") val v: Int,
     @SerializedName("key") val key: String?,
     @SerializedName("server") val server: String,
-    @SerializedName("expires") val expires: String?,
-    // 通道加密密钥：与一次性配对凭据 key 不同，旧版二维码无此字段
-    @SerializedName("encryption_key") val encryptionKey: String? = null
+    @SerializedName("expires") val expires: String?
 )
 
 sealed class PairingState {
@@ -57,38 +57,77 @@ class PairingViewModel @Inject constructor() : ViewModel() {
                     return@launch
                 }
 
-                var channelKey = pairingData.encryptionKey
+                val deviceId = resolveDeviceId(context)
+                if (deviceId.isEmpty()) {
+                    _pairingState.value = PairingState.Error(
+                        context.getString(R.string.pairing_failed) + ": 无法获取设备ID"
+                    )
+                    return@launch
+                }
+
+                var pairingKey = pairingData.key
                 var serverUrl = pairingData.server
 
-                if (pairingData.key.isNullOrEmpty()) {
-                    // 无配对凭据时由 App 自行发起配对，直接领取通道密钥
-                    val response = RetrofitClient.getApiService(context)
-                        .initPairing(InitPairingRequest("android", null))
-
-                    val initBody = response.body()
-                    if (response.isSuccessful && initBody != null) {
-                        channelKey = initBody.encryptionKey
-                        // 服务端未回传地址时兜底用二维码/用户输入的地址，避免保存空地址导致配对态失效
-                        serverUrl = initBody.serverUrl.ifBlank { serverUrl }
-                    } else {
+                // 无配对凭据（如自定义服务器）时，先向服务端申请一次性配对码
+                if (pairingKey.isNullOrEmpty()) {
+                    val initResponse = RetrofitClient.getApiService(context)
+                        .initPairing(InitPairingRequest("android", deviceId))
+                    val initBody = initResponse.body()
+                    if (!initResponse.isSuccessful || initBody == null) {
                         _pairingState.value = PairingState.Error(
                             context.getString(R.string.pairing_failed) + ": 无法获取配对密钥"
                         )
                         return@launch
                     }
+                    pairingKey = initBody.key
+                    serverUrl = initBody.serverUrl.ifBlank { serverUrl }
                 }
 
-                // 二维码必须携带通道密钥（旧版二维码无此字段），否则加密通道无法建立
-                val resolvedChannelKey = channelKey
-                if (resolvedChannelKey.isNullOrEmpty() || !AesGcmManager.isValidKey(resolvedChannelKey)) {
+                // 生成一次性客户端密钥对，用其公钥领取本设备专属密钥
+                val clientKey = EcdhKeyWrap.generateClientKeyPair()
+                val pairResponse = RetrofitClient.getApiService(context).pairDevice(
+                    PairingRequest(
+                        key = pairingKey,
+                        deviceType = "android",
+                        deviceId = deviceId,
+                        clientPublicKey = clientKey.publicKeySpkiB64
+                    )
+                )
+                val pairBody = pairResponse.body()
+                if (!pairResponse.isSuccessful || pairBody == null) {
                     _pairingState.value = PairingState.Error(
-                        context.getString(R.string.pairing_invalid_qr)
+                        context.getString(R.string.pairing_failed)
                     )
                     return@launch
                 }
 
-                // 保存通道加密密钥（而非一次性配对凭据），加密通道才能真正建立
-                KeyStorage.saveKey(context, resolvedChannelKey, serverUrl)
+                val wrappedKey = pairBody.wrappedKey
+                val serverPublicKey = pairBody.serverPublicKey
+                val nonce = pairBody.nonce
+                if (wrappedKey.isNullOrEmpty() || serverPublicKey.isNullOrEmpty() || nonce.isNullOrEmpty()) {
+                    _pairingState.value = PairingState.Error(
+                        context.getString(R.string.pairing_failed) + ": 配对响应缺少密钥材料"
+                    )
+                    return@launch
+                }
+
+                val deviceKey = EcdhKeyWrap.unwrapDeviceKey(
+                    clientPrivateKey = clientKey.privateKey,
+                    clientPublicSpki = clientKey.publicKeySpki,
+                    serverPublicKeyB64 = serverPublicKey,
+                    wrappedKeyB64 = wrappedKey,
+                    nonceB64 = nonce,
+                    deviceId = deviceId,
+                    pairingKey = pairingKey
+                )
+
+                if (!KeyStorage.saveKey(context, deviceKey, serverUrl)) {
+                    _pairingState.value = PairingState.Error(
+                        context.getString(R.string.pairing_failed) + ": 本机安全存储不可用"
+                    )
+                    return@launch
+                }
+
                 // 同步刷新加密拦截器的内存密钥缓存，使后续请求立即启用加密通道
                 com.todoapp.data.crypto.CryptoInterceptor.getInstance(context.applicationContext).refreshKey()
                 RetrofitClient.setBaseUrl(serverUrl)
@@ -111,13 +150,27 @@ class PairingViewModel @Inject constructor() : ViewModel() {
         }
     }
 
+    private fun resolveDeviceId(context: android.content.Context): String {
+        val prefs = context.getSharedPreferences("TodoAppPrefs", android.content.Context.MODE_PRIVATE)
+        val existing = prefs.getString("device_id", null)
+        if (!existing.isNullOrEmpty()) {
+            return existing
+        }
+        val id = Settings.Secure.getString(
+            context.contentResolver,
+            Settings.Secure.ANDROID_ID
+        ) ?: return ""
+        prefs.edit().putString("device_id", id).apply()
+        return id
+    }
+
     private fun parsePairingData(qrData: String): PairingData? {
         // 非法 JSON 或字面量 "null" 会得到 null，由调用方按无效二维码处理
         return Gson().fromJson(qrData, PairingData::class.java)
     }
 
     private fun isValidPairingData(data: PairingData): Boolean {
-        if (data.type != "todoapp-pairing" || data.v != 1) {
+        if (data.type != "todoapp-pairing" || data.v < 2) {
             return false
         }
 

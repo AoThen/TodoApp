@@ -9,6 +9,8 @@ import (
 
 import (
 	"todoapp/internal/auth"
+	"todoapp/internal/crypto"
+	"todoapp/internal/db"
 	"todoapp/internal/response"
 	"todoapp/internal/websocket"
 	wsclient "todoapp/internal/websocket"
@@ -57,6 +59,40 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, wsHub *websocket.Hu
 		return
 	}
 
+	// 加密模式下必须能按 (用户, 设备) 解析出该设备的密钥
+	deviceID := r.URL.Query().Get("device_id")
+	if deviceID == "" {
+		deviceID = r.Header.Get("X-Device-ID")
+	}
+	var deviceCM *crypto.CryptoManager
+	if encryptionEnabled {
+		if deviceID == "" {
+			response.ErrorResponse(w, "缺少设备标识", http.StatusBadRequest)
+			return
+		}
+		sealed, found, err := db.GetDeviceEncryptionKeySealed(userID, deviceID)
+		if err != nil {
+			log.Printf("查询设备密钥失败: %v", err)
+			response.ErrorResponse(w, "设备加密密钥不可用", http.StatusInternalServerError)
+			return
+		}
+		if !found {
+			response.ErrorResponse(w, "设备未配对或已撤销", http.StatusForbidden)
+			return
+		}
+		keyHex, err := crypto.OpenWithKEK(deviceKEK, sealed, deviceID)
+		if err != nil {
+			log.Printf("解封设备密钥失败: %v", err)
+			response.ErrorResponse(w, "设备加密密钥不可用", http.StatusInternalServerError)
+			return
+		}
+		deviceCM, err = crypto.NewManagerFromHex(keyHex)
+		if err != nil {
+			response.ErrorResponse(w, "设备加密密钥不可用", http.StatusInternalServerError)
+			return
+		}
+	}
+
 	// 升级HTTP连接为WebSocket连接
 	// 如果使用subprotocol，需要传递给Upgrade
 	conn, err := wsclient.Upgrader.Upgrade(w, r, nil)
@@ -68,7 +104,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, wsHub *websocket.Hu
 	log.Printf("WebSocket connected: %s (ID: %d, encryption: %v)", claims.Email, userID, encryptionEnabled)
 
 	// 创建客户端并启动读写循环
-	client := websocket.NewClient(wsHub, conn, int64(userID), claims.Email, encryptionEnabled)
+	client := websocket.NewClient(wsHub, conn, int64(userID), claims.Email, deviceID, encryptionEnabled, deviceCM)
 	wsHub.Register(client)
 
 	// 启动读写goroutine

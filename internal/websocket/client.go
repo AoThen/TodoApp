@@ -8,6 +8,8 @@ import (
 	"time"
 
 	gorillawebsocket "github.com/gorilla/websocket"
+
+	"todoapp/internal/crypto"
 )
 
 const (
@@ -77,19 +79,21 @@ type Client struct {
 	conn      *gorillawebsocket.Conn
 	userID    int64
 	email     string
+	deviceID  string
 	send      chan []byte
 	encryptor *WebSocketEncryptor
 }
 
-// NewClient 创建新客户端
-func NewClient(hub *Hub, conn *gorillawebsocket.Conn, userID int64, email string, encryptionEnabled bool) *Client {
+// NewClient 创建新客户端（cm 为该连接所属设备的密钥管理器）
+func NewClient(hub *Hub, conn *gorillawebsocket.Conn, userID int64, email, deviceID string, encryptionEnabled bool, cm *crypto.CryptoManager) *Client {
 	return &Client{
 		hub:       hub,
 		conn:      conn,
 		userID:    userID,
 		email:     email,
+		deviceID:  deviceID,
 		send:      make(chan []byte, 256),
-		encryptor: NewWebSocketEncryptor(encryptionEnabled, email),
+		encryptor: NewWebSocketEncryptor(encryptionEnabled, email, cm),
 	}
 }
 

@@ -1,10 +1,8 @@
 package com.todoapp.data.crypto
 
 import androidx.test.core.app.ApplicationProvider
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -14,9 +12,8 @@ import org.robolectric.annotation.Config
 /**
  * KeyStorage 单元测试。
  *
- * JVM/Robolectric 环境没有 AndroidKeyStore provider，init() 必然降级为
- * keyStore == null，因此这里的用例同时覆盖了“Keystore 不可用 → 明文兜底”
- * 这条 fallback 路径。
+ * JVM/Robolectric 环境没有 AndroidKeyStore provider，init() 会降级为 keyStore == null。
+ * 按 fail-closed 设计，此时 saveKey 返回 false 且不落盘（不再明文兜底），getKey/getServerUrl 返回 null。
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -28,7 +25,6 @@ class KeyStorageTest {
 
     @Before
     fun setUp() {
-        // JVM 环境下 AndroidKeyStore 不可用，init() 走异常分支，keyStore 置空
         KeyStorage.init()
         KeyStorage.clearKey(context)
     }
@@ -39,22 +35,11 @@ class KeyStorageTest {
     }
 
     @Test
-    fun `saveKey 后 hasKey 为 true`() {
-        KeyStorage.saveKey(context, keyHex, serverUrl)
-        assertTrue(KeyStorage.hasKey(context))
-    }
-
-    @Test
-    fun `Keystore 不可用时 saveKey 明文兜底且 getKey 可还原`() {
-        // JVM 环境无 AndroidKeyStore：saveKey 应返回 false（明文兜底）并可还原
+    fun `Keystore 不可用时 saveKey 失败且不落盘`() {
         assertFalse(KeyStorage.saveKey(context, keyHex, serverUrl))
-        assertEquals(keyHex, KeyStorage.getKey(context))
-    }
-
-    @Test
-    fun `Keystore 不可用时 serverUrl 明文兜底且 getServerUrl 可还原`() {
-        assertFalse(KeyStorage.saveKey(context, keyHex, serverUrl))
-        assertEquals(serverUrl, KeyStorage.getServerUrl(context))
+        assertFalse(KeyStorage.hasKey(context))
+        assertNull(KeyStorage.getKey(context))
+        assertNull(KeyStorage.getServerUrl(context))
     }
 
     @Test
@@ -64,16 +49,7 @@ class KeyStorageTest {
     }
 
     @Test
-    fun `覆盖保存以最新值为准`() {
-        KeyStorage.saveKey(context, keyHex, serverUrl)
-        val newKey = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-        KeyStorage.saveKey(context, newKey, "https://example.com/api/v1/")
-        assertEquals(newKey, KeyStorage.getKey(context))
-        assertEquals("https://example.com/api/v1/", KeyStorage.getServerUrl(context))
-    }
-
-    @Test
-    fun `clearKey 后密钥与服务地址都被清除`() {
+    fun `clearKey 后状态保持未配对`() {
         KeyStorage.saveKey(context, keyHex, serverUrl)
         KeyStorage.clearKey(context)
         assertFalse(KeyStorage.hasKey(context))
@@ -82,28 +58,27 @@ class KeyStorageTest {
     }
 
     @Test
-    fun `hasValidPairing 密钥与服务地址齐全时为 true`() {
+    fun `hasValidPairing 在无有效密钥时为 false`() {
         KeyStorage.saveKey(context, keyHex, serverUrl)
-        assertTrue(KeyStorage.hasValidPairing(context))
+        assertFalse(KeyStorage.hasValidPairing(context))
     }
 
     @Test
-    fun `hasValidPairing 缺少服务地址时为 false`() {
+    fun `旧版本数据不满足版本要求时视为未配对`() {
         val prefs = context.getSharedPreferences("todoapp_encryption_prefs", android.content.Context.MODE_PRIVATE)
-        prefs.edit().putString("encryption_key", keyHex).apply()
+        prefs.edit()
+            .putString("encryption_key", keyHex)
+            .putString("server_url", serverUrl)
+            .putInt("key_version", 1)
+            .apply()
         assertFalse(KeyStorage.hasValidPairing(context))
+        assertNull(KeyStorage.getKey(context))
     }
 
     @Test
-    fun `hasValidPairing 空字符串视为未配对`() {
-        KeyStorage.saveKey(context, "", "")
-        assertFalse(KeyStorage.hasValidPairing(context))
-    }
-
-    @Test
-    fun `重复 saveKey 不抛异常且状态一致`() {
-        repeat(3) { KeyStorage.saveKey(context, keyHex, serverUrl) }
-        assertEquals(keyHex, KeyStorage.getKey(context))
-        assertEquals(serverUrl, KeyStorage.getServerUrl(context))
+    fun `重复 saveKey 不抛异常`() {
+        repeat(3) {
+            assertFalse(KeyStorage.saveKey(context, keyHex, serverUrl))
+        }
     }
 }

@@ -56,7 +56,7 @@ adb connect <phone-ip>:<connect-port>
 2. 本地启动后端（真机需用电脑局域网 IP）：
 
    ```bash
-   JWT_SECRET=... ENCRYPTION_KEY=... INITIAL_ADMIN_EMAIL=... INITIAL_ADMIN_PASSWORD=... \
+   JWT_SECRET=... DEVICE_KEY_KEK=... INITIAL_ADMIN_EMAIL=... INITIAL_ADMIN_PASSWORD=... \
    go run . # 监听 8080
    ```
 
@@ -74,5 +74,5 @@ adb connect <phone-ip>:<connect-port>
 ## 注意事项
 
 - 真机测试时 `SERVER_URL` 必须是电脑局域网 IP，不能用 `10.0.2.2`。
-- 涉及加密配对的操作依赖 `ENCRYPTION_KEY`，本地后端需与 Web 端使用同一密钥。
+- 设备配对与加密依赖每设备独立密钥：服务端使用 `DEVICE_KEY_KEK` 在库内封装保存，客户端在配对时经 ECDH 领取各自的密钥。
 - mobile-mcp 只应连接你自己的测试设备，不要对他人设备执行操作。

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
 import DevicePairing from './DevicePairing';
 
-const { mockApiService } = vi.hoisted(() => ({
+const { mockApiService, mockEnsureDeviceKey } = vi.hoisted(() => ({
   mockApiService: {
     initPairing: vi.fn(),
     pairDevice: vi.fn(),
@@ -10,9 +10,15 @@ const { mockApiService } = vi.hoisted(() => ({
     regenerateKey: vi.fn(),
     revokeDevice: vi.fn(),
   },
+  mockEnsureDeviceKey: vi.fn(),
 }));
 
 vi.mock('../services/api', () => ({ apiService: mockApiService }));
+vi.mock('../services/deviceKey', () => ({
+  ensureDeviceKey: mockEnsureDeviceKey,
+  getOrCreateWebDeviceId: () => 'web-device-1',
+  clearWebDeviceId: vi.fn(),
+}));
 vi.mock('qrcode.react', () => ({
   QRCodeSVG: ({ value }: { value: string }) => <svg id="pairing-qr-code" data-value={value} />,
 }));
@@ -22,15 +28,6 @@ const pairingInfo = {
   device_id: 'web-device-1',
   server_url: 'http://localhost:8080',
   expires_at: '2026-01-01T10:05:00Z',
-  encryption_key: 'b'.repeat(64),
-};
-
-const selfPairingInfo = {
-  key: 'c'.repeat(64),
-  device_id: 'web-device-2',
-  server_url: 'http://localhost:8080',
-  expires_at: '2026-01-01T10:05:00Z',
-  encryption_key: 'b'.repeat(64),
 };
 
 const makeDevice = (overrides: Record<string, unknown> = {}) => ({
@@ -48,13 +45,9 @@ const renderPairing = () => render(<DevicePairing onClose={vi.fn()} />);
 
 describe('DevicePairing', () => {
   beforeEach(() => {
-    // 重置实现：clearAllMocks 仅清调用记录，不清除 mockRejectedValue 等实现，
-    // 否则前序用例的拒绝实现会污染本用例；resetAllMocks 在部分版本下不会清空
-    // mockResolvedValueOnce 队列，故统一使用 mockResolvedValue 默认实现，
-    // 需要拒绝的用例以 mockRejectedValue 整体覆盖
     vi.resetAllMocks();
     mockApiService.initPairing.mockResolvedValue(pairingInfo);
-    mockApiService.pairDevice.mockResolvedValue(undefined);
+    mockEnsureDeviceKey.mockResolvedValue(true);
     mockApiService.getDevices.mockResolvedValue({ devices: [] });
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
@@ -67,69 +60,46 @@ describe('DevicePairing', () => {
     vi.useRealTimers();
   });
 
-  it('挂载后发起配对流程并加载设备列表', async () => {
+  it('挂载后生成二维码并确保网页自身密钥', async () => {
     renderPairing();
-    await waitFor(() => expect(mockApiService.initPairing).toHaveBeenCalledTimes(2));
-    // 网页自注册不消耗二维码钥匙：注册请求携带的钥匙由独立调用产生
-    await waitFor(() =>
-      expect(mockApiService.pairDevice).toHaveBeenCalledWith({
-        key: pairingInfo.key,
-        device_type: 'web',
-        device_id: expect.any(String),
-      })
-    );
+    await waitFor(() => expect(mockApiService.initPairing).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockEnsureDeviceKey).toHaveBeenCalled());
     expect(mockApiService.getDevices).toHaveBeenCalledTimes(1);
     expect(screen.getByText('http://localhost:8080')).toBeInTheDocument();
   });
 
-  it('二维码钥匙与自注册钥匙相互独立', async () => {
-    mockApiService.initPairing
-      .mockResolvedValueOnce(pairingInfo)
-      .mockResolvedValueOnce(selfPairingInfo);
+  it('二维码为 v2 且不含任何长期密钥', async () => {
     renderPairing();
-    await waitFor(() => expect(mockApiService.initPairing).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByText('设备配对成功！')).toBeInTheDocument());
 
     const svg = document.getElementById('pairing-qr-code')!;
     const payload = JSON.parse(svg.getAttribute('data-value')!);
-    expect(payload.key).toBe(pairingInfo.key);
-    expect(mockApiService.pairDevice.mock.calls[0][0].key).toBe(selfPairingInfo.key);
-    expect(payload.key).not.toBe(selfPairingInfo.key);
-  });
-
-  it('自注册设备编号持久化，复用同一台网页设备', async () => {
-    renderPairing();
-    await waitFor(() => expect(mockApiService.pairDevice).toHaveBeenCalledTimes(1));
-    const firstId = mockApiService.pairDevice.mock.calls[0][0].device_id as string;
-    expect(window.localStorage.getItem('todoapp_web_device_id')).toBe(firstId);
-
-    // 清空调用记录后再次挂载：应复用已持久化的编号
-    vi.clearAllMocks();
-    mockApiService.initPairing.mockResolvedValue(pairingInfo);
-    renderPairing();
-    await waitFor(() => expect(mockApiService.pairDevice).toHaveBeenCalledTimes(1));
-    expect(mockApiService.pairDevice.mock.calls[0][0].device_id).toBe(firstId);
+    expect(payload).toMatchObject({
+      v: 2,
+      type: 'todoapp-pairing',
+      key: pairingInfo.key,
+      server: pairingInfo.server_url,
+      expires: Math.floor(new Date(pairingInfo.expires_at).getTime() / 1000),
+    });
+    expect(payload.encryption_key).toBeUndefined();
   });
 
   it('配对成功显示提示、已配对徽标与二维码内容', async () => {
     renderPairing();
     await waitFor(() => expect(screen.getByText('设备配对成功！')).toBeInTheDocument());
     expect(screen.getByText('已配对')).toBeInTheDocument();
-
-    const svg = document.getElementById('pairing-qr-code')!;
-    const payload = JSON.parse(svg.getAttribute('data-value')!);
-    expect(payload).toMatchObject({
-      v: 1,
-      type: 'todoapp-pairing',
-      key: pairingInfo.key,
-      server: pairingInfo.server_url,
-      expires: Math.floor(new Date(pairingInfo.expires_at).getTime() / 1000),
-      encryption_key: pairingInfo.encryption_key,
-    });
     expect(screen.getByDisplayValue(pairingInfo.key)).toBeInTheDocument();
   });
 
+  it('确保密钥失败时不显示成功提示', async () => {
+    mockEnsureDeviceKey.mockRejectedValue(new Error('provision failed'));
+    renderPairing();
+    await waitFor(() => expect(mockApiService.getDevices).toHaveBeenCalled());
+    expect(screen.queryByText('设备配对成功！')).not.toBeInTheDocument();
+    expect(screen.queryByText('已配对')).not.toBeInTheDocument();
+  });
+
   it('initPairing 返回 409 时视为已配对但不显示成功提示', async () => {
-    // 二维码钥匙 409：无法展示二维码，视为已配对但不显示成功提示
     mockApiService.initPairing.mockRejectedValue({ response: { status: 409 } });
     renderPairing();
     await waitFor(() => expect(screen.getByText('已配对')).toBeInTheDocument());
@@ -192,20 +162,20 @@ describe('DevicePairing', () => {
     expect(screen.getByText('复制')).toBeInTheDocument();
   });
 
-  it('刷新密钥需要两段确认，确认后只刷新二维码不再注册自身', async () => {
+  it('刷新密钥需要两段确认，确认后只刷新二维码不再领取自身密钥', async () => {
     renderPairing();
-    await waitFor(() => expect(mockApiService.initPairing).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mockApiService.initPairing).toHaveBeenCalledTimes(1));
     const initCallsAfterMount = mockApiService.initPairing.mock.calls.length;
-    const pairDeviceCallsAfterMount = mockApiService.pairDevice.mock.calls.length;
+    const ensureCallsAfterMount = mockEnsureDeviceKey.mock.calls.length;
 
     fireEvent.click(screen.getByText('刷新'));
     expect(screen.getByText('确定刷新？')).toBeInTheDocument();
     expect(mockApiService.initPairing.mock.calls.length).toBe(initCallsAfterMount);
 
     fireEvent.click(screen.getByText('确定刷新？'));
-    // 刷新只生成新的二维码钥匙，不再调用注册接口，二维码钥匙不被消耗
+    // 刷新只生成新的二维码钥匙，不再领取设备密钥
     await waitFor(() => expect(mockApiService.initPairing).toHaveBeenCalledTimes(initCallsAfterMount + 1));
-    expect(mockApiService.pairDevice).toHaveBeenCalledTimes(pairDeviceCallsAfterMount);
+    expect(mockEnsureDeviceKey).toHaveBeenCalledTimes(ensureCallsAfterMount);
     await waitFor(() => expect(screen.getByText('二维码已刷新')).toBeInTheDocument());
   });
 

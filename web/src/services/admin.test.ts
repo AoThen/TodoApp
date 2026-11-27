@@ -1,12 +1,8 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-// axios.create 返回的 mock 实例，用于捕获拦截器与方法调用
+// adminService 复用主客户端（apiService.getClient），此处提供方法 mock
 const { mockClient } = vi.hoisted(() => {
   const client: any = vi.fn();
-  client.interceptors = {
-    request: { use: vi.fn() },
-    response: { use: vi.fn() },
-  };
   client.get = vi.fn();
   client.post = vi.fn();
   client.patch = vi.fn();
@@ -15,35 +11,11 @@ const { mockClient } = vi.hoisted(() => {
   return { mockClient: client };
 });
 
-vi.mock('axios', () => ({
-  default: { create: vi.fn(() => mockClient) },
+vi.mock('./api', () => ({
+  apiService: { getClient: () => mockClient },
 }));
 
 import { adminService } from './admin';
-
-let responseInterceptor: (response: any) => any;
-
-beforeAll(() => {
-  responseInterceptor = mockClient.interceptors.response.use.mock.calls[0][0];
-});
-
-describe('adminService 响应拦截器', () => {
-  it('解包 {success, data} 信封，使方法直接拿到业务数据', () => {
-    const response = { data: { success: true, data: { users: [{ id: 1 }] } } };
-    expect(responseInterceptor(response).data).toEqual({ users: [{ id: 1 }] });
-  });
-
-  it('非信封结构保持原样', () => {
-    const response = { data: { foo: 'bar' } };
-    expect(responseInterceptor(response).data).toEqual({ foo: 'bar' });
-  });
-
-  it('data 为数组的信封同样解包', () => {
-    const response = { data: { success: true, data: [1, 2, 3] } };
-    // 信封判断针对外层对象是否为数组；data 本身是数组时正常解包（与 api.ts 行为一致）
-    expect(responseInterceptor(response).data).toEqual([1, 2, 3]);
-  });
-});
 
 describe('adminService 方法', () => {
   it('getUsers 拼接分页与筛选参数并返回业务数据', async () => {

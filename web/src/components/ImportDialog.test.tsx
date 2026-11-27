@@ -90,8 +90,9 @@ describe('ImportDialog', () => {
 });
 
 describe('ImportDialog 模板下载', () => {
-  it('点击下载模板触发模板文件下载', () => {
-    const createSpy = vi.fn(() => 'blob:template-url');
+  it('点击下载模板触发模板文件下载，模板使用 due_at 字段', async () => {
+    let capturedBlob: Blob | null = null;
+    const createSpy = vi.fn((blob: Blob) => { capturedBlob = blob; return 'blob:template-url'; });
     const revokeSpy = vi.fn();
     vi.stubGlobal('URL', { ...URL, createObjectURL: createSpy, revokeObjectURL: revokeSpy });
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
@@ -102,6 +103,11 @@ describe('ImportDialog 模板下载', () => {
     expect(createSpy).toHaveBeenCalled();
     expect(clickSpy).toHaveBeenCalled();
     expect(revokeSpy).toHaveBeenCalledWith('blob:template-url');
+
+    const text = await capturedBlob!.text();
+    expect(text).toContain('"due_at"');
+    expect(text).not.toContain('dueAt');
+
     clickSpy.mockRestore();
     vi.unstubAllGlobals();
   });

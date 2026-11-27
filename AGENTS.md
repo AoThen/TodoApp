@@ -27,12 +27,12 @@ TodoApp is a feature-rich task management application with offline-first archite
 go run main.go                              # Run dev server
 CGO_ENABLED=1 go build -o todoapp-server .  # Production build
 
-# 测试（auth 包 init() 需要 JWT_SECRET，集成测试 TestMain 还需要 ENCRYPTION_KEY，缺一即退出）
-JWT_SECRET=test-secret-key-for-unit-tests-1234567890 ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef go test ./...  # All tests
-JWT_SECRET=test-secret-key-for-unit-tests-1234567890 ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef go test -v ./internal/db  # Specific package
-JWT_SECRET=test-secret-key-for-unit-tests-1234567890 ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef go test -v ./internal/db -run TestUpdateTaskFullOwnership  # Single test
-JWT_SECRET=test-secret-key-for-unit-tests-1234567890 ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef go test -v -run ^TestFuncName$ ./...  # Run specific test function
-JWT_SECRET=test-secret-key-for-unit-tests-1234567890 ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef go test -v -count=1 -race ./...  # Run with race detection
+# 测试（auth 包 init() 需要 JWT_SECRET，main init()/集成测试 TestMain 还需要 DEVICE_KEY_KEK，缺一即退出）
+JWT_SECRET=test-secret-key-for-unit-tests-1234567890 DEVICE_KEY_KEK=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef go test ./...  # All tests
+JWT_SECRET=test-secret-key-for-unit-tests-1234567890 DEVICE_KEY_KEK=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef go test -v ./internal/db  # Specific package
+JWT_SECRET=test-secret-key-for-unit-tests-1234567890 DEVICE_KEY_KEK=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef go test -v ./internal/db -run TestUpdateTaskFullOwnership  # Single test
+JWT_SECRET=test-secret-key-for-unit-tests-1234567890 DEVICE_KEY_KEK=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef go test -v -run ^TestFuncName$ ./...  # Run specific test function
+JWT_SECRET=test-secret-key-for-unit-tests-1234567890 DEVICE_KEY_KEK=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef go test -v -count=1 -race ./...  # Run with race detection
 ```
 
 ### Frontend (React/TypeScript)
@@ -189,7 +189,7 @@ All endpoints under `/api/v1/`:
 - `INITIAL_ADMIN_EMAIL/PASSWORD` - Required for first startup
 
 ### Security
-- `ENCRYPTION_KEY` - AES-256-GCM encryption key (32-byte hex)
+- `DEVICE_KEY_KEK` - 设备密钥的库内包装密钥（32-byte hex，仅服务端持有，绝不下发）
 - `RATE_LIMIT_PER_MINUTE` - Per-IP request rate limit (default: 600)
 - `MAX_LOGIN_ATTEMPTS` - Max failed login attempts (default: 5)
 - `LOGIN_ATTEMPT_WINDOW` - Failed attempt window (default: 15m)

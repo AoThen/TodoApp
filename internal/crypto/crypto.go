@@ -8,39 +8,30 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
-	"os"
 )
 
+// CryptoManager 持有单个 32 字节 AES-256-GCM 密钥（每设备独立）
 type CryptoManager struct {
 	key []byte
 }
 
-var globalCM *CryptoManager
-
-func Init() error {
-	keyHex := os.Getenv("ENCRYPTION_KEY")
-	if keyHex == "" {
-		return errors.New("ENCRYPTION_KEY environment variable is required")
-	}
-
-	key, err := hex.DecodeString(keyHex)
-	if err != nil {
-		return errors.New("ENCRYPTION_KEY must be a valid hex string")
-	}
-
+// NewManager 用 32 字节原始密钥创建管理器
+func NewManager(key []byte) (*CryptoManager, error) {
 	if len(key) != 32 {
-		return errors.New("ENCRYPTION_KEY must be 32 bytes (256 bits)")
+		return nil, errors.New("密钥必须为 32 字节 (256 位)")
 	}
-
-	globalCM = &CryptoManager{key: key}
-	return nil
+	clone := make([]byte, len(key))
+	copy(clone, key)
+	return &CryptoManager{key: clone}, nil
 }
 
-func GetManager() *CryptoManager {
-	if globalCM == nil {
-		panic("crypto: Init() must be called before GetManager()")
+// NewManagerFromHex 从 64 字符 hex 密钥创建管理器
+func NewManagerFromHex(keyHex string) (*CryptoManager, error) {
+	key, err := hex.DecodeString(keyHex)
+	if err != nil {
+		return nil, errors.New("密钥必须为合法 hex 字符串")
 	}
-	return globalCM
+	return NewManager(key)
 }
 
 func (cm *CryptoManager) Encrypt(plaintext string) (string, error) {
@@ -132,10 +123,11 @@ func (cm *CryptoManager) DecryptBytes(encryptedData []byte) ([]byte, error) {
 	return gcm.Open(nil, nonce, ciphertext, nil)
 }
 
+// GenerateKey 生成 32 字节随机密钥（64 字符 hex）
 func GenerateKey() string {
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
 		panic(err)
 	}
-	return hex.EncodeToString(bytes)
+	return hex.EncodeToString(raw)
 }

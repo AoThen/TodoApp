@@ -27,17 +27,23 @@ class CryptoInterceptor private constructor(context: Context) : Interceptor {
         val originalRequest = chain.request()
         val key = encryptionKey
 
-        if (key.isNullOrEmpty()) {
-            return chain.proceed(originalRequest)
-        }
-
         val path = originalRequest.url.encodedPath
         val method = originalRequest.method
-
         val shouldEncrypt = shouldEncryptPath(path, method)
 
+        // 统一携带设备标识，服务端据此选择该设备密钥
+        val request = withDeviceHeader(originalRequest)
+
+        if (key.isNullOrEmpty()) {
+            // fail-closed：需要加密的接口在缺少设备密钥时直接失败，绝不降级为明文
+            if (shouldEncrypt) {
+                return createErrorResponse(chain, "设备未配对或密钥不可用")
+            }
+            return chain.proceed(request)
+        }
+
         if (shouldEncrypt && originalRequest.header("X-Encrypted") == null) {
-            val originalBody = originalRequest.body ?: return chain.proceed(originalRequest)
+            val originalBody = originalRequest.body ?: return chain.proceed(request)
 
             val originalBodyBytes = bufferRequest(originalBody)
             val bodyString = originalBodyBytes.clone().toString(Charsets.UTF_8)
@@ -47,7 +53,7 @@ class CryptoInterceptor private constructor(context: Context) : Interceptor {
                     val encryptedBody = AesGcmManager.encrypt(bodyString, key)
                     val newBody = encryptedBody.toRequestBody("application/octet-stream".toMediaType())
 
-                    val newRequest = originalRequest.newBuilder()
+                    val newRequest = request.newBuilder()
                         .header("X-Encrypted", "true")
                         .header("X-Accept-Encrypted", "true")
                         .method(originalRequest.method, newBody)
@@ -61,10 +67,38 @@ class CryptoInterceptor private constructor(context: Context) : Interceptor {
         }
 
         if (originalRequest.header("X-Accept-Encrypted") == "true") {
-            return proceedWithDecryption(chain, originalRequest, key)
+            return proceedWithDecryption(chain, request, key)
         }
 
-        return chain.proceed(originalRequest)
+        return chain.proceed(request)
+    }
+
+    private fun withDeviceHeader(request: okhttp3.Request): okhttp3.Request {
+        val deviceId = getDeviceId()
+        if (deviceId.isEmpty() || request.header("X-Device-ID") != null) {
+            return request
+        }
+        return request.newBuilder().header("X-Device-ID", deviceId).build()
+    }
+
+    private fun getDeviceId(): String {
+        return try {
+            val prefs = context.getSharedPreferences("TodoAppPrefs", Context.MODE_PRIVATE)
+            val existing = prefs.getString("device_id", null)
+            if (!existing.isNullOrEmpty()) {
+                return existing
+            }
+            val id = android.provider.Settings.Secure.getString(
+                context.contentResolver,
+                android.provider.Settings.Secure.ANDROID_ID
+            ) ?: ""
+            if (id.isNotEmpty()) {
+                prefs.edit().putString("device_id", id).apply()
+            }
+            id
+        } catch (e: Exception) {
+            ""
+        }
     }
 
     private fun proceedWithDecryption(chain: Interceptor.Chain, request: okhttp3.Request, key: String): Response {

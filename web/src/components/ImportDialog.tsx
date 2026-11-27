@@ -12,6 +12,7 @@ interface ImportTask {
   description: string;
   status: string;
   priority: string;
+  due_at?: string;
 }
 
 interface ImportResponse {
@@ -101,14 +102,14 @@ const ImportDialog: React.FC<ImportDialogProps> = ({ isOpen, onClose, onImportSu
         description: "这是一个示例任务",
         status: "todo",
         priority: "high",
-        dueAt: new Date(Date.now() + 24*60*60*1000).toISOString(),
+        due_at: new Date(Date.now() + 24*60*60*1000).toISOString(),
       },
       {
         title: "任务详情",
         description: "需要详细描述",
         status: "in_progress",
         priority: "medium",
-        dueAt: new Date(Date.now() + 7*24*60*60*1000).toISOString(),
+        due_at: new Date(Date.now() + 7*24*60*60*1000).toISOString(),
       },
       {
         title: "完成报告",
@@ -188,7 +189,7 @@ const ImportDialog: React.FC<ImportDialogProps> = ({ isOpen, onClose, onImportSu
                 {previewData.slice(0, 5).map((task, index) => (
                   <div key={index} className="preview-item">
                     <span>{task.title}</span>
-                    <small>{task.status}/{task.priority}</small>
+                    <small>{task.status}/{task.priority}{task.due_at ? ` · ${task.due_at}` : ''}</small>
                   </div>
                 ))}
                 {previewData.length > 5 && <p>...</p>}
@@ -210,7 +211,7 @@ const ImportDialog: React.FC<ImportDialogProps> = ({ isOpen, onClose, onImportSu
             <h4>导入说明</h4>
             <ul>
               <li><strong>支持格式:</strong> JSON (.json) 和 CSV (.csv)</li>
-              <li><strong>CSV字段顺序:</strong> title, description, status, priority, due_at</li>
+              <li><strong>CSV格式:</strong> 首行必须为表头（title, description, status, priority, due_at），第二行起为任务数据</li>
               <li><strong>默认值:</strong> 空值字段将自动填充默认值</li>
               <li><strong>跳过规则:</strong> 空标题的任务将被跳过</li>
               <li><strong>模板下载:</strong> 可下载示例JSON模板</li>

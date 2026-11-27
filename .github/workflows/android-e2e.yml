@@ -35,7 +35,7 @@ jobs:
       - name: Start backend
         env:
           JWT_SECRET: test-secret-key-for-unit-tests-1234567890
-          ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+          DEVICE_KEY_KEK: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
           INITIAL_ADMIN_EMAIL: admin@e2e.local
           INITIAL_ADMIN_PASSWORD: "E2eAdmin@2026"
           ENVIRONMENT: development

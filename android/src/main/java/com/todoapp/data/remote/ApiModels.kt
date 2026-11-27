@@ -181,13 +181,18 @@ data class Conflict(
 data class PairingRequest(
     @SerializedName("key") val key: String,
     @SerializedName("device_type") val deviceType: String,
-    @SerializedName("device_id") val deviceId: String
+    @SerializedName("device_id") val deviceId: String,
+    @SerializedName("client_public_key") val clientPublicKey: String
 )
 
 data class PairingResponse(
     @SerializedName("status") val status: String,
     @SerializedName("device_id") val deviceId: String?,
-    @SerializedName("server_url") val serverUrl: String?
+    @SerializedName("server_url") val serverUrl: String?,
+    @SerializedName("wrapped_key") val wrappedKey: String?,
+    @SerializedName("server_public_key") val serverPublicKey: String?,
+    @SerializedName("nonce") val nonce: String?,
+    @SerializedName("key_exchange") val keyExchange: String?
 )
 
 data class InitPairingRequest(
@@ -199,9 +204,7 @@ data class InitPairingResponse(
     @SerializedName("key") val key: String,
     @SerializedName("device_id") val deviceId: String,
     @SerializedName("server_url") val serverUrl: String,
-    @SerializedName("expires_at") val expiresAt: String,
-    // 通道加密密钥：与一次性配对凭据 key 不同，扫码端用它建立加密通道
-    @SerializedName("encryption_key") val encryptionKey: String? = null
+    @SerializedName("expires_at") val expiresAt: String
 )
 
 data class Device(

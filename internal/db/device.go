@@ -4,17 +4,59 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"time"
 )
 
-// RegisterDevice 注册新设备
-func RegisterDevice(userID int, deviceType, deviceID, pairingKey, serverURL string) error {
+// ErrDeviceOwnedByOther 表示 device_id 已被其他账号占用
+var ErrDeviceOwnedByOther = errors.New("设备已被其他账号占用")
+
+// RegisterDevice 注册或更新设备（encryptedKey 为 KEK 封装后的设备密钥密文）。
+// 同一 device_id 重复配对时更新原记录；若已被其他账号占用则报错。
+func RegisterDevice(userID int, deviceType, deviceID, pairingKey, serverURL, encryptedKey string) error {
 	now := time.Now().UTC()
-	_, err := DB.Exec(
-		"INSERT INTO devices (user_id, device_type, device_id, pairing_key, server_url, paired_at, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		userID, deviceType, deviceID, pairingKey, serverURL, now, now,
+
+	var existingUser int
+	err := DB.QueryRow("SELECT user_id FROM devices WHERE device_id = ?", deviceID).Scan(&existingUser)
+	if err == nil {
+		if existingUser != userID {
+			return ErrDeviceOwnedByOther
+		}
+		_, err = DB.Exec(
+			"UPDATE devices SET device_type = ?, pairing_key = ?, server_url = ?, paired_at = ?, last_seen = ?, is_active = 1, encryption_key = ? WHERE device_id = ? AND user_id = ?",
+			deviceType, pairingKey, serverURL, now, now, encryptedKey, deviceID, userID,
+		)
+		return err
+	}
+	if err != sql.ErrNoRows {
+		return err
+	}
+
+	_, err = DB.Exec(
+		"INSERT INTO devices (user_id, device_type, device_id, pairing_key, server_url, paired_at, last_seen, is_active, encryption_key) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)",
+		userID, deviceType, deviceID, pairingKey, serverURL, now, now, encryptedKey,
 	)
 	return err
+}
+
+// GetDeviceEncryptionKeySealed 获取活动设备的加密密钥密文（KEK 封装）。
+// 未找到或设备未激活时 found=false。
+func GetDeviceEncryptionKeySealed(userID int, deviceID string) (string, bool, error) {
+	var sealed sql.NullString
+	err := DB.QueryRow(
+		"SELECT encryption_key FROM devices WHERE user_id = ? AND device_id = ? AND is_active = 1",
+		userID, deviceID,
+	).Scan(&sealed)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if !sealed.Valid || sealed.String == "" {
+		return "", false, nil
+	}
+	return sealed.String, true, nil
 }
 
 // ValidatePairingKey 验证配对密钥是否存在
@@ -110,6 +152,13 @@ func GetDeviceInfoByDeviceID(deviceID string) (int, string, string, bool, error)
 	).Scan(&userID, &serverURL, &lastSeen, &isActive)
 
 	return userID, serverURL, lastSeen.Format(time.RFC3339), isActive, err
+}
+
+// GetDeviceTypeByDeviceID 返回设备类型（用于重新生成配对码时沿用）
+func GetDeviceTypeByDeviceID(deviceID string) (string, error) {
+	var deviceType sql.NullString
+	err := DB.QueryRow("SELECT device_type FROM devices WHERE device_id = ?", deviceID).Scan(&deviceType)
+	return deviceType.String, err
 }
 
 // ClearPendingPairing 清理已使用的待配对记录，防止 devices 表堆积 is_active=0 的垃圾行

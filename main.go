@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"log"
 	"net/http"
@@ -16,7 +17,6 @@ import (
 
 import (
 	"todoapp/internal/config"
-	"todoapp/internal/crypto"
 	"todoapp/internal/db"
 	"todoapp/internal/response"
 	"todoapp/internal/websocket"
@@ -42,6 +42,9 @@ var (
 	attemptsMutex sync.RWMutex
 )
 
+// deviceKEK 服务端库内设备密钥包装密钥（仅服务端持有，绝不下发）
+var deviceKEK []byte
+
 func init() {
 	// Require JWT_SECRET from environment
 	if os.Getenv("JWT_SECRET") == "" {
@@ -54,11 +57,20 @@ func init() {
 		log.Fatal("错误: JWT_SECRET 至少需要 32 个字符")
 	}
 
-	// Initialize encryption module
-	if err := crypto.Init(); err != nil {
-		log.Fatalf("加密模块初始化失败: %v", err)
+	// 加载服务端库内设备密钥包装密钥（仅服务端持有，绝不下发）
+	kekHex := os.Getenv("DEVICE_KEY_KEK")
+	if kekHex == "" {
+		log.Fatal("错误: 必须设置 DEVICE_KEY_KEK 环境变量")
 	}
-	log.Println("加密模块已初始化")
+	kek, err := hex.DecodeString(kekHex)
+	if err != nil {
+		log.Fatal("错误: DEVICE_KEY_KEK 必须为合法 hex 字符串")
+	}
+	if len(kek) != 32 {
+		log.Fatal("错误: DEVICE_KEY_KEK 必须为 32 字节 (64 字符 hex)")
+	}
+	deviceKEK = kek
+	log.Println("设备密钥包装密钥已加载")
 }
 
 func init() {

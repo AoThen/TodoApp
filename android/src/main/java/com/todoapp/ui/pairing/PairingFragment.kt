@@ -274,7 +274,7 @@ class PairingFragment : Fragment() {
                 val pairingJson = JSONObject(
                     mapOf(
                         "type" to "todoapp-pairing",
-                        "v" to 1,
+                        "v" to 2,
                         "server" to url
                     )
                 ).toString()

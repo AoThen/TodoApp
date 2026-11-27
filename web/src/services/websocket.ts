@@ -22,15 +22,21 @@ export interface HandshakeResponse {
 class WebSocketService {
   private ws: WebSocket | null = null;
   private token: string | null = null;
+  private deviceId: string | null = null;
   private encryptionEnabled: boolean = true;
   private ready: boolean = false;
   private messageHandlers: Map<string, (msg: WSMessage) => void> = new Map();
   private reconnectAttempts: number = 0;
   private pingTimer: NodeJS.Timeout | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private handshakeTimer: NodeJS.Timeout | null = null;
+  private handshakeAttempts: number = 0;
 
-  async connect(token: string, enableEncryption: boolean = true, isReconnect: boolean = false): Promise<void> {
+  async connect(token: string, enableEncryption: boolean = true, isReconnect: boolean = false, deviceId?: string): Promise<void> {
     this.token = token;
+    if (deviceId) {
+      this.deviceId = deviceId;
+    }
     this.encryptionEnabled = enableEncryption;
     // 仅手动连接时重置重连计数；自动重连路径必须保留计数，否则退避上限永不生效
     if (!isReconnect) {
@@ -43,16 +49,18 @@ class WebSocketService {
     const serverHost = import.meta.env.VITE_WS_HOST || window.location.host;
     // token 走 query 参数：gorilla Upgrader 未配置子协议协商，
     // 携带自定义 Sec-WebSocket-Protocol 会被直接拒绝（401）
-    const wsUrl = `${wsProtocol}${serverHost}/ws?token=${encodeURIComponent(token)}&encryption=${enableEncryption}`;
+    const deviceParam = this.deviceId ? `&device_id=${encodeURIComponent(this.deviceId)}` : '';
+    const wsUrl = `${wsProtocol}${serverHost}/ws?token=${encodeURIComponent(token)}&encryption=${enableEncryption}${deviceParam}`;
 
     try {
       this.ws = new WebSocket(wsUrl);
+      this.ws.binaryType = 'arraybuffer';
 
       this.ws.onopen = () => {
         console.log('[WebSocket] Connected');
         this.reconnectAttempts = 0;
-        // 握手失败由 onclose/onerror 驱动重连，避免 unhandled rejection
-        this.sendHandshake().catch(() => {});
+        // 握手失败由 onclose/onerror 驱动重连；握手本身带重试与超时
+        this.startHandshake();
         this.startPingTimer();
       };
 
@@ -63,6 +71,7 @@ class WebSocketService {
       this.ws.onclose = () => {
         console.log('[WebSocket] Disconnected');
         this.ready = false;
+        this.clearHandshakeTimer();
         this.stopPingTimer();
         this.handleReconnect();
       };
@@ -84,18 +93,57 @@ class WebSocketService {
       timestamp: new Date().toISOString()
     };
 
-    await this.send(handshake);
+    // 握手以明文文本帧发送：服务端仅对二进制帧解密，握手本身不含任何机密；
+    // 不能等待加密就绪再发，否则会与"服务端须先收到握手才回执"形成死锁。
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error('WebSocket not connected');
+    }
+    this.ws.send(JSON.stringify(handshake));
+  }
+
+  private startHandshake(): void {
+    // 非加密模式无需等待协商，发送一次握手后即可就绪，避免触发重试超时
+    if (!this.encryptionEnabled) {
+      this.ready = true;
+      this.sendHandshake().catch(() => {});
+      return;
+    }
+
+    this.handshakeAttempts = 0;
+    this.clearHandshakeTimer();
+
+    const attempt = () => {
+      if (this.ws?.readyState !== WebSocket.OPEN || this.ready) {
+        return;
+      }
+      this.sendHandshake().catch(() => {});
+      this.handshakeAttempts += 1;
+      if (this.handshakeAttempts >= 10) {
+        console.error('[WebSocket] Handshake timeout');
+        this.ws?.close();
+        return;
+      }
+      this.handshakeTimer = setTimeout(attempt, 500);
+    };
+    attempt();
+  }
+
+  private clearHandshakeTimer(): void {
+    if (this.handshakeTimer) {
+      clearTimeout(this.handshakeTimer);
+      this.handshakeTimer = null;
+    }
   }
 
   private async handleMessage(event: MessageEvent): Promise<void> {
     try {
       let messageData: WSMessage;
 
-      if (event.data instanceof Blob) {
-        const decrypted = await this.decryptMessage(event.data);
-        messageData = JSON.parse(decrypted);
-      } else {
+      if (typeof event.data === 'string') {
         messageData = JSON.parse(event.data);
+      } else {
+        const decrypted = await this.decryptMessage(event.data as Blob | ArrayBuffer);
+        messageData = JSON.parse(decrypted);
       }
 
       if (messageData.type === 'handshake') {
@@ -130,6 +178,7 @@ class WebSocketService {
     }
 
     this.ready = true;
+    this.clearHandshakeTimer();
     console.log('[WebSocket] Handshake completed, encryption:', resp.encryption_enabled);
   }
 
@@ -145,14 +194,14 @@ class WebSocketService {
     return bytes.buffer;
   }
 
-  private async decryptMessage(blob: Blob): Promise<string> {
-    const data = await blob.arrayBuffer();
+  private async decryptMessage(data: Blob | ArrayBuffer): Promise<string> {
+    const buffer = data instanceof Blob ? await data.arrayBuffer() : data;
 
     if (!this.encryptionEnabled) {
-      return new TextDecoder().decode(data);
+      return new TextDecoder().decode(buffer);
     }
 
-    const encrypted = btoa(String.fromCharCode(...Array.from(new Uint8Array(data))));
+    const encrypted = btoa(String.fromCharCode(...Array.from(new Uint8Array(buffer))));
     const decrypted = await cryptoDecrypt(encrypted);
     return decrypted;
   }
@@ -163,8 +212,8 @@ class WebSocketService {
     }
 
     if (this.encryptionEnabled && !this.ready) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-      return this.send(message);
+      // 握手未完成时拒绝发送普通消息（握手本身走 sendHandshake 明文通道，不受此限）
+      throw new Error('WebSocket handshake not ready');
     }
 
     const messageStr = JSON.stringify(message);
@@ -216,6 +265,7 @@ class WebSocketService {
 
   disconnect(): void {
     this.stopPingTimer();
+    this.clearHandshakeTimer();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;

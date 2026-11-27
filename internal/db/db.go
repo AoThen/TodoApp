@@ -153,6 +153,7 @@ func InitDB(dataSourceName string) error {
             last_seen DATETIME,
             is_active BOOLEAN DEFAULT 1,
             pairing_expires_at DATETIME,
+            encryption_key TEXT,
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );`,
 		`CREATE TABLE IF NOT EXISTS deleted_tasks (
@@ -215,6 +216,10 @@ func InitDB(dataSourceName string) error {
 	// 存量库迁移：devices 表补充配对密钥过期时间列（新库建表语句已包含，此处容错处理重复列）
 	if _, err := DB.Exec("ALTER TABLE devices ADD COLUMN pairing_expires_at DATETIME"); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 		return fmt.Errorf("迁移 devices.pairing_expires_at 失败: %w", err)
+	}
+	// 存量库迁移：devices 表补充每设备加密密钥列（存 KEK 封装的密文；新库建表语句已包含）
+	if _, err := DB.Exec("ALTER TABLE devices ADD COLUMN encryption_key TEXT"); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("迁移 devices.encryption_key 失败: %w", err)
 	}
 	// 存量库迁移：tasks 表补充手动排序与循环任务列（新库建表语句已包含，此处容错处理重复列）
 	if _, err := DB.Exec("ALTER TABLE tasks ADD COLUMN sort_order REAL DEFAULT 0"); err != nil && !strings.Contains(err.Error(), "duplicate column") {
@@ -819,6 +824,30 @@ func CreateTask(userID int, localID, title string) (int64, error) {
 		INSERT INTO tasks (user_id, local_id, server_version, title, status, created_at, updated_at, last_modified)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`, userID, localID, 1, title, "todo", now, now, now)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+// CreateTaskFull 创建带完整字段的新任务（REST 创建路径使用）
+// status/priority 为空时补默认值，dueAt 为空时写入 NULL
+func CreateTaskFull(userID int, localID, title, description, status, priority, dueAt string) (int64, error) {
+	if status == "" {
+		status = "todo"
+	}
+	if priority == "" {
+		priority = "medium"
+	}
+	now := time.Now().UTC()
+	var due interface{}
+	if dueAt != "" {
+		due = dueAt
+	}
+	result, err := DB.Exec(`
+		INSERT INTO tasks (user_id, local_id, server_version, title, description, status, priority, due_at, created_at, updated_at, last_modified)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, userID, localID, 1, title, description, status, priority, due, now, now, now)
 	if err != nil {
 		return 0, err
 	}

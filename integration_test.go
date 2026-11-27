@@ -2,6 +2,12 @@ package main
 
 import (
 	"bytes"
+	"crypto/ecdh"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +19,31 @@ import (
 	"todoapp/internal/db"
 	wsclient "todoapp/internal/websocket"
 )
+
+// testClientKeyPair 生成一次性 P-256 客户端密钥对，返回公钥 base64(SPKI)、ECDH 私钥与其 SPKI DER。
+func testClientKeyPair(t *testing.T) (string, *ecdh.PrivateKey, []byte) {
+	t.Helper()
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("生成客户端密钥失败: %v", err)
+	}
+	der, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	if err != nil {
+		t.Fatalf("导出客户端公钥失败: %v", err)
+	}
+	privECDH, err := priv.ECDH()
+	if err != nil {
+		t.Fatalf("转换客户端私钥失败: %v", err)
+	}
+	return base64.StdEncoding.EncodeToString(der), privECDH, der
+}
+
+// mustClientPub 仅返回一次性客户端公钥 base64(SPKI)。
+func mustClientPub(t *testing.T) string {
+	t.Helper()
+	pub, _, _ := testClientKeyPair(t)
+	return pub
+}
 
 var (
 	testTS    *httptest.Server
@@ -27,9 +58,11 @@ const (
 )
 
 func TestMain(m *testing.M) {
-	// init() 在测试二进制启动时已校验 JWT_SECRET / ENCRYPTION_KEY，必须由外部环境提供
-	if os.Getenv("JWT_SECRET") == "" || os.Getenv("ENCRYPTION_KEY") == "" {
-		fmt.Println("集成测试需要设置 JWT_SECRET 与 ENCRYPTION_KEY 环境变量")
+	// 集成测试全部走明文请求，显式关闭服务端强制加密开关，避免本地环境变量污染
+	os.Setenv("REQUIRE_HTTP_ENCRYPTION", "false")
+	// init() 在测试二进制启动时已校验 JWT_SECRET / DEVICE_KEY_KEK，必须由外部环境提供
+	if os.Getenv("JWT_SECRET") == "" || os.Getenv("DEVICE_KEY_KEK") == "" {
+		fmt.Println("集成测试需要设置 JWT_SECRET 与 DEVICE_KEY_KEK 环境变量")
 		os.Exit(1)
 	}
 
@@ -461,6 +494,33 @@ func TestTaskCRUD(t *testing.T) {
 	_, out = doJSON(t, http.MethodGet, "/api/v1/tasks", userTok, nil)
 	if tasks, _ := dataMap(out)["tasks"].([]interface{}); len(tasks) != 2 {
 		t.Errorf("软删除后列表应只剩 2 条, got %v", dataMap(out))
+	}
+}
+
+func TestCreateTaskFullFields(t *testing.T) {
+	cleanTables(t)
+	resp, out := doJSON(t, http.MethodPost, "/api/v1/tasks", userTok, map[string]interface{}{
+		"title":       "全字段任务",
+		"description": "描述内容",
+		"status":      "in_progress",
+		"priority":    "high",
+		"due_at":      "2030-01-02T15:04:05Z",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("创建全字段任务应 201, got %d %v", resp.StatusCode, out)
+	}
+	created := dataMap(out)
+	if created["description"] != "描述内容" || created["status"] != "in_progress" || created["priority"] != "high" {
+		t.Errorf("创建响应字段不符: %v", created)
+	}
+	id := int64(created["id"].(float64))
+	resp, out = doJSON(t, http.MethodGet, fmt.Sprintf("/api/v1/tasks/%d", id), userTok, nil)
+	got := dataMap(out)
+	if resp.StatusCode != http.StatusOK || got["description"] != "描述内容" || got["status"] != "in_progress" || got["priority"] != "high" {
+		t.Errorf("落库字段不符: %d %v", resp.StatusCode, got)
+	}
+	if got["due_at"] == nil || got["due_at"] == "" {
+		t.Errorf("截止日期未落库: %v", got["due_at"])
 	}
 }
 

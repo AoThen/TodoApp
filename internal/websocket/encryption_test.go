@@ -2,7 +2,6 @@ package websocket
 
 import (
 	"encoding/json"
-	"os"
 	"testing"
 
 	"todoapp/internal/crypto"
@@ -10,17 +9,17 @@ import (
 
 const testKeyHex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-func TestMain(m *testing.M) {
-	// crypto.GetManager() 依赖 crypto.Init()
-	os.Setenv("ENCRYPTION_KEY", testKeyHex)
-	if err := crypto.Init(); err != nil {
-		panic(err)
+func testManager(t *testing.T) *crypto.CryptoManager {
+	t.Helper()
+	cm, err := crypto.NewManagerFromHex(testKeyHex)
+	if err != nil {
+		t.Fatalf("创建测试密钥管理器失败: %v", err)
 	}
-	m.Run()
+	return cm
 }
 
 func TestWebSocketEncryptorDisabledPassthrough(t *testing.T) {
-	e := NewWebSocketEncryptor(false, "client-1")
+	e := NewWebSocketEncryptor(false, "client-1", nil)
 	if !e.IsReady() {
 		t.Error("不加密模式应直接就绪")
 	}
@@ -42,7 +41,7 @@ func TestWebSocketEncryptorDisabledPassthrough(t *testing.T) {
 }
 
 func TestWebSocketEncryptorRoundTrip(t *testing.T) {
-	e := NewWebSocketEncryptor(true, "client-1")
+	e := NewWebSocketEncryptor(true, "client-1", testManager(t))
 	if e.IsReady() {
 		t.Error("加密模式握手前不应就绪")
 	}
@@ -71,8 +70,15 @@ func TestWebSocketEncryptorRoundTrip(t *testing.T) {
 	}
 }
 
+func TestWebSocketEncryptorEnabledWithoutKeyFails(t *testing.T) {
+	e := NewWebSocketEncryptor(true, "client-1", nil)
+	if _, err := e.EncryptMessage([]byte("x")); err == nil {
+		t.Error("加密模式缺少密钥时应当失败（fail-closed）")
+	}
+}
+
 func TestHandshakeFlow(t *testing.T) {
-	e := NewWebSocketEncryptor(true, "client-1")
+	e := NewWebSocketEncryptor(true, "client-1", testManager(t))
 	resp, err := e.CreateHandshakeResponse()
 	if err != nil {
 		t.Fatal(err)
@@ -97,7 +103,7 @@ func TestHandshakeFlow(t *testing.T) {
 }
 
 func TestHandshakeFailures(t *testing.T) {
-	e := NewWebSocketEncryptor(true, "client-1")
+	e := NewWebSocketEncryptor(true, "client-1", testManager(t))
 
 	// 服务端要求加密但客户端不支持
 	bad, _ := json.Marshal(HandshakeReq{Type: "handshake", Encryption: false})
@@ -118,7 +124,7 @@ func TestHandshakeFailures(t *testing.T) {
 }
 
 func TestCreateHandshakeResponseDisabled(t *testing.T) {
-	e := NewWebSocketEncryptor(false, "client-3")
+	e := NewWebSocketEncryptor(false, "client-3", nil)
 	resp, err := e.CreateHandshakeResponse()
 	if err != nil {
 		t.Fatal(err)

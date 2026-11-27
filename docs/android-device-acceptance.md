@@ -21,7 +21,7 @@
 
 ```bash
 JWT_SECRET=<至少32字符> \
-ENCRYPTION_KEY=<64位hex，与网页端一致> \
+DEVICE_KEY_KEK=<64位hex，仅服务端持有> \
 INITIAL_ADMIN_EMAIL=admin@example.com \
 INITIAL_ADMIN_PASSWORD=<强密码> \
 ENVIRONMENT=development \

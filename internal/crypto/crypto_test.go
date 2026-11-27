@@ -1,6 +1,11 @@
 package crypto
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/base64"
 	"strings"
 	"testing"
 )
@@ -9,11 +14,11 @@ const testKeyHex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789ab
 
 func newTestManager(t *testing.T) *CryptoManager {
 	t.Helper()
-	t.Setenv("ENCRYPTION_KEY", testKeyHex)
-	if err := Init(); err != nil {
-		t.Fatalf("Init 失败: %v", err)
+	cm, err := NewManagerFromHex(testKeyHex)
+	if err != nil {
+		t.Fatalf("创建测试密钥管理器失败: %v", err)
 	}
-	return GetManager()
+	return cm
 }
 
 func TestEncryptDecryptRoundTrip(t *testing.T) {
@@ -57,7 +62,6 @@ func TestDecryptTamperedCiphertext(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw := []byte(ct)
-	// 翻转密文尾部一个比特（GCM tag 区域）
 	raw[len(raw)-1] ^= 0x01
 	if _, err := cm.Decrypt(string(raw)); err == nil {
 		t.Error("篡改后的密文解密应当失败")
@@ -70,8 +74,7 @@ func TestDecryptWithWrongKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	other := &CryptoManager{key: []byte(strings.Repeat("x", 32))}
+	other, _ := NewManager([]byte(strings.Repeat("x", 32)))
 	if _, err := other.Decrypt(ct); err == nil {
 		t.Error("错误密钥解密应当失败")
 	}
@@ -110,39 +113,27 @@ func TestDecryptInvalidInputs(t *testing.T) {
 	}
 }
 
-func TestInitValidation(t *testing.T) {
+func TestNewManagerValidation(t *testing.T) {
 	cases := []struct {
 		name    string
-		key     string
+		keyHex  string
 		wantErr bool
 	}{
-		{"未设置", "", true},
 		{"非法 hex", "zzzz", true},
 		{"长度不足", strings.Repeat("ab", 16), true},
 		{"合法 32 字节", testKeyHex, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			t.Setenv("ENCRYPTION_KEY", c.key)
-			err := Init()
+			_, err := NewManagerFromHex(c.keyHex)
 			if (err != nil) != c.wantErr {
-				t.Errorf("Init() err = %v, wantErr %v", err, c.wantErr)
+				t.Errorf("NewManagerFromHex() err = %v, wantErr %v", err, c.wantErr)
 			}
 		})
 	}
-}
-
-func TestGetManagerBeforeInitPanics(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("未初始化时 GetManager 应当 panic")
-		}
-	}()
-	// 重置全局以模拟未初始化
-	saved := globalCM
-	globalCM = nil
-	defer func() { globalCM = saved }()
-	GetManager()
+	if _, err := NewManager([]byte("short")); err == nil {
+		t.Error("非 32 字节密钥应报错")
+	}
 }
 
 func TestGenerateKey(t *testing.T) {
@@ -153,5 +144,91 @@ func TestGenerateKey(t *testing.T) {
 	}
 	if k1 == k2 {
 		t.Error("两次生成的密钥不应相同")
+	}
+}
+
+func newClientKeyPair(t *testing.T) (*ecdsa.PrivateKey, []byte, string) {
+	t.Helper()
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return priv, der, base64.StdEncoding.EncodeToString(der)
+}
+
+func TestWrapUnwrapDeviceKey(t *testing.T) {
+	priv, clientDER, clientPubB64 := newClientKeyPair(t)
+	deviceKey := GenerateKey()
+
+	wrapped, serverPub, nonce, err := WrapDeviceKey(clientPubB64, deviceKey, "dev-1", "pair-1")
+	if err != nil {
+		t.Fatalf("包装失败: %v", err)
+	}
+
+	privECDH, err := priv.ECDH()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := UnwrapDeviceKey(privECDH, clientDER, serverPub, wrapped, nonce, "dev-1", "pair-1")
+	if err != nil {
+		t.Fatalf("解包失败: %v", err)
+	}
+	if got != deviceKey {
+		t.Errorf("解包出的设备密钥不一致: want %s, got %s", deviceKey, got)
+	}
+
+	// 错误的配对码应导致 AAD 校验失败
+	if _, err := UnwrapDeviceKey(privECDH, clientDER, serverPub, wrapped, nonce, "dev-1", "pair-2"); err == nil {
+		t.Error("错误配对码解包应当失败")
+	}
+
+	// 错误的客户端私钥应导致共享密钥不一致
+	otherPriv, _, _ := newClientKeyPair(t)
+	otherECDH, _ := otherPriv.ECDH()
+	if _, err := UnwrapDeviceKey(otherECDH, clientDER, serverPub, wrapped, nonce, "dev-1", "pair-1"); err == nil {
+		t.Error("错误客户端私钥解包应当失败")
+	}
+}
+
+func TestWrapDeviceKeyInvalidPublicKey(t *testing.T) {
+	if _, _, _, err := WrapDeviceKey("not-base64!!", GenerateKey(), "dev", "pair"); err == nil {
+		t.Error("非法客户端公钥应当报错")
+	}
+}
+
+func TestSealOpenWithKEK(t *testing.T) {
+	kek := make([]byte, 32)
+	for i := range kek {
+		kek[i] = byte(i)
+	}
+	deviceKey := GenerateKey()
+
+	sealed, err := SealWithKEK(kek, deviceKey, "dev-1")
+	if err != nil {
+		t.Fatalf("封装失败: %v", err)
+	}
+	got, err := OpenWithKEK(kek, sealed, "dev-1")
+	if err != nil {
+		t.Fatalf("解封失败: %v", err)
+	}
+	if got != deviceKey {
+		t.Errorf("解封设备密钥不一致: want %s, got %s", deviceKey, got)
+	}
+
+	// 错误 device_id（AAD）应失败
+	if _, err := OpenWithKEK(kek, sealed, "dev-2"); err == nil {
+		t.Error("错误 device_id 解封应当失败")
+	}
+
+	// 错误 KEK 应失败
+	wrongKEK := make([]byte, 32)
+	copy(wrongKEK, kek)
+	wrongKEK[0] ^= 0xff
+	if _, err := OpenWithKEK(wrongKEK, sealed, "dev-1"); err == nil {
+		t.Error("错误 KEK 解封应当失败")
 	}
 }

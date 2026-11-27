@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { generateKey } from '../utils/crypto';
 import { apiService } from '../services/api';
+import { ensureDeviceKey } from '../services/deviceKey';
 
 interface PairingData {
   v: number;
@@ -10,8 +10,6 @@ interface PairingData {
   server: string;
   /** 过期时间：epoch 秒（Android 端按 optLong 解析） */
   expires: number;
-  /** 通道加密密钥（与一次性配对凭据 key 不同），扫码端用它建立加密通道 */
-  encryption_key: string;
 }
 
 interface Device {
@@ -58,14 +56,8 @@ const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
       setKey(qrInfo.key);
       setQrData(buildPairingData(qrInfo));
 
-      // 第二把钥匙用于网页自身注册：避免消耗二维码上的一次性钥匙，
-      // 否则手机扫码时服务端会以「该设备已配对」(409) 拒绝
-      const selfInfo = await apiService.initPairing('web');
-      await apiService.pairDevice({
-        key: selfInfo.key,
-        device_type: 'web',
-        device_id: getOrCreateDeviceId()
-      });
+      // 网页自身领取每设备密钥（幂等：已持有则跳过），与二维码使用不同的一次性配对码
+      await ensureDeviceKey();
 
       setPaired(true);
       setSuccess('设备配对成功！');
@@ -81,15 +73,13 @@ const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
     key: string;
     server_url: string;
     expires_at: string;
-    encryption_key: string;
   }): string => {
     const pairingData: PairingData = {
-      v: 1,
+      v: 2,
       type: 'todoapp-pairing',
       key: info.key,
       server: info.server_url,
       expires: Math.floor(new Date(info.expires_at).getTime() / 1000),
-      encryption_key: info.encryption_key
     };
     return JSON.stringify(pairingData);
   };
@@ -104,30 +94,6 @@ const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
     } finally {
       setLoading(false);
     }
-  };
-
-  // 网页设备编号持久化：避免每次打开配对面板都注册一台新网页设备，
-  // 造成设备列表堆积重复记录
-  const DEVICE_ID_KEY = 'todoapp_web_device_id';
-
-  const getOrCreateDeviceId = (): string => {
-    try {
-      const existing = window.localStorage.getItem(DEVICE_ID_KEY);
-      if (existing) return existing;
-    } catch {
-      // 隐私模式下 localStorage 可能不可用，退化为每次生成
-    }
-    const id = generateDeviceId();
-    try {
-      window.localStorage.setItem(DEVICE_ID_KEY, id);
-    } catch {
-      // 存储失败不影响本次注册，下轮再生成
-    }
-    return id;
-  };
-
-  const generateDeviceId = (): string => {
-    return `web-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   };
 
   const handleCopyKey = () => {
@@ -364,11 +330,12 @@ const DevicePairing: React.FC<DevicePairingProps> = ({ onClose }) => {
           <div className="security-info">
             <h4>安全说明</h4>
             <ul>
-              <li>此二维码包含加密密钥，请确保在安全环境下使用</li>
+              <li>二维码仅含一次性配对凭据，不含任何长期密钥</li>
               <li>二维码有效期为 5 分钟，过期后请刷新</li>
-              <li>配对成功后，App 将使用此密钥加密所有通信</li>
-              <li>密钥存储在 Android Keystore 中，安全性高</li>
-              <li>您可以随时重新生成密钥或撤销设备</li>
+              <li>通道密钥由各设备经已登录的加密通道单独领取，一台设备一把</li>
+              <li>手机端密钥存储在系统安全区（Keystore）中</li>
+              <li>网页端密钥仅存于本浏览器，请勿在不可信环境使用，谨防脚本窃取</li>
+              <li>撤销设备后该设备密钥立即失效</li>
             </ul>
           </div>
         </div>

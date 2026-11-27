@@ -143,9 +143,8 @@ class QRScannerActivity : AppCompatActivity() {
                     return@runOnUiThread
                 }
 
-                // 校验通道密钥：旧版二维码无此字段，无法建立加密通道
-                val channelKey = pairingData.encryptionKey
-                if (channelKey == null || !AesGcmManager.isValidKey(channelKey)) {
+                // 仅接受 v2 及以上的二维码（v1 会通过二维码明文携带长期密钥，已废弃）
+                if (pairingData.version < 2) {
                     showOutdatedQRCodeDialog()
                     return@runOnUiThread
                 }
@@ -158,67 +157,9 @@ class QRScannerActivity : AppCompatActivity() {
                     return@runOnUiThread
                 }
 
-                // 显示加载中
-                showLoading()
-
-                // 调用服务器验证配对（Token由AuthInterceptor自动添加）
-                lifecycleScope.launch(Dispatchers.IO) {
-                    try {
-                        val deviceId = getDeviceID()
-                        if (deviceId.isEmpty()) {
-                            runOnUiThread {
-                                dismissLoading()
-                                showErrorDialog("无法获取设备ID，请检查设备设置")
-                            }
-                            return@launch
-                        }
-                        val response: Response<PairingResponse> = RetrofitClient.getApiService(this@QRScannerActivity)
-                            .pairDevice(
-                                PairingRequest(
-                                    key = pairingData.key,
-                                    deviceType = "android",
-                                    deviceId = deviceId
-                                )
-                            )
-
-                        runOnUiThread {
-                            dismissLoading()
-
-                            if (response.isSuccessful && response.body() != null) {
-                                // 服务器验证成功
-                                KeyStorage.init()
-                                // 保存通道加密密钥（而非一次性配对凭据），加密通道才能真正建立
-                                val keyProtected = KeyStorage.saveKey(this@QRScannerActivity, channelKey, pairingData.server)
-                                // 同步刷新加密拦截器的内存密钥缓存，使后续请求立即启用加密通道
-                                com.todoapp.data.crypto.CryptoInterceptor.getInstance(applicationContext).refreshKey()
-
-                                // 保存设备信息
-                                val prefs = getSharedPreferences("TodoAppPrefs", MODE_PRIVATE)
-                                prefs.edit()
-                                    .putString("device_id", deviceId)
-                                    .putString("server_url", pairingData.server)
-                                    .apply()
-
-                                // 同步更新两套 baseUrl 入口，保证登录/业务/同步通道与同步通道指向同一服务器
-                                RetrofitClient.setBaseUrl(pairingData.server)
-                                com.todoapp.config.AppConfig.setBaseUrl(applicationContext, pairingData.server)
-
-                                Log.d(TAG, "设备配对成功: $deviceId")
-                                showSuccessDialog(rawValue, pairingData.server, keyProtected)
-                            } else {
-                                val errorMsg = response.errorBody()?.string() ?: "配对验证失败"
-                                Log.e(TAG, "配对失败: $errorMsg")
-                                showErrorDialog(getErrorMessage(errorMsg))
-                            }
-                        }
-                    } catch (e: Exception) {
-                        runOnUiThread {
-                            dismissLoading()
-                            Log.e(TAG, "配对异常", e)
-                            showErrorDialog("配对验证失败: ${e.message}")
-                        }
-                    }
-                }
+                // 二维码仅含一次性配对码；实际配对与设备密钥领取交由 PairingViewModel 完成
+                setResult(RESULT_SUCCESS, Intent().apply { putExtra(EXTRA_QR_RESULT, rawValue) })
+                finish()
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing QR code", e)
                 showErrorDialog("Error: ${e.message}")
@@ -239,8 +180,7 @@ class QRScannerActivity : AppCompatActivity() {
                 type = json.optString("type"),
                 key = json.optString("key"),
                 server = json.optString("server"),
-                expires = json.optLong("expires", 0),
-                encryptionKey = json.optString("encryption_key", "").takeIf { it.isNotEmpty() }
+                expires = json.optLong("expires", 0)
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse pairing data", e)
@@ -430,9 +370,7 @@ class QRScannerActivity : AppCompatActivity() {
         val type: String,
         val key: String,
         val server: String,
-        val expires: Long,
-        // 通道加密密钥：与一次性配对凭据 key 不同，旧版二维码无此字段
-        val encryptionKey: String? = null
+        val expires: Long
     )
 
     companion object {

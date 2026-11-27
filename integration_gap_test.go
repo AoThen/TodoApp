@@ -74,7 +74,7 @@ func TestDevicePairingLifecycle(t *testing.T) {
 	}
 
 	// 正式配对
-	resp, out = doJSON(t, http.MethodPost, "/api/v1/devices/pair", userTok, map[string]string{"key": key, "device_type": "android", "device_id": "android-1"})
+	resp, out = doJSON(t, http.MethodPost, "/api/v1/devices/pair", userTok, map[string]string{"key": key, "device_type": "android", "device_id": "android-1", "client_public_key": mustClientPub(t)})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("pair 应 200, got %d: %v", resp.StatusCode, out)
 	}
@@ -95,7 +95,7 @@ func TestDevicePairingLifecycle(t *testing.T) {
 	}
 
 	// 同一 key 再次配对 → 409
-	resp, _ = doJSON(t, http.MethodPost, "/api/v1/devices/pair", userTok, map[string]string{"key": key, "device_type": "android", "device_id": "android-2"})
+	resp, _ = doJSON(t, http.MethodPost, "/api/v1/devices/pair", userTok, map[string]string{"key": key, "device_type": "android", "device_id": "android-2", "client_public_key": mustClientPub(t)})
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("重复 key 配对应 409, got %d", resp.StatusCode)
 	}

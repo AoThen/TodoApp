@@ -8,7 +8,7 @@ import (
 )
 
 func newTestClient(h *Hub, userID int64) *Client {
-	return NewClient(h, nil, userID, "user@test.local", false)
+	return NewClient(h, nil, userID, "user@test.local", "", false, nil)
 }
 
 func waitHubCount(t *testing.T, h *Hub, want int) {

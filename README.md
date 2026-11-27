@@ -82,6 +82,9 @@ cp .env.example .env
 # JWT_SECRET - JWT 签名密钥 (至少32字符)
 export JWT_SECRET="$(openssl rand -hex 32)"
 #
+# DEVICE_KEY_KEK - 设备密钥库内包装密钥 (32字节hex，仅服务端持有)
+export DEVICE_KEY_KEK="$(openssl rand -hex 32)"
+#
 # INITIAL_ADMIN_EMAIL - 初始管理员邮箱 (首次启动必需)
 export INITIAL_ADMIN_EMAIL="admin@example.com"
 #
@@ -281,7 +284,7 @@ todoapp/
 
 **安全环境变量：**
 - `JWT_SECRET` - JWT 签名密钥（必需，最少32字符）
-- `ENCRYPTION_KEY` - AES-256-GCM 加密密钥（32字节hex）
+- `DEVICE_KEY_KEK` - 设备密钥的库内包装密钥（32字节hex，仅服务端持有，绝不下发）
 - `INITIAL_ADMIN_EMAIL/PASSWORD` - 首次启动必需的管理员账户（无默认值，必须显式提供强密码）
 - `RATE_LIMIT_PER_MINUTE` - 每IP每分钟请求限流（默认600）
 - `TRUSTED_PROXY` - 是否信任反向代理的 X-Forwarded-For（默认 false；仅部署于可信代理之后时开启，否则可被伪造绕过限流）
@@ -295,8 +298,8 @@ todoapp/
 ```bash
 go run main.go                              # 开发服务器
 CGO_ENABLED=1 go build -o todoapp-server .  # 生产构建
-JWT_SECRET=test-secret-key-for-unit-tests-1234567890 go test ./...                                # 运行测试（auth 包需 JWT_SECRET）
-JWT_SECRET=test-secret-key-for-unit-tests-1234567890 go test -v ./internal/db -run TestInitDB    # 运行单个测试
+JWT_SECRET=test-secret-key-for-unit-tests-1234567890 DEVICE_KEY_KEK=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef go test ./...                                # 运行测试（需 JWT_SECRET / DEVICE_KEY_KEK）
+JWT_SECRET=test-secret-key-for-unit-tests-1234567890 DEVICE_KEY_KEK=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef go test -v ./internal/db -run TestInitDB    # 运行单个测试
 ```
 
 ### 前端 (React/TypeScript)

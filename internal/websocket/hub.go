@@ -110,6 +110,22 @@ func (h *Hub) BroadcastToUser(userID int64, msg Message) error {
 	return nil
 }
 
+// CloseDevice 关闭指定用户下指定设备的所有在线连接（设备撤销时调用，使停用立即生效）
+func (h *Hub) CloseDevice(userID int64, deviceID string) {
+	h.mu.RLock()
+	var targets []*Client
+	for client := range h.clients[userID] {
+		if client.deviceID == deviceID {
+			targets = append(targets, client)
+		}
+	}
+	h.mu.RUnlock()
+
+	for _, client := range targets {
+		_ = client.conn.Close()
+	}
+}
+
 // IsUserConnected 检查用户是否在线
 func (h *Hub) IsUserConnected(userID int64) bool {
 	h.mu.RLock()

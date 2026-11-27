@@ -15,6 +15,8 @@ object KeyStorage {
     private const val ENCRYPTION_PREFERENCE = "todoapp_encryption_prefs"
     private const val KEY_KEY = "encryption_key"
     private const val SERVER_URL_KEY = "server_url"
+    private const val KEY_VERSION_KEY = "key_version"
+    private const val CURRENT_KEY_VERSION = 2
     private const val IV_TRANSFORMATION = "AES/GCM/NoPadding"
 
     private var keyStore: KeyStore? = null
@@ -29,75 +31,86 @@ object KeyStorage {
         }
     }
 
+    private fun ensureInitialized() {
+        if (keyStore == null) {
+            init()
+        }
+    }
+
     fun hasKey(context: Context): Boolean {
         return try {
             val prefs = context.getSharedPreferences(ENCRYPTION_PREFERENCE, Context.MODE_PRIVATE)
-            val encryptedKey = prefs.getString(KEY_KEY, null)
-            encryptedKey != null
+            prefs.getInt(KEY_VERSION_KEY, 0) == CURRENT_KEY_VERSION &&
+                !prefs.getString(KEY_KEY, null).isNullOrEmpty()
         } catch (e: Exception) {
             false
         }
     }
 
     /**
-     * 保存配对下发的通道密钥与服务器地址。
-     * @return true 表示密钥已经 Keystore 加密存储；false 表示 Keystore 不可用、已明文兜底（调用方应提示用户）
+     * 保存配对下发的每设备密钥与服务器地址（仅写入 Keystore 加密后的密文）。
+     * 返回 false 表示本机安全存储不可用——调用方应视为配对失败（fail-closed，不再明文兜底）。
      */
     fun saveKey(context: Context, key: String, serverUrl: String): Boolean {
         return try {
+            ensureInitialized()
             val prefs = context.getSharedPreferences(ENCRYPTION_PREFERENCE, Context.MODE_PRIVATE)
 
             if (keyStore != null && !keyExistsInKeystore()) {
                 createKeyInKeystore()
             }
 
-            val protected = keyStore != null && keyExistsInKeystore()
-            val encryptedKey = if (protected) encryptWithKeystore(key) else key
-            val encryptedServerUrl = if (protected) encryptWithKeystore(serverUrl) else serverUrl
+            if (keyStore == null || !keyExistsInKeystore()) {
+                android.util.Log.w("KeyStorage", "Keystore 不可用，拒绝明文保存设备密钥（fail-closed）")
+                return false
+            }
+
+            val encryptedKey = encryptWithKeystore(key)
+            val encryptedServerUrl = encryptWithKeystore(serverUrl)
 
             prefs.edit()
                 .putString(KEY_KEY, encryptedKey)
                 .putString(SERVER_URL_KEY, encryptedServerUrl)
+                .putInt(KEY_VERSION_KEY, CURRENT_KEY_VERSION)
                 .apply()
-            protected
+            true
         } catch (e: Exception) {
-            android.util.Log.w("KeyStorage", "Keystore 加密存储失败，降级为明文保存", e)
-            val prefs = context.getSharedPreferences(ENCRYPTION_PREFERENCE, Context.MODE_PRIVATE)
-            prefs.edit()
-                .putString(KEY_KEY, key)
-                .putString(SERVER_URL_KEY, serverUrl)
-                .apply()
+            android.util.Log.w("KeyStorage", "保存设备密钥失败（fail-closed）", e)
             false
         }
     }
 
     fun getKey(context: Context): String? {
-        try {
+        return try {
+            ensureInitialized()
             val prefs = context.getSharedPreferences(ENCRYPTION_PREFERENCE, Context.MODE_PRIVATE)
-            val encryptedKey = prefs.getString(KEY_KEY, null) ?: return null
-
-            return if (keyStore != null && keyExistsInKeystore() && !isHexKey(encryptedKey)) {
-                decryptWithKeystore(encryptedKey)
-            } else {
-                encryptedKey
+            if (prefs.getInt(KEY_VERSION_KEY, 0) != CURRENT_KEY_VERSION) {
+                return null
             }
+            val encryptedKey = prefs.getString(KEY_KEY, null) ?: return null
+            if (keyStore == null || !keyExistsInKeystore()) {
+                return null
+            }
+            decryptWithKeystore(encryptedKey)
         } catch (e: Exception) {
-            return null
+            null
         }
     }
 
     fun getServerUrl(context: Context): String? {
-        try {
+        return try {
+            ensureInitialized()
             val prefs = context.getSharedPreferences(ENCRYPTION_PREFERENCE, Context.MODE_PRIVATE)
-            val encryptedUrl = prefs.getString(SERVER_URL_KEY, null) ?: return null
-
-            return if (keyStore != null && keyExistsInKeystore() && !isHttpUrl(encryptedUrl)) {
-                decryptWithKeystore(encryptedUrl)
-            } else {
-                encryptedUrl
+            if (prefs.getInt(KEY_VERSION_KEY, 0) != CURRENT_KEY_VERSION) {
+                return null
             }
+            val encryptedUrl = prefs.getString(SERVER_URL_KEY, null) ?: return null
+            if (keyStore == null || !keyExistsInKeystore()) {
+                return null
+            }
+            decryptWithKeystore(encryptedUrl)
         } catch (e: Exception) {
-            return null
+            null
         }
     }
 
@@ -107,6 +120,7 @@ object KeyStorage {
             prefs.edit()
                 .remove(KEY_KEY)
                 .remove(SERVER_URL_KEY)
+                .remove(KEY_VERSION_KEY)
                 .apply()
 
             deleteKeyFromKeystore()
@@ -150,8 +164,7 @@ object KeyStorage {
             keyGenerator.init(keyGenSpec)
             keyGenerator.generateKey()
         } catch (e: Exception) {
-            // Keystore 不可用时静默降级：saveKey 会回退为明文存储
-            android.util.Log.w("KeyStorage", "createKeyInKeystore failed, fallback to plaintext", e)
+            android.util.Log.w("KeyStorage", "createKeyInKeystore failed", e)
         }
     }
 
@@ -194,13 +207,4 @@ object KeyStorage {
         val plaintext = cipher.doFinal(ciphertext)
         return String(plaintext, Charsets.UTF_8)
     }
-
-    private fun isHexKey(s: String): Boolean {
-        return s.matches(Regex("[0-9a-fA-F]{64}"))
-    }
-
-    private fun isHttpUrl(s: String): Boolean {
-        return s.startsWith("http://") || s.startsWith("https://")
-    }
 }
-   

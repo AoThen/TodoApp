@@ -104,15 +104,26 @@ class CryptoInterceptorTest {
     }
 
     @Test
-    fun `无密钥时请求透传不加密`() {
+    fun `无密钥时加密接口 fail-closed 返回错误且不透传`() {
         every { KeyStorage.getKey(any()) } returns null
         interceptor.refreshKey()
 
         val request = jsonRequest("http://10.0.2.2:8080/api/v1/tasks", "POST", """{"title":"t"}""")
-        val sent = proceedRequest(mockChain(request))
+        val chain = mockChain(request)
+        val response = interceptor.intercept(chain)
 
+        assertEquals(500, response.code)
+        verify(exactly = 0) { chain.proceed(any()) }
+    }
+
+    @Test
+    fun `无密钥时未加密接口仍可透传`() {
+        every { KeyStorage.getKey(any()) } returns null
+        interceptor.refreshKey()
+
+        val request = jsonRequest("http://10.0.2.2:8080/api/v1/auth/login", "POST", """{"email":"a@b.c"}""")
+        val sent = proceedRequest(mockChain(request))
         assertNull(sent.header("X-Encrypted"))
-        assertNull(sent.header("X-Accept-Encrypted"))
     }
 
     @Test

@@ -48,6 +48,26 @@ class NotificationWebSocket(
         }
     }
 
+    private fun getDeviceId(ctx: Context): String {
+        return try {
+            val prefs = ctx.getSharedPreferences("TodoAppPrefs", Context.MODE_PRIVATE)
+            val existing = prefs.getString("device_id", null)
+            if (!existing.isNullOrEmpty()) {
+                return existing
+            }
+            val id = android.provider.Settings.Secure.getString(
+                ctx.contentResolver,
+                android.provider.Settings.Secure.ANDROID_ID
+            ) ?: ""
+            if (id.isNotEmpty()) {
+                prefs.edit().putString("device_id", id).apply()
+            }
+            id
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
     fun connect() {
         // 防止重叠建连泄漏：先静默取消旧连接（cancel 不会触发 onClosed/onFailure 重连回调）
         webSocket?.cancel()
@@ -56,9 +76,11 @@ class NotificationWebSocket(
 
         val serverAddress = getServerAddress()
         val encryptionParam = if (encryptionEnabled) "&encryption=true" else ""
+        val deviceId = getDeviceId(context)
+        val deviceParam = if (deviceId.isNotEmpty()) "&device_id=$deviceId" else ""
         // 与服务端协议保持一致：https 用 wss，http 用 ws
         val wsProtocol = if (com.todoapp.data.remote.RetrofitClient.getBaseUrl().startsWith("https")) "wss://" else "ws://"
-        val url = "$wsProtocol$serverAddress/ws?token=$token$encryptionParam"
+        val url = "$wsProtocol$serverAddress/ws?token=$token$encryptionParam$deviceParam"
         val request = Request.Builder()
             .url(url)
             .build()
@@ -75,7 +97,7 @@ class NotificationWebSocket(
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                handleMessage(bytes.toByteArray(), true)
+                handleMessage(bytes.toByteArray(), encryptionEnabled)
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
@@ -100,7 +122,8 @@ class NotificationWebSocket(
         val handshake = JSONObject().apply {
             put("type", "handshake")
             put("encryption", encryptionEnabled)
-            put("timestamp", System.currentTimeMillis())
+            // 与服务端 Message.Timestamp(string) 对齐，必须是字符串
+            put("timestamp", System.currentTimeMillis().toString())
         }
         send(handshake, false)
     }
@@ -124,8 +147,11 @@ class NotificationWebSocket(
                         throw e
                     }
                 } else {
-                    data as? String
-                        ?: throw IllegalArgumentException("明文消息载荷类型异常")
+                    when (data) {
+                        is String -> data
+                        is ByteArray -> String(data, Charsets.UTF_8)
+                        else -> throw IllegalArgumentException("明文消息载荷类型异常")
+                    }
                 }
 
                 val json = JSONObject(jsonString)
@@ -170,8 +196,8 @@ class NotificationWebSocket(
                         val encryptedBytes = AesGcmManager.encryptBytes(messageStr.toByteArray(Charsets.UTF_8), key)
                         webSocket?.send(okio.ByteString.of(*encryptedBytes))
                     } else {
-                        android.util.Log.w(Config.TAG, "No encryption key available, sending unencrypted")
-                        webSocket?.send(messageStr)
+                        // fail-closed：缺少设备密钥时丢弃消息，绝不降级为明文
+                        android.util.Log.e(Config.TAG, "No encryption key available, dropping message (fail-closed)")
                     }
                 } else {
                     webSocket?.send(messageStr)

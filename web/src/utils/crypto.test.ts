@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
 import { webcrypto } from 'node:crypto';
-import { encrypt, decrypt, generateKey, setDeviceKey, clearDeviceKey, isEncryptionConfigured } from './crypto';
+import { encrypt, decrypt, generateKey, setDeviceKey, clearDeviceKey, isEncryptionConfigured, generateClientEphemeralKey, unwrapDeviceKey } from './crypto';
 
 const KEY_HEX = 'a'.repeat(64);
 
@@ -85,11 +85,111 @@ describe('crypto (WebCrypto AES-GCM)', () => {
     errSpy.mockRestore();
   });
 
-  it('无存储密钥时回退 VITE_DEVICE_KEY 环境变量', async () => {
-    vi.stubEnv('VITE_DEVICE_KEY', KEY_HEX);
-    expect(isEncryptionConfigured()).toBe(true);
-    const ct = await encrypt('env key works');
-    expect(await decrypt(ct)).toBe('env key works');
-    vi.unstubAllEnvs();
+  it('localStorage 读取失败时视为未配置', () => {
+    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('denied');
+    });
+    expect(isEncryptionConfigured()).toBe(false);
+    spy.mockRestore();
+  });
+});
+
+function bytesToB64(input: ArrayBuffer | Uint8Array): string {
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return out;
+}
+
+function concatU8(...parts: Uint8Array[]): Uint8Array {
+  const total = parts.reduce((n, p) => n + p.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+// 模拟服务端 WrapDeviceKey：用客户端公钥包装设备密钥，验证客户端能解包
+async function serverWrap(
+  clientPublicSpki: ArrayBuffer,
+  deviceKeyHex: string,
+  deviceId: string,
+  pairingKey: string
+): Promise<{ wrapped: string; serverPub: string; nonce: string }> {
+  const serverKp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveBits']);
+  const serverSpki = await crypto.subtle.exportKey('spki', serverKp.publicKey);
+  const clientPub = await crypto.subtle.importKey('spki', clientPublicSpki, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+  const shared = await crypto.subtle.deriveBits({ name: 'ECDH', public: clientPub }, serverKp.privateKey, 256);
+
+  const clientDer = new Uint8Array(clientPublicSpki);
+  const serverDer = new Uint8Array(serverSpki);
+  const salt = await crypto.subtle.digest('SHA-256', concatU8(clientDer, serverDer));
+  const info = new TextEncoder().encode(`todoapp/device-key-v2|${deviceId}`);
+  const hkdfKey = await crypto.subtle.importKey('raw', shared, 'HKDF', false, ['deriveKey']);
+  const kek = await crypto.subtle.deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt, info },
+    hkdfKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt']
+  );
+
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const aad = concatU8(
+    clientDer,
+    serverDer,
+    new TextEncoder().encode(deviceId),
+    new TextEncoder().encode(pairingKey)
+  );
+  const ct = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: nonce, additionalData: aad },
+    kek,
+    hexToBytes(deviceKeyHex)
+  );
+
+  return { wrapped: bytesToB64(ct), serverPub: bytesToB64(serverSpki), nonce: bytesToB64(nonce) };
+}
+
+describe('crypto (ECDH 每设备密钥领取)', () => {
+  it('客户端可解包服务端包装的每设备密钥', async () => {
+    const client = await generateClientEphemeralKey();
+    const deviceKeyHex = 'b'.repeat(64);
+    const envelope = await serverWrap(client.publicKeySpki, deviceKeyHex, 'dev-1', 'pair-1');
+
+    const got = await unwrapDeviceKey(
+      client.privateKey,
+      client.publicKeySpki,
+      envelope.serverPub,
+      envelope.wrapped,
+      envelope.nonce,
+      'dev-1',
+      'pair-1'
+    );
+    expect(got).toBe(deviceKeyHex);
+  });
+
+  it('错误配对码导致解包失败', async () => {
+    const client = await generateClientEphemeralKey();
+    const envelope = await serverWrap(client.publicKeySpki, 'c'.repeat(64), 'dev-1', 'pair-1');
+    await expect(
+      unwrapDeviceKey(
+        client.privateKey,
+        client.publicKeySpki,
+        envelope.serverPub,
+        envelope.wrapped,
+        envelope.nonce,
+        'dev-1',
+        'pair-WRONG'
+      )
+    ).rejects.toThrow();
   });
 });

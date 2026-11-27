@@ -20,6 +20,8 @@ import Pagination from './components/tasks/Pagination';
 import BatchActionBar from './components/tasks/BatchActionBar';
 import ConflictsModal from './components/tasks/ConflictsModal';
 import NotificationSystem from './components/NotificationSystem';
+import { clearDeviceKey } from './utils/crypto';
+import { clearWebDeviceId } from './services/deviceKey';
 import { toast } from 'react-toastify';
 import './App.css';
 
@@ -430,6 +432,8 @@ const AppContent: React.FC = () => {
   const handleLogout = async () => {
     websocketService.disconnect();
     await apiService.logout();
+    clearDeviceKey();
+    clearWebDeviceId();
     setAuthToken(null);
     setTasks([]);
     setIsAdmin(false);

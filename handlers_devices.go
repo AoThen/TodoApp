@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -16,8 +17,10 @@ import (
 )
 
 import (
+	"todoapp/internal/crypto"
 	"todoapp/internal/db"
 	"todoapp/internal/response"
+	"todoapp/internal/websocket"
 )
 
 func handleInitPairing(w http.ResponseWriter, r *http.Request) {
@@ -68,11 +71,10 @@ func handleInitPairing(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.SuccessResponse(w, map[string]interface{}{
-		"key":            key,
-		"device_id":      req.DeviceID,
-		"server_url":     serverURL,
-		"expires_at":     expiresAt,
-		"encryption_key": os.Getenv("ENCRYPTION_KEY"),
+		"key":        key,
+		"device_id":  req.DeviceID,
+		"server_url": serverURL,
+		"expires_at": expiresAt,
 	}, http.StatusOK)
 }
 
@@ -98,9 +100,10 @@ func handleDevicePairing(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Key        string `json:"key"`
-		DeviceType string `json:"device_type"`
-		DeviceID   string `json:"device_id"`
+		Key             string `json:"key"`
+		DeviceType      string `json:"device_type"`
+		DeviceID        string `json:"device_id"`
+		ClientPublicKey string `json:"client_public_key"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -124,6 +127,16 @@ func handleDevicePairing(w http.ResponseWriter, r *http.Request) {
 	validDeviceTypes := map[string]bool{"web": true, "android": true, "ios": true}
 	if !validDeviceTypes[req.DeviceType] {
 		response.ErrorResponse(w, "无效的设备类型", http.StatusBadRequest)
+		return
+	}
+
+	// 客户端临时公钥为必填，用于包装每设备密钥
+	if req.ClientPublicKey == "" {
+		response.ErrorResponse(w, "缺少客户端公钥", http.StatusBadRequest)
+		return
+	}
+	if _, err := crypto.ParsePublicKeySPKI(req.ClientPublicKey); err != nil {
+		response.ErrorResponse(w, "客户端公钥格式无效", http.StatusBadRequest)
 		return
 	}
 
@@ -157,9 +170,30 @@ func handleDevicePairing(w http.ResponseWriter, r *http.Request) {
 		serverURL = "http://localhost:8080"
 	}
 
-	// 注册设备
-	err = db.RegisterDevice(userID, req.DeviceType, req.DeviceID, req.Key, serverURL)
+	// 生成每设备随机密钥，并用客户端临时公钥包装后下发
+	deviceKeyHex := crypto.GenerateKey()
+	wrappedKey, serverPublicKey, nonce, err := crypto.WrapDeviceKey(req.ClientPublicKey, deviceKeyHex, req.DeviceID, req.Key)
 	if err != nil {
+		log.Printf("包装设备密钥失败: %v", err)
+		response.ErrorResponse(w, "设备密钥包装失败", http.StatusInternalServerError)
+		return
+	}
+
+	// 用服务端 KEK 封装后入库，避免数据库文件泄露时设备密钥明文可见
+	sealedKey, err := crypto.SealWithKEK(deviceKEK, deviceKeyHex, req.DeviceID)
+	if err != nil {
+		log.Printf("封装设备密钥失败: %v", err)
+		response.ErrorResponse(w, "设备密钥包装失败", http.StatusInternalServerError)
+		return
+	}
+
+	// 注册设备
+	err = db.RegisterDevice(userID, req.DeviceType, req.DeviceID, req.Key, serverURL, sealedKey)
+	if err != nil {
+		if errors.Is(err, db.ErrDeviceOwnedByOther) {
+			response.ErrorResponse(w, "设备已被其他账号占用", http.StatusConflict)
+			return
+		}
 		log.Printf("设备注册失败: %v", err)
 		response.ErrorResponse(w, "设备注册失败", http.StatusInternalServerError)
 		return
@@ -174,9 +208,13 @@ func handleDevicePairing(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.SuccessResponse(w, map[string]interface{}{
-		"status":     "paired",
-		"device_id":  req.DeviceID,
-		"server_url": serverURL,
+		"status":            "paired",
+		"device_id":         req.DeviceID,
+		"server_url":        serverURL,
+		"wrapped_key":       wrappedKey,
+		"server_public_key": serverPublicKey,
+		"nonce":             nonce,
+		"key_exchange":      crypto.DeviceKeyWrapInfoPrefix,
 	}, http.StatusOK)
 }
 
@@ -235,13 +273,14 @@ func handleRegenerateDeviceKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 生成新密钥
-	newKey := generateRandomKey()
-
-	// 更新数据库
-	err = db.RegeneratePairingKey(deviceID, newKey)
+	// 重新生成用于该设备的配对码：以新的待配对记录下发，避免覆盖活动设备的密钥导致无法再配对
+	deviceType, typeErr := db.GetDeviceTypeByDeviceID(deviceID)
+	if typeErr != nil || deviceType == "" {
+		deviceType = "android"
+	}
+	newKey, expiresAt, err := db.CreatePendingPairing(currentUserID, deviceType)
 	if err != nil {
-		log.Printf("密钥更新失败: %v", err)
+		log.Printf("重新生成配对密钥失败: %v", err)
 		response.ErrorResponse(w, "密钥更新失败", http.StatusInternalServerError)
 		return
 	}
@@ -253,12 +292,13 @@ func handleRegenerateDeviceKey(w http.ResponseWriter, r *http.Request) {
 		"new_key":    newKey,
 		"device_id":  deviceID,
 		"server_url": serverURL,
+		"expires_at": expiresAt,
 	}, http.StatusOK)
 }
 
 // handleRevokeDevice 撤销设备
 
-func handleRevokeDevice(w http.ResponseWriter, r *http.Request) {
+func handleRevokeDevice(w http.ResponseWriter, r *http.Request, wsHub *websocket.Hub) {
 	vars := mux.Vars(r)
 	deviceID := vars["id"]
 
@@ -297,20 +337,15 @@ func handleRevokeDevice(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("用户 %d 撤销了设备 %s", currentUserID, deviceID)
 
+	// 立即断开该设备的在线实时消息连接，使撤销即时生效
+	if wsHub != nil {
+		wsHub.CloseDevice(int64(currentUserID), deviceID)
+	}
+
 	response.SuccessResponse(w, map[string]interface{}{
 		"status":    "revoked",
 		"device_id": deviceID,
 	}, http.StatusOK)
-}
-
-// generateRandomKey 生成32字节随机密钥（hex格式，64字符）
-
-func generateRandomKey() string {
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		log.Fatalf("生成随机密钥失败: %v", err)
-	}
-	return hex.EncodeToString(bytes)
 }
 
 // toImportString 安全地转换JSON中的值为字符串（用于导入功能）

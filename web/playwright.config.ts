@@ -25,7 +25,7 @@ export default defineConfig({
           timeout: 120_000,
           env: {
             JWT_SECRET: 'e2e-test-secret-key-1234567890abcdef',
-            ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+            DEVICE_KEY_KEK: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
             INITIAL_ADMIN_EMAIL: ADMIN_EMAIL,
             INITIAL_ADMIN_PASSWORD: ADMIN_PASSWORD,
             SERVER_PORT: '8080',

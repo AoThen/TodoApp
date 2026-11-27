@@ -1,16 +1,19 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 
 	"todoapp/internal/crypto"
+	"todoapp/internal/db"
 	"todoapp/internal/websocket"
 )
 
@@ -37,7 +40,33 @@ func buildRouter(wsHub *websocket.Hub, enforceWSEncryption bool, serverPort stri
 	protected := router.PathPrefix("/api/v1").Subrouter()
 	protected.Use(authMiddleware)
 
-	em := crypto.GetEncryptionMiddleware()
+	// 按 (用户, 设备) 解析该请求所属设备的密钥；找不到即 fail-closed
+	resolveDeviceKey := func(r *http.Request) (*crypto.CryptoManager, error) {
+		userIDStr := getUserIDFromContext(r.Context())
+		deviceID := getDeviceIDFromContext(r.Context())
+		if userIDStr == "" || deviceID == "" {
+			return nil, errors.New("缺少用户或设备标识")
+		}
+		userID, err := strconv.Atoi(userIDStr)
+		if err != nil {
+			return nil, errors.New("无效的用户ID")
+		}
+		sealed, found, err := db.GetDeviceEncryptionKeySealed(userID, deviceID)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			return nil, errors.New("设备未配对或已撤销")
+		}
+		keyHex, err := crypto.OpenWithKEK(deviceKEK, sealed, deviceID)
+		if err != nil {
+			return nil, errors.New("设备密钥不可用")
+		}
+		return crypto.NewManagerFromHex(keyHex)
+	}
+
+	requireHTTPEncryption := os.Getenv("REQUIRE_HTTP_ENCRYPTION") == "true"
+	em := crypto.NewEncryptionMiddleware(resolveDeviceKey, requireHTTPEncryption)
 	protected.Use(em.DecryptRequest)
 	protected.Use(em.EncryptResponse)
 
@@ -68,7 +97,9 @@ func buildRouter(wsHub *websocket.Hub, enforceWSEncryption bool, serverPort stri
 	protected.HandleFunc("/devices/pair", handleDevicePairing).Methods("POST")
 	protected.HandleFunc("/devices", handleListDevices).Methods("GET")
 	protected.HandleFunc("/devices/{id}/regenerate", handleRegenerateDeviceKey).Methods("POST")
-	protected.HandleFunc("/devices/{id}", handleRevokeDevice).Methods("DELETE")
+	protected.HandleFunc("/devices/{id}", func(w http.ResponseWriter, r *http.Request) {
+		handleRevokeDevice(w, r, wsHub)
+	}).Methods("DELETE")
 
 	// Admin routes (requires authentication and admin role)
 	admin := router.PathPrefix("/api/v1/admin").Subrouter()
@@ -113,7 +144,7 @@ func buildRouter(wsHub *websocket.Hub, enforceWSEncryption bool, serverPort stri
 	corsHandler := handlers.CORS(
 		handlers.AllowedOrigins(getAllowedOrigins(serverPort)),
 		handlers.AllowedMethods([]string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}),
-		handlers.AllowedHeaders([]string{"Content-Type", "Authorization", "X-User-ID", "X-Request-ID"}),
+		handlers.AllowedHeaders([]string{"Content-Type", "Authorization", "X-User-ID", "X-Request-ID", "X-Device-ID", "X-Encrypted", "X-Accept-Encrypted"}),
 		handlers.AllowCredentials(),
 	)(router)
 

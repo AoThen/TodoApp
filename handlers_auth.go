@@ -253,4 +253,7 @@ type task struct {
 	ID          int    `json:"id,omitempty"`
 	Title       string `json:"title"`
 	Description string `json:"description,omitempty"`
+	Status      string `json:"status,omitempty"`
+	Priority    string `json:"priority,omitempty"`
+	DueAt       string `json:"due_at,omitempty"`
 }

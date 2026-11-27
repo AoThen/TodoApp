@@ -10,6 +10,7 @@ services:
       - "8080:8080"
     environment:
       - JWT_SECRET=${JWT_SECRET:?必须在 .env 或环境中设置 JWT_SECRET（至少 32 字符）}
+      - DEVICE_KEY_KEK=${DEVICE_KEY_KEK:?必须在 .env 或环境中设置 DEVICE_KEY_KEK（64 位 hex）}
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - SERVER_PORT=${SERVER_PORT:-8080}
       - DATABASE_URL=/app/data/todoapp.db

@@ -20,7 +20,7 @@ jobs:
       - name: Run Go tests
         env:
           JWT_SECRET: test-secret-key-for-unit-tests-1234567890
-          ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+          DEVICE_KEY_KEK: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         run: go test -v -count=1 -race -tags sqlite_fts5 -covermode=atomic -coverprofile=coverage.out ./...
 
       - name: Upload Go coverage

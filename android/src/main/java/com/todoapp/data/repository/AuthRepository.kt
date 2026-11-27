@@ -49,8 +49,10 @@ class AuthRepository @Inject constructor(
                 // 离线或会话已失效时也允许本地登出
                 android.util.Log.w("AuthRepository", "Server logout failed, clearing local session anyway", e)
             } finally {
-                // 无论服务端登出是否成功，本地会话都必须清除
+                // 无论服务端登出是否成功，本地会话与每设备密钥都必须清除（换账号后需重新配对）
                 RetrofitClient.clearToken(context)
+                com.todoapp.data.crypto.KeyStorage.clearKey(context)
+                com.todoapp.data.crypto.CryptoInterceptor.getInstance(context.applicationContext).refreshKey()
             }
             Result.success(Unit)
         }

@@ -22,7 +22,13 @@ vi.mock('./services/api', () => ({
     logout: vi.fn(async () => undefined),
     batchDeleteTasks: vi.fn(async () => undefined),
     restoreTask: vi.fn(async () => undefined),
-    getClient: vi.fn(async () => ({ key: '', server_url: '' })),
+    getClient: vi.fn(() => ({
+      get: vi.fn(async () => ({ data: { users: [], pagination: { page: 1, page_size: 10, total: 0, pages: 0, has_prev: false, has_next: false } } })),
+      post: vi.fn(async () => ({ data: {} })),
+      patch: vi.fn(async () => ({ data: {} })),
+      put: vi.fn(async () => ({ data: {} })),
+      delete: vi.fn(async () => ({ data: {} })),
+    })),
   },
 }));
 

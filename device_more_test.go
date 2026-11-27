@@ -4,11 +4,14 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"todoapp/internal/crypto"
 )
 
 // pairDevice 走完 init → pair 流程，返回 pair 响应 data。
 func pairDevice(t *testing.T, token, deviceID string) map[string]interface{} {
 	t.Helper()
+	clientPub, _, _ := testClientKeyPair(t)
 	_, out := doJSON(t, http.MethodPost, "/api/v1/devices/pair/init", token, map[string]string{
 		"device_type": "android", "device_id": deviceID,
 	})
@@ -17,7 +20,7 @@ func pairDevice(t *testing.T, token, deviceID string) map[string]interface{} {
 		t.Fatalf("init 配对应返回 key: %v", out)
 	}
 	resp, out := doJSON(t, http.MethodPost, "/api/v1/devices/pair", token, map[string]string{
-		"key": key, "device_type": "android", "device_id": deviceID,
+		"key": key, "device_type": "android", "device_id": deviceID, "client_public_key": clientPub,
 	})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("pair 应 200, got %d %v", resp.StatusCode, out)
@@ -45,11 +48,12 @@ func TestDevicePairInvalidInputs(t *testing.T) {
 
 func TestDevicePairDuplicateKey(t *testing.T) {
 	cleanTables(t)
+	clientPub, _, _ := testClientKeyPair(t)
 	_, out := doJSON(t, http.MethodPost, "/api/v1/devices/pair/init", userTok, map[string]string{
 		"device_type": "android", "device_id": "dev-dup",
 	})
 	key := dataMap(out)["key"].(string)
-	body := map[string]string{"key": key, "device_type": "android", "device_id": "dev-dup"}
+	body := map[string]string{"key": key, "device_type": "android", "device_id": "dev-dup", "client_public_key": clientPub}
 	resp, _ := doJSON(t, http.MethodPost, "/api/v1/devices/pair", userTok, body)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("首次配对应 200, got %d", resp.StatusCode)
@@ -58,6 +62,46 @@ func TestDevicePairDuplicateKey(t *testing.T) {
 	if resp.StatusCode != http.StatusConflict {
 		t.Errorf("重复配对同 key 应 409, got %d", resp.StatusCode)
 	}
+}
+
+// TestDevicePairReturnsPerDeviceKey 验证 pair 返回可解包的、每设备独立的密钥。
+func TestDevicePairReturnsPerDeviceKey(t *testing.T) {
+	cleanTables(t)
+	key1 := pairDeviceAndUnwrap(t, userTok, "dev-key-1")
+	key2 := pairDeviceAndUnwrap(t, userTok, "dev-key-2")
+	if len(key1) != 64 || len(key2) != 64 {
+		t.Fatalf("设备密钥应为 64 字符 hex, got %q / %q", key1, key2)
+	}
+	if key1 == key2 {
+		t.Error("不同设备应得到不同的密钥")
+	}
+}
+
+func pairDeviceAndUnwrap(t *testing.T, token, deviceID string) string {
+	t.Helper()
+	clientPub, clientPriv, clientDER := testClientKeyPair(t)
+	_, out := doJSON(t, http.MethodPost, "/api/v1/devices/pair/init", token, map[string]string{
+		"device_type": "android", "device_id": deviceID,
+	})
+	key := dataMap(out)["key"].(string)
+	resp, out := doJSON(t, http.MethodPost, "/api/v1/devices/pair", token, map[string]string{
+		"key": key, "device_type": "android", "device_id": deviceID, "client_public_key": clientPub,
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("pair 应 200, got %d %v", resp.StatusCode, out)
+	}
+	data := dataMap(out)
+	wrapped, _ := data["wrapped_key"].(string)
+	serverPub, _ := data["server_public_key"].(string)
+	nonce, _ := data["nonce"].(string)
+	if wrapped == "" || serverPub == "" || nonce == "" {
+		t.Fatalf("pair 响应应含 wrapped_key/server_public_key/nonce: %v", data)
+	}
+	deviceKey, err := crypto.UnwrapDeviceKey(clientPriv, clientDER, serverPub, wrapped, nonce, deviceID, key)
+	if err != nil {
+		t.Fatalf("解包设备密钥失败: %v", err)
+	}
+	return deviceKey
 }
 
 func TestDeviceRegenerateReturnsNewKey(t *testing.T) {

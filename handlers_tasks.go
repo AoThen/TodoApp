@@ -92,6 +92,22 @@ func handleTasks(w http.ResponseWriter, r *http.Request) {
 			response.ErrorResponse(w, "标题长度需在1-200字符之间", http.StatusBadRequest)
 			return
 		}
+		if t.Status != "" && !isValidTaskStatus(t.Status) {
+			response.ErrorResponse(w, "任务状态无效", http.StatusBadRequest)
+			return
+		}
+		if t.Priority != "" && !isValidTaskPriority(t.Priority) {
+			response.ErrorResponse(w, "优先级无效", http.StatusBadRequest)
+			return
+		}
+		if t.DueAt != "" {
+			if _, err := time.Parse(time.RFC3339, t.DueAt); err != nil {
+				if _, err2 := time.Parse("2006-01-02", t.DueAt); err2 != nil {
+					response.ErrorResponse(w, "截止日期格式无效", http.StatusBadRequest)
+					return
+				}
+			}
+		}
 
 		userIDStr := getUserIDFromContext(r.Context())
 		userID := 0
@@ -109,10 +125,16 @@ func handleTasks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		taskID, err := db.CreateTask(userID, "", t.Title)
+		taskID, err := db.CreateTaskFull(userID, "", t.Title, t.Description, t.Status, t.Priority, t.DueAt)
 		if err != nil {
 			log.Printf("创建任务失败: %v", err)
 			response.ErrorResponse(w, "创建任务失败", http.StatusInternalServerError)
+			return
+		}
+
+		// 返回完整任务对象，与 GET 单条保持一致
+		if created, getErr := db.GetTaskByID(taskID, userID); getErr == nil {
+			response.SuccessResponse(w, created, http.StatusCreated)
 			return
 		}
 
@@ -411,3 +433,19 @@ func recordConflict(localID string, serverID int64, reason string, userID int) {
 }
 
 // randomString 生成随机字符串（用于local_id冲突处理）
+
+func isValidTaskStatus(s string) bool {
+	switch s {
+	case "todo", "in_progress", "done", "archived":
+		return true
+	}
+	return false
+}
+
+func isValidTaskPriority(s string) bool {
+	switch s {
+	case "low", "medium", "high":
+		return true
+	}
+	return false
+}

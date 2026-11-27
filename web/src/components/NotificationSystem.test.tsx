@@ -41,6 +41,11 @@ vi.mock('../services/websocket', () => ({
 vi.mock('../services/api', () => ({
   apiService: mockApiService,
 }));
+vi.mock('../services/deviceKey', () => ({
+  ensureDeviceKey: vi.fn(async () => true),
+  getOrCreateWebDeviceId: () => 'web-device-1',
+  clearWebDeviceId: vi.fn(),
+}));
 vi.mock('react-toastify', () => ({ toast: mockToast }));
 
 // NotificationCenter 被 mock，避免其内部再次实例化服务干扰断言
@@ -61,7 +66,7 @@ describe('NotificationSystem', () => {
 
   it('挂载后建立 WebSocket 连接、注册消息处理器并拉取未读数', async () => {
     render(<NotificationSystem token="token-1" />);
-    await waitFor(() => expect(mockWs.connect).toHaveBeenCalledWith('token-1', true));
+    await waitFor(() => expect(mockWs.connect).toHaveBeenCalledWith('token-1', true, false, 'web-device-1'));
     expect(mockWs.onMessage).toHaveBeenCalledWith('notification', expect.any(Function));
     await waitFor(() => expect(mockService.getUnreadCount).toHaveBeenCalled());
     expect(mockApiService.getClient).toHaveBeenCalled();

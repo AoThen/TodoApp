@@ -227,7 +227,7 @@ class ApiService {
     server_changes: Array<{
       id: number;
       server_version: number;
-      title: string;
+      title?: string;
       updated_at: string;
       is_deleted: boolean;
     }>;
@@ -267,7 +267,7 @@ class ApiService {
     return response.data;
   }
 
-  async importTasks(data: unknown): Promise<{ imported: number; skipped: number; inserted_ids: number[] }> {
+  async importTasks(data: unknown): Promise<{ status: string; imported: number; skipped: number; inserted_ids: number[] }> {
     const response = await this.client.post('/import', data);
     return response.data;
   }
@@ -281,7 +281,7 @@ class ApiService {
   }
 
   // User operations
-  async getCurrentUser(): Promise<{ id: string; email: string }> {
+  async getCurrentUser(): Promise<{ id: number; email: string }> {
     const response = await this.client.get('/users/me');
     return response.data;
   }
@@ -305,7 +305,6 @@ class ApiService {
     device_id: string;
     server_url: string;
     expires_at: string;
-    encryption_key: string;
   }> {
     const response = await this.client.post('/devices/pair/init', {
       device_type: deviceType,
@@ -314,8 +313,22 @@ class ApiService {
     return response.data;
   }
 
-  async pairDevice(data: { key: string; device_type: string; device_id: string }): Promise<void> {
-    await this.client.post('/devices/pair', data);
+  async pairDevice(data: {
+    key: string;
+    device_type: string;
+    device_id: string;
+    client_public_key: string;
+  }): Promise<{
+    status: string;
+    device_id: string;
+    server_url: string;
+    wrapped_key: string;
+    server_public_key: string;
+    nonce: string;
+    key_exchange: string;
+  }> {
+    const response = await this.client.post('/devices/pair', data);
+    return response.data;
   }
 
   async regenerateKey(deviceId: string): Promise<{ new_key: string }> {

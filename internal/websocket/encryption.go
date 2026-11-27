@@ -32,10 +32,10 @@ type HandshakeResp struct {
 	Timestamp         string `json:"timestamp"`
 }
 
-// NewWebSocketEncryptor 创建加密器
-func NewWebSocketEncryptor(enabled bool, clientID string) *WebSocketEncryptor {
+// NewWebSocketEncryptor 创建加密器（cm 为该连接所属设备的密钥管理器）
+func NewWebSocketEncryptor(enabled bool, clientID string, cm *crypto.CryptoManager) *WebSocketEncryptor {
 	return &WebSocketEncryptor{
-		cm:       crypto.GetManager(),
+		cm:       cm,
 		enabled:  enabled,
 		clientID: clientID,
 		ready:    !enabled, // 不加密模式下直接就绪
@@ -46,6 +46,9 @@ func NewWebSocketEncryptor(enabled bool, clientID string) *WebSocketEncryptor {
 func (we *WebSocketEncryptor) EncryptMessage(msg []byte) ([]byte, error) {
 	if !we.enabled {
 		return msg, nil
+	}
+	if we.cm == nil {
+		return nil, errors.New("websocket: 未配置设备加密密钥")
 	}
 
 	encryptedBytes, err := we.cm.EncryptBytes(msg)
@@ -60,6 +63,9 @@ func (we *WebSocketEncryptor) EncryptMessage(msg []byte) ([]byte, error) {
 func (we *WebSocketEncryptor) DecryptMessage(encryptedData []byte) ([]byte, error) {
 	if !we.enabled {
 		return encryptedData, nil
+	}
+	if we.cm == nil {
+		return nil, errors.New("websocket: 未配置设备加密密钥")
 	}
 
 	decrypted, err := we.cm.DecryptBytes(encryptedData)

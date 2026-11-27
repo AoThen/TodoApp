@@ -1,41 +1,12 @@
-import axios, { AxiosInstance } from 'axios';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1';
+import { AxiosInstance } from 'axios';
+import { apiService } from './api';
 
 class AdminService {
   private client: AxiosInstance;
 
   constructor() {
-    this.client = axios.create({
-      baseURL: API_BASE_URL,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      withCredentials: true,
-    });
-
-    this.client.interceptors.request.use((config) => {
-      const token = localStorage.getItem('access_token');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-      return config;
-    });
-
-    // 与 api.ts 一致：后端统一返回 {success, data} 包裹结构，此处解包使调用方直接拿到业务数据
-    this.client.interceptors.response.use((response) => {
-      const body = response.data;
-      if (
-        body &&
-        typeof body === 'object' &&
-        'success' in body &&
-        'data' in body &&
-        !Array.isArray(body)
-      ) {
-        response.data = (body as { data: unknown }).data;
-      }
-      return response;
-    });
+    // 复用主客户端：鉴权头、X-Request-ID、超时、401 自动续期与 {success,data} 解包统一由 api.ts 处理
+    this.client = apiService.getClient();
   }
 
   async getUsers(params?: { page?: number; page_size?: number; email?: string; role?: string }): Promise<{ users: User[]; pagination: Pagination }> {

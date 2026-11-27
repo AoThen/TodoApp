@@ -192,7 +192,7 @@ describe('apiService', () => {
     await apiService.getDevices();
     await apiService.initPairing();
     await apiService.initPairing('tablet', 'dev-9');
-    await apiService.pairDevice({ key: 'k', device_type: 'web', device_id: 'd1' });
+    await apiService.pairDevice({ key: 'k', device_type: 'web', device_id: 'd1', client_public_key: 'pub' });
     await apiService.regenerateKey('d1');
     await apiService.revokeDevice('d1');
 
@@ -200,7 +200,7 @@ describe('apiService', () => {
     expect(getClient().get).toHaveBeenCalledWith('/devices');
     expect(getClient().post).toHaveBeenCalledWith('/devices/pair/init', { device_type: 'web', device_id: undefined });
     expect(getClient().post).toHaveBeenCalledWith('/devices/pair/init', { device_type: 'tablet', device_id: 'dev-9' });
-    expect(getClient().post).toHaveBeenCalledWith('/devices/pair', { key: 'k', device_type: 'web', device_id: 'd1' });
+    expect(getClient().post).toHaveBeenCalledWith('/devices/pair', { key: 'k', device_type: 'web', device_id: 'd1', client_public_key: 'pub' });
     expect(getClient().post).toHaveBeenCalledWith('/devices/d1/regenerate');
     expect(getClient().delete).toHaveBeenCalledWith('/devices/d1');
   });

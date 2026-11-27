@@ -6,6 +6,7 @@ import { NotificationService } from '../services/notification';
 import { websocketService } from '../services/websocket';
 import { WSMessage } from '../services/websocket';
 import { apiService } from '../services/api';
+import { ensureDeviceKey, getOrCreateWebDeviceId } from '../services/deviceKey';
 
 interface NotificationSystemProps {
   token: string;
@@ -33,7 +34,13 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({ token }) => {
     // 初始化WebSocket连接
     const initWebSocket = async () => {
       try {
-        await websocketService.connect(token, true);
+        // 加密实时消息需要本设备自己的密钥；缺失则先完成领取
+        try {
+          await ensureDeviceKey();
+        } catch (keyErr) {
+          console.error('Failed to provision device key:', keyErr);
+        }
+        await websocketService.connect(token, true, false, getOrCreateWebDeviceId());
 
         // 注册通知消息处理器
         websocketService.onMessage('notification', handleNotificationMessage);

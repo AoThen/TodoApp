@@ -22,9 +22,10 @@ import (
 type contextKey string
 
 const (
-	ctxKeyUserID contextKey = "userID"
-	ctxKeyEmail  contextKey = "email"
-	ctxKeyRole   contextKey = "role"
+	ctxKeyUserID   contextKey = "userID"
+	ctxKeyEmail    contextKey = "email"
+	ctxKeyRole     contextKey = "role"
+	ctxKeyDeviceID contextKey = "deviceID"
 )
 
 // loginAllowed 检查该 IP 在窗口期内是否还有登录尝试额度（只检查不记录，成功登录不消耗额度）
@@ -165,8 +166,10 @@ func getClientIP(r *http.Request) string {
 
 func securityMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 加密请求体为 application/octet-stream，解密后才是 JSON；此类请求跳过 Content-Type 校验
+		encryptedBody := r.Header.Get("X-Encrypted") == "true"
 		// Validate content type for POST/PUT/PATCH（导入接口使用 multipart 上传，需放行）
-		if r.Method != "GET" && r.Method != "DELETE" {
+		if r.Method != "GET" && r.Method != "DELETE" && !encryptedBody {
 			contentType := r.Header.Get("Content-Type")
 			if !strings.Contains(contentType, "application/json") && !strings.Contains(contentType, "multipart/form-data") {
 				http.Error(w, "unsupported media type", http.StatusUnsupportedMediaType)
@@ -253,6 +256,9 @@ func authMiddleware(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), ctxKeyUserID, claims.UserID)
 		ctx = context.WithValue(ctx, ctxKeyEmail, claims.Email)
 		ctx = context.WithValue(ctx, ctxKeyRole, role)
+		if deviceID := strings.TrimSpace(r.Header.Get("X-Device-ID")); deviceID != "" {
+			ctx = context.WithValue(ctx, ctxKeyDeviceID, deviceID)
+		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -303,6 +309,13 @@ func getUserIDFromContext(ctx context.Context) string {
 func getRoleFromContext(ctx context.Context) string {
 	if role, ok := ctx.Value(ctxKeyRole).(string); ok {
 		return role
+	}
+	return ""
+}
+
+func getDeviceIDFromContext(ctx context.Context) string {
+	if id, ok := ctx.Value(ctxKeyDeviceID).(string); ok {
+		return id
 	}
 	return ""
 }

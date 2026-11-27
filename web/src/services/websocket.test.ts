@@ -104,10 +104,9 @@ describe('websocketService', () => {
     await new Promise(r => setTimeout(r, 250));
 
     expect(websocketService.isConnected()).toBe(true);
-    const sentHandshake = ws.sent.some(frame => {
-      const text = new TextDecoder().decode(frame as ArrayBuffer);
-      return text.includes('"type":"handshake"');
-    });
+    const sentHandshake = ws.sent.some(
+      frame => typeof frame === 'string' && frame.includes('"type":"handshake"')
+    );
     expect(sentHandshake).toBe(true);
   });
 
