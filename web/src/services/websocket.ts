@@ -27,9 +27,9 @@ class WebSocketService {
   private ready: boolean = false;
   private messageHandlers: Map<string, (msg: WSMessage) => void> = new Map();
   private reconnectAttempts: number = 0;
-  private pingTimer: NodeJS.Timeout | null = null;
-  private reconnectTimer: NodeJS.Timeout | null = null;
-  private handshakeTimer: NodeJS.Timeout | null = null;
+  private pingTimer: number | null = null;
+  private reconnectTimer: number | null = null;
+  private handshakeTimer: number | null = null;
   private handshakeAttempts: number = 0;
 
   async connect(token: string, enableEncryption: boolean = true, isReconnect: boolean = false, deviceId?: string): Promise<void> {
@@ -123,7 +123,7 @@ class WebSocketService {
         this.ws?.close();
         return;
       }
-      this.handshakeTimer = setTimeout(attempt, 500);
+      this.handshakeTimer = window.setTimeout(attempt, 500);
     };
     attempt();
   }
@@ -223,7 +223,7 @@ class WebSocketService {
 
   private startPingTimer(): void {
     this.stopPingTimer();
-    this.pingTimer = setInterval(() => {
+    this.pingTimer = window.setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
         // 心跳失败静默处理：连接状态由 onclose/onerror 驱动重连，避免 unhandled rejection
         this.send({ type: 'ping' }).catch(() => {});
@@ -245,7 +245,7 @@ class WebSocketService {
 
       console.log(`[WebSocket] Reconnecting in ${delay}ms... (attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
 
-      this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = window.setTimeout(() => {
         if (this.token) {
           this.connect(this.token, this.encryptionEnabled, true);
         }

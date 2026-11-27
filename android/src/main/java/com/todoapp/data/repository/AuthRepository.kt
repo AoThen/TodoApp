@@ -2,7 +2,6 @@ package com.todoapp.data.repository
 
 import android.content.Context
 import com.todoapp.data.remote.*
-import com.todoapp.data.remote.RetrofitClient
 import com.todoapp.utils.JwtUtils
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers

@@ -21,17 +21,7 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import com.todoapp.R
 import com.todoapp.data.crypto.AesGcmManager
-import com.todoapp.data.crypto.KeyStorage
-import com.todoapp.data.remote.PairingRequest
-import com.todoapp.data.remote.PairingResponse
-import com.todoapp.data.remote.RetrofitClient
 import androidx.camera.view.PreviewView
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import org.json.JSONObject
-import retrofit2.Response
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -188,52 +178,11 @@ class QRScannerActivity : AppCompatActivity() {
         }
     }
 
-    private fun getDeviceID(): String {
-        val prefs = getSharedPreferences("TodoAppPrefs", MODE_PRIVATE)
-        var deviceId = prefs.getString("device_id", null)
-        if (deviceId.isNullOrEmpty()) {
-            deviceId = android.provider.Settings.Secure.getString(
-                contentResolver,
-                android.provider.Settings.Secure.ANDROID_ID
-            ) ?: return ""
-            prefs.edit().putString("device_id", deviceId).apply()
-        }
-        return deviceId
-    }
-
-    private fun getErrorMessage(errorBody: String): String {
-        return try {
-            val json = JSONObject(errorBody)
-            json.optString("error") ?: json.optString("message") ?: "配对失败"
-        } catch (e: Exception) {
-            "配对失败"
-        }
-    }
-
     private fun isAcceptableServerUrl(url: String): Boolean {
         val normalized = url.trim()
         if (normalized.startsWith("https://")) return true
         // debug 构建允许明文 http（本地/模拟器调试）；release 强制 https
         return com.todoapp.BuildConfig.DEBUG && normalized.startsWith("http://")
-    }
-
-    private var loadingDialog: AlertDialog? = null
-
-    private fun showLoading() {
-        if (loadingDialog?.isShowing == true) return
-        val progress = android.widget.ProgressBar(this)
-        loadingDialog = AlertDialog.Builder(this)
-            .setTitle("配对中")
-            .setMessage("正在验证配对信息，请稍候…")
-            .setView(progress)
-            .setCancelable(false)
-            .create()
-        loadingDialog?.show()
-    }
-
-    private fun dismissLoading() {
-        loadingDialog?.dismiss()
-        loadingDialog = null
     }
 
     private fun showExpiredDialog() {
@@ -246,26 +195,6 @@ class QRScannerActivity : AppCompatActivity() {
             .setNegativeButton("取消") { _, _ ->
                 finish()
             }
-            .show()
-    }
-
-    private fun showSuccessDialog(qrRawValue: String, serverUrl: String, keyProtected: Boolean = true) {
-        var message = "设备已成功配对到: $serverUrl\n\n所有通信现在将使用 AES-256-GCM 加密。"
-        if (!keyProtected) {
-            message += "\n\n安全提示：本机安全存储（Keystore）不可用，加密密钥已明文保存在本机，请避免在共享或 Root 设备上使用。"
-        }
-        AlertDialog.Builder(this)
-            .setTitle("配对成功")
-            .setMessage(message)
-            .setPositiveButton("确定") { _, _ ->
-                // 回传二维码原文，交由 PairingFragment 走统一的配对成功流程（本地保存操作幂等）
-                val resultIntent = Intent().apply {
-                    putExtra(EXTRA_QR_RESULT, qrRawValue)
-                }
-                setResult(RESULT_SUCCESS, resultIntent)
-                finish()
-            }
-            .setCancelable(false)
             .show()
     }
 

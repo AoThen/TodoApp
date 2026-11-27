@@ -123,6 +123,25 @@ describe('websocketService', () => {
     expect(closeSpy).toHaveBeenCalled();
   });
 
+  it('加密模式下无握手响应，重试 10 次后超时关闭', async () => {
+    vi.useFakeTimers();
+    await websocketService.connect('tok-hs', true);
+    const ws = MockWebSocket.instances[0];
+    const closeSpy = vi.spyOn(ws, 'close');
+
+    ws.onopen?.();
+    await flushAsync();
+
+    // 不下发任何握手响应：每 500ms 重试一次，累计 10 次后判定超时并关闭
+    await vi.advanceTimersByTimeAsync(5000);
+
+    const handshakeSends = ws.sent.filter(
+      frame => typeof frame === 'string' && frame.includes('"type":"handshake"')
+    ).length;
+    expect(handshakeSends).toBe(10);
+    expect(closeSpy).toHaveBeenCalled();
+  });
+
   it('Blob 消息解密后分发给对应 handler', async () => {
     await websocketService.connect('tok-5', true);
     const ws = MockWebSocket.instances[0];
