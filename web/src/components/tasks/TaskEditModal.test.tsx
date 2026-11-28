@@ -61,6 +61,18 @@ describe('TaskEditModal', () => {
     expect(payload.recurrence_series_id).toBeTruthy();
   });
 
+  it('crypto.randomUUID 抛错时回退到 series- 兜底系列 ID', () => {
+    const uuidSpy = vi.spyOn(crypto, 'randomUUID').mockImplementation(() => {
+      throw new Error('uuid unavailable');
+    });
+    const { onSave } = setup();
+    fireEvent.change(screen.getAllByRole('combobox')[2], { target: { value: 'weekly' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    const payload = onSave.mock.calls[0][0] as Partial<Task>;
+    expect(payload.recurrence_series_id).toMatch(/^series-/);
+    uuidSpy.mockRestore();
+  });
+
   it('已有系列 ID 的任务保存时保持系列不变', () => {
     const { onSave } = setup({ recurrence_type: 'weekly', recurrence_series_id: 'series-keep' });
     fireEvent.change(screen.getAllByRole('combobox')[2], { target: { value: 'weekly' } });

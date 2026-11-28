@@ -94,6 +94,13 @@ describe('ImportDialog', () => {
     pickFile(input, new File(['not-valid-json'], 'bad.json', { type: 'application/json' }));
     await waitFor(() => expect(screen.getByText('不是有效的JSON文件')).toBeInTheDocument());
   });
+
+  it('合法 JSON 但非数组时提示格式错误', async () => {
+    const { container } = render(<ImportDialog isOpen={true} onClose={vi.fn()} onImportSuccess={vi.fn()} />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    pickFile(input, new File(['{"title":"单任务"}'], 'obj.json', { type: 'application/json' }));
+    await waitFor(() => expect(screen.getByText('文件格式必须是任务数组')).toBeInTheDocument());
+  });
 });
 
 describe('ImportDialog 模板下载', () => {
