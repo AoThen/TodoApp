@@ -111,6 +111,14 @@ describe('deviceKey', () => {
     expect(id1).not.toBe(id2);
   });
 
+  it('clearWebDeviceId 存储移除异常时静默吞错', () => {
+    const spy = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+      throw new Error('denied');
+    });
+    expect(() => clearWebDeviceId()).not.toThrow();
+    spy.mockRestore();
+  });
+
   it('复用已持久化的设备编号', () => {
     window.localStorage.setItem('todoapp_web_device_id', 'persisted-id');
     expect(getOrCreateWebDeviceId()).toBe('persisted-id');

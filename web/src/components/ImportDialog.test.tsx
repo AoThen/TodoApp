@@ -87,6 +87,13 @@ describe('ImportDialog', () => {
     fireEvent.click(csvRadio);
     expect(csvRadio.checked).toBe(true);
   });
+
+  it('选择非法 JSON 文件时展示解析错误', async () => {
+    const { container } = render(<ImportDialog isOpen={true} onClose={vi.fn()} onImportSuccess={vi.fn()} />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    pickFile(input, new File(['not-valid-json'], 'bad.json', { type: 'application/json' }));
+    await waitFor(() => expect(screen.getByText('不是有效的JSON文件')).toBeInTheDocument());
+  });
 });
 
 describe('ImportDialog 模板下载', () => {
