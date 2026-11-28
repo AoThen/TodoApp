@@ -104,7 +104,12 @@ describe('ImportDialog 模板下载', () => {
     expect(clickSpy).toHaveBeenCalled();
     expect(revokeSpy).toHaveBeenCalledWith('blob:template-url');
 
-    const text = await capturedBlob!.text();
+    const text = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(capturedBlob!);
+    });
     expect(text).toContain('"due_at"');
     expect(text).not.toContain('dueAt');
 
